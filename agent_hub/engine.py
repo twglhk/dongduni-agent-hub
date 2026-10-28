@@ -1,0 +1,417 @@
+"""One tower tick. No LLM here: it reads the store and each lane's status and moves work along.
+
+  hub              always on. News for it (reports, items to review, decisions, human requests) is batched and
+                   sent while it is idle. When its context grows large it is restarted quietly (state lives here).
+  infra            one human memo (or one infra decision) per fresh session; the next waits until it wraps.
+  team lanes       the hub queues tasks; the tower opens a fresh session per task (up to max_lanes at once),
+                   delivers `tell`/`wrap` while idle, nudges silent lanes, revives closed ones, closes wrapped ones.
+  decided items    routed once: a team item with a task becomes ONE follow-up task in a fresh session;
+                   everything else goes to the hub (or infra) as news.
+  live asks        hub and infra may ask (opencode only): each question becomes a board item for humans and the
+                   answer goes back to the ask. Team lanes' asks are bounced to the board.
+  human items      push notification once.
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any, Callable
+
+from .config import HUB, INFRA, Config
+from .store import HUMAN, MULTI_SEP, TOWER, Store
+
+BATCH_SECONDS = 8
+SETTLE_SECONDS = 3
+NUDGE_AFTER = 120
+NUDGE_LIMIT = 2
+RESPAWN_LIMIT = 3
+HUB_ROTATE_K = 300
+FOLLOW_VERDICTS = ("ok", "no", "answer")
+VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
+                "merged": "merged"}
+
+RULES = ("(Tower task. Need a decision or an approval? Post it with `tower item add` and do not wait for it: finish "
+         "the unblocked, approved scope and `tower report done \"summary · evidence paths · open item ids\"`. "
+         "Decisions arrive later as separate follow-up tasks in fresh sessions. Never ask questions in chat.)")
+ASK_BOUNCE = ("Do not ask in chat. Post a board item with `tower item add` if a human must decide, then carry on "
+              "with other work or end your turn.")
+ASK_GONE = "the question disappeared (answered in the terminal, or the session ended)"
+ASK_HOW = "## How to answer\n- Your pick and note go straight back to the session.\n- No option fits? Write your own answer."
+NUDGE = ("You stopped without a report. Finished: `tower report done \"summary · evidence\"`. Need a decision: "
+         "`tower item add`. Stuck: `tower report blocked \"why\"`. Work left: keep going.")
+WRAP_RULE = ("(This session carries exactly one item. Handle it, answer it (`tower memo reply ID \"...\"` for a memo), "
+             "then `tower report wrapped \"one line\"`. The tower closes the session; anything else arrives later "
+             "in a fresh one.)")
+
+
+def clip(text: str, n: int) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[: n - 1] + "…"
+
+
+def decision_line(it: dict[str, Any]) -> str:
+    parts = [f"Decision #{it['id']} \"{it['title']}\": {VERDICT_WORD.get(str(it['verdict']), it['verdict'])}"]
+    if it.get("choice"):
+        parts.append(f"choice: {it['choice']}")
+    if it.get("note"):
+        parts.append(f"{'answer' if it['verdict'] == 'answer' else 'note'}: {it['note']}")
+    parts.append(f"by {it['decided_by']}" + (f", basis: {it['basis']}" if it.get("basis") else ""))
+    return " / ".join(parts)
+
+
+def ask_answer(it: dict[str, Any]) -> list[str]:
+    note = str(it.get("note") or "").strip()
+    memo = [f"note: {note}"] if note else []
+    if it["verdict"] == "ok" and it.get("choice"):
+        return str(it["choice"]).split(MULTI_SEP) + memo
+    if it["verdict"] in ("no", "answer"):
+        return [f"Own answer instead of an option: {note}"] if note else ["None of the options works. Ask again differently."]
+    return [f"On hold: {note}" if note else "On hold: no answer for now, move on."]
+
+
+class Engine:
+    def __init__(self, cfg: Config, store: Store, rt: Any, notify: Callable[[list[dict[str, Any]]], None],
+                 clock: Callable[[], float] = time.time, log: Callable[[str], None] = print):
+        self.cfg, self.store, self.rt, self.notify, self.clock, self.log = cfg, store, rt, notify, clock, log
+        self.team = cfg.team()
+        self.has_infra = INFRA in cfg.lanes
+        self.max_lanes = cfg.max_lanes
+        self.idle_since: dict[str, float] = {}
+
+    # ---------- prompts ----------
+
+    def _read_first(self, lane: str) -> str:
+        protocol = self.cfg.home / ".tower" / "PROTOCOL.md"
+        return (f"First read `{self.cfg.instructions(lane)}` and `{protocol}` and follow them. "
+                f"Humans read the board in `{self.cfg.lang}`; write everything they read in that language.")
+
+    def start_prompt(self, task: dict[str, Any]) -> str:
+        return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\"\n\n{self._read_first(task['lane'])}"
+                f"\n\n{task['brief']}\n\n{RULES}")
+
+    def resume_prompt(self, task: dict[str, Any], why: str) -> str:
+        done = "\n".join(f"- {r['kind']}: {clip(r['text'], 300)}" for r in self.store.reports(task["id"])[-6:]) or "- none"
+        hand = f"\n\nHandoff:\n{task['handoff']}" if task.get("handoff") else ""
+        return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\" continued: {why}\n\n"
+                f"{self._read_first(task['lane'])}\n\nOriginal brief:\n{task['brief']}\n\nReports so far:\n{done}{hand}"
+                f"\n\nRun `tower mine` for this task's open board items, then continue. {RULES}")
+
+    def hub_prompt(self) -> str:
+        return f"[tower] You are the hub lane.\n\n{self._read_first(HUB)}\n\nThen run `tower status` and handle what is open."
+
+    def inbox_prompt(self, msg: dict[str, Any]) -> str:
+        body = (f"Memo #{msg['id']} from {msg['sender']}:\n{msg['text']}" if msg["kind"] == "memo" else msg["text"])
+        return f"[tower] You are the infra lane.\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
+
+    # ---------- helpers ----------
+
+    def _idle_for(self, lane: str, st: str) -> float:
+        now = self.clock()
+        if st != "idle":
+            self.idle_since.pop(lane, None)
+            return 0.0
+        return now - self.idle_since.setdefault(lane, now)
+
+    def _send(self, lane: str, sid: str, text: str) -> None:
+        self.rt.send(lane, sid, text)
+        self.idle_since[lane] = self.clock()
+
+    def summary(self) -> str:
+        h = len(self.store.items(state="open", audience=HUB))
+        m = len(self.store.items(state="open", audience=HUMAN))
+        run = len(self.store.tasks(("running", "wrapping")))
+        q = len(self.store.tasks(("queued",)))
+        return f"(now: {h} items for the hub · {m} for humans · {run} tasks running · {q} queued)"
+
+    # ---------- tick ----------
+
+    def lanes(self) -> list[str]:
+        return [HUB, *([INFRA] if self.has_infra else []), *self.team]
+
+    def tick(self) -> None:
+        statuses: dict[str, str] = {}
+        for lane in self.lanes():
+            try:
+                statuses[lane] = self.rt.status(lane)
+            except Exception as e:  # one broken lane must not stop the others
+                statuses[lane] = "unknown"
+                self.log(f"{lane}: status failed: {e}")
+            self.store.set_lane(lane, status=statuses[lane], seen=self.clock())
+        self._questions(statuses)
+        self.route_decisions()
+        self._notify_humans()
+        for lane in self.team:
+            try:
+                self._lane(lane, statuses[lane])
+            except Exception as e:
+                self.log(f"{lane}: {e}")
+        self._start_queued(statuses)
+        for name, fn in ((HUB, self._hub), (INFRA, self._infra)):
+            if name in statuses:
+                try:
+                    fn(statuses[name])
+                except Exception as e:
+                    self.log(f"{name}: {e}")
+
+    # ---------- live asks ----------
+
+    def _questions(self, statuses: dict[str, str]) -> None:
+        for lane, st in statuses.items():
+            if lane in (HUB, INFRA):
+                self._ask_board(lane, st)
+            elif st == "asking":
+                for q in self.rt.questions(lane):
+                    self.rt.reply_question(lane, q["id"], [[ASK_BOUNCE]] * max(1, len(q.get("questions", []))))
+                    self.log(f"{lane}: bounced an ask to the board")
+
+    def _ask_board(self, lane: str, st: str) -> None:
+        if st == "unknown":
+            return
+        asks = self.rt.questions(lane) if st != "closed" else []
+        live = {str(q["id"]) for q in asks}
+        items = self.store.question_items(lane)
+        for it in items:
+            if str(it["question"]).rpartition("#")[0] in live:
+                continue
+            if it["state"] == "open":
+                self.store.decide(it["id"], "hold", TOWER, note=ASK_GONE)
+            self.store.update_item(it["id"], delivered=self.clock())
+        have = {str(it["question"]): it for it in items}
+        for q in asks:
+            subs: list[dict[str, Any]] = q.get("questions") or []
+            keys = [f"{q['id']}#{i}" for i in range(len(subs))]
+            for i, (key, sub) in enumerate(zip(keys, subs)):
+                if key not in have:
+                    have[key] = self.store.item(self._ask_item(lane, key, sub, i, len(subs)))
+                    self.log(f"{lane}: ask → board #{have[key]['id']}")
+            if not keys or any(have[k]["state"] != "decided" for k in keys):
+                continue
+            self.rt.reply_question(lane, q["id"], [ask_answer(have[k]) for k in keys])
+            for k in keys:
+                self.store.update_item(have[k]["id"], delivered=self.clock())
+            self.log(f"{lane}: board answer → ask")
+
+    def _ask_item(self, lane: str, key: str, sub: dict[str, Any], i: int, n: int) -> int:
+        options = [{"label": str(o.get("label", "")), "desc": str(o.get("description", ""))}
+                   for o in sub.get("options") or []]
+        while len(options) < 2:
+            options.append({"label": ("Write my own", "Skip")[len(options) % 2], "desc": ""})
+        title = clip(str(sub.get("header") or sub.get("question") or "Question"), 40) + (f" {i + 1}/{n}" if n > 1 else "")
+        body = f"## Question\n{sub.get('question') or title}\n\n{ASK_HOW}"
+        task = self.store.live_task(lane)
+        return self.store.add_item(lane, task["id"] if task else None, "decision", title, body, options, [],
+                                   audience=HUMAN, multi=bool(sub.get("multiple")), question=key)
+
+    # ---------- decisions ----------
+
+    def route_decisions(self) -> None:
+        """Route each decided item exactly once, in one transaction per item."""
+        for it in self.store.undelivered_decisions():
+            con = self.store.conn()
+            try:
+                con.execute("BEGIN IMMEDIATE")
+                row = con.execute("SELECT delivered FROM items WHERE id=?", (it["id"],)).fetchone()
+                if row is None or row[0] is not None:
+                    con.execute("ROLLBACK")
+                    continue
+                self._route(con, it)
+                con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), it["id"]))
+                con.execute("COMMIT")
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            finally:
+                con.close()
+
+    def _route(self, con: Any, it: dict[str, Any]) -> None:
+        line = decision_line(it)
+        lane = it["lane"]
+        if lane == INFRA and self.has_infra:
+            self.store.push(INFRA, TOWER, "decision", line + f"\n(`tower show {it['id']}` for the full item.)",
+                            it["task_id"], it["id"], con=con)
+            return
+        src = con.execute("SELECT * FROM tasks WHERE id=?", (it["task_id"],)).fetchone() if it["task_id"] else None
+        follow = (lane in self.team and src is not None and it["verdict"] in FOLLOW_VERDICTS
+                  and src["state"] in ("running", "wrapping", "closed"))
+        if follow:
+            brief = (f"Follow-up to board item #{it['id']} only (fresh session). `tower show {it['id']}` has the item, "
+                     f"`tower log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
+                     f"allows and nothing beyond it. If it is unclear, `tower item add` or `tower report blocked`."
+                     f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
+            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created) VALUES(?,?,?,?,?)",
+                              (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock()))
+            self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
+                            it["task_id"], it["id"], con=con)
+            return
+        if it["decided_by"] != HUB or lane != HUB:
+            self.store.push(HUB, TOWER, "decision", line, it["task_id"], it["id"], con=con)
+
+    def _notify_humans(self) -> None:
+        new = self.store.unnotified()
+        if new:
+            self.notify(new)
+            for it in new:
+                self.store.update_item(it["id"], notified=self.clock())
+
+    # ---------- team lanes ----------
+
+    def _lane(self, lane: str, st: str) -> None:
+        task = self.store.live_task(lane)
+        info = self.store.lane(lane)
+        if task is None:
+            if info.get("closing") and st in ("idle", "closed"):
+                if st == "idle" and self.rt.owned(lane):
+                    self.rt.close(lane)
+                    self.log(f"{lane}: wrapped, closed")
+                self.store.set_lane(lane, closing=None)
+            return
+        if st == "closed":
+            self._revive(lane, task)
+            return
+        if task.get("rotate_ready"):
+            if st == "idle" and self.rt.owned(lane):
+                self.rt.close(lane)
+                self._open_resume(lane, task, "handed off to a fresh session")
+                self.store.update_task(task["id"], rotate_ready=None)
+            return
+        idle_for = self._idle_for(lane, st)
+        if st != "idle":
+            return
+        msgs = [m for m in self.store.pending(lane) if m["task_id"] == task["id"]]
+        if msgs and idle_for >= SETTLE_SECONDS:
+            self._send(lane, task["session"], "[tower]\n" + "\n\n".join(m["text"] for m in msgs))
+            self.store.mark_delivered(m["id"] for m in msgs)
+            self.store.update_task(task["id"], last_prompt=self.clock())
+            return
+        waiting = self.store.open_items_for_task(task["id"]) > 0
+        silent = (task.get("last_signal") or 0) < (task.get("last_prompt") or 0)
+        if idle_for >= NUDGE_AFTER and silent and not waiting:
+            n = task["nudges"]
+            if n < NUDGE_LIMIT:
+                self.store.push(lane, TOWER, "nudge", NUDGE, task["id"])
+                self.store.update_task(task["id"], nudges=n + 1)
+            elif n == NUDGE_LIMIT:
+                self.store.push(HUB, TOWER, "stalled", f"Stalled: {lane} task #{task['id']} \"{task['title']}\" went "
+                                f"quiet after {NUDGE_LIMIT} nudges. Its last words: `tower last {lane}`.", task["id"])
+                self.store.update_task(task["id"], nudges=n + 1)
+
+    def _start_queued(self, statuses: dict[str, str]) -> None:
+        busy = {t["lane"] for t in self.store.tasks(("running", "wrapping"), limit=500)}
+        free = self.max_lanes - len(busy)
+        waiting = []
+        for lane in self.team:
+            nxt = self.store.next_queued(lane)
+            if nxt and lane not in busy and not self.store.lane(lane).get("closing"):
+                st = self.rt.status(lane)
+                if st == "closed" or (st == "idle" and self.rt.owned(lane)):
+                    statuses[lane] = st
+                    waiting.append(nxt)
+        for nxt in sorted(waiting, key=lambda t: t["id"])[:max(0, free)]:
+            lane = nxt["lane"]
+            try:
+                if statuses[lane] == "idle":
+                    self.rt.close(lane)  # a fresh session per task
+                task = self.store.claim_task(nxt["id"])
+                if task is None:
+                    continue
+                try:
+                    sid = self.rt.open(lane, self.start_prompt(task))
+                except Exception:
+                    self.store.update_task(nxt["id"], state="queued", started=None, last_prompt=None)
+                    raise
+            except Exception as e:
+                self.log(f"{lane}: task #{nxt['id']} failed to start: {e}")
+                continue
+            self.store.update_task(nxt["id"], session=sid)
+            self.store.drop_pending(lane, ("tell", "nudge", "wrap"), keep_task=nxt["id"])
+            self.idle_since.pop(lane, None)
+            self.log(f"{lane}: task #{nxt['id']} started")
+
+    def _revive(self, lane: str, task: dict[str, Any]) -> None:
+        if task["respawns"] >= RESPAWN_LIMIT:
+            if task["respawns"] == RESPAWN_LIMIT:
+                self.store.push(HUB, TOWER, "stalled", f"Closed: {lane} task #{task['id']} closed {RESPAWN_LIMIT} times "
+                                f"after reopening. `tower cancel {task['id']}` or reassign it.", task["id"])
+                self.store.update_task(task["id"], respawns=RESPAWN_LIMIT + 1)
+            return
+        handed = bool(task.get("rotate_ready"))
+        self._open_resume(lane, task, "handed off to a fresh session" if handed else "the session had closed")
+        self.store.update_task(task["id"], respawns=task["respawns"] + (0 if handed else 1), rotate_ready=None)
+
+    def _open_resume(self, lane: str, task: dict[str, Any], why: str) -> None:
+        sid = self.rt.open(lane, self.resume_prompt(task, why))
+        self.store.update_task(task["id"], session=sid, last_prompt=self.clock(), nudges=0)
+        self.idle_since.pop(lane, None)
+        self.log(f"{lane}: task #{task['id']} new session ({why})")
+
+    # ---------- hub ----------
+
+    def _hub(self, st: str) -> None:
+        info = self.store.lane(HUB)
+        if st == "closed":
+            if info.get("enabled"):
+                self.rt.open(HUB, self.hub_prompt())
+                self.idle_since.pop(HUB, None)
+                self.log("hub: opened")
+            return
+        idle_for = self._idle_for(HUB, st)
+        if st != "idle" or not info.get("enabled"):
+            return
+        sid = info.get("session")
+        msgs = self.store.pending(HUB)
+        if msgs and sid and idle_for >= SETTLE_SECONDS and self.clock() - msgs[0]["created"] >= BATCH_SECONDS:
+            lines = []
+            for m in msgs:
+                if m["kind"] == "memo":
+                    lines.append(f"• Request #{m['id']} from {m['sender']}: {m['text']} "
+                                 f"(answer with `tower memo reply {m['id']} \"...\"`)")
+                else:
+                    lines.append(f"• {m['text']}")
+            self._send(HUB, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")
+            self.store.mark_delivered(m["id"] for m in msgs)
+            return
+        if (not msgs and sid and idle_for >= 30 and self.rt.owned(HUB)
+                and self.rt.context_k(HUB, sid) >= HUB_ROTATE_K):
+            self.rt.close(HUB)
+            self.rt.open(HUB, self.hub_prompt())
+            self.idle_since.pop(HUB, None)
+            self.log("hub: context grew large, fresh session")
+
+    # ---------- infra ----------
+
+    def _infra(self, st: str) -> None:
+        self._idle_for(INFRA, st)
+        info = self.store.lane(INFRA)
+        if info.get("closing"):
+            if st not in ("idle", "closed"):
+                return
+            if st == "idle" and self.rt.owned(INFRA):
+                self.rt.close(INFRA)
+                self.log("infra: wrapped, closed")
+            self.store.finish_inbox(INFRA)
+            if st == "idle":
+                return
+        if st != "closed":  # never inject a second item into a live session
+            return
+        msg = self.store.claim_inbox(INFRA)
+        if msg is None:
+            return
+        if msg["delivered"] is not None:  # its session closed without wrapping
+            n = self.store.retry_inbox(INFRA)
+            if n > RESPAWN_LIMIT:
+                if n == RESPAWN_LIMIT + 1:
+                    self.notify([{"id": msg["id"], "lane": INFRA, "title": f"infra closed {RESPAWN_LIMIT} times on "
+                                  f"message #{msg['id']}; skipped", "alert": True}])
+                    self.store.push(HUB, TOWER, "stalled", f"infra gave up on message #{msg['id']} after "
+                                    f"{RESPAWN_LIMIT} closed sessions.")
+                self.store.finish_inbox(INFRA)
+                return
+        try:
+            self.rt.open(INFRA, self.inbox_prompt(msg))
+        except Exception as e:
+            self.log(f"infra: message #{msg['id']} failed to open: {e}")
+            self.store.mark_delivered([msg["id"]])
+            return
+        self.store.mark_delivered([msg["id"]])
+        self.idle_since.pop(INFRA, None)
+        self.log(f"infra: opened for message #{msg['id']}")

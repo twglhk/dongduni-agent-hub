@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-hub"
+version = "0.1.0"
+description = "A control tower and phone-friendly review board for teams of AI coding agents (OpenCode, Claude Code, Codex)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+tower = "agent_hub.cli:main"
+
+[tool.setuptools]
+packages = ["agent_hub"]
+
+[tool.setuptools.package-data]
+agent_hub = ["board/*.html", "templates/*.md", "templates/lanes/*.md"]
