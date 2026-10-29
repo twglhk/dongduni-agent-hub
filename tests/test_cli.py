@@ -17,8 +17,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("PROTOCOL.md", out)
         self.tower("lane", "add", "docs", "--runtime", "codex")
 
-    def tower(self, *args: str, lane: str | None = None, ok: bool = True) -> str:
-        env = {**os.environ, "TOWER_HOME": str(self.home), "PYTHONPATH": str(ROOT)}
+    def tower(self, *args: str, lane: str | None = None, ok: bool = True, env: dict[str, str] | None = None) -> str:
+        env = {**os.environ, "TOWER_HOME": str(self.home), "PYTHONPATH": str(ROOT), **(env or {})}
         env.pop("TOWER_LANE", None)
         if lane:
             env["TOWER_LANE"] = lane
@@ -64,6 +64,22 @@ class CliTest(unittest.TestCase):
         token = out.split("give it privately): ")[1].strip()
         self.assertNotIn(token, self.tower("member", "list"))
         self.assertIn('"agent_clis"', self.tower("discover"))
+
+    def test_skill_install_previews_then_writes(self) -> None:
+        user = Path(tempfile.mkdtemp())
+        (user / ".claude").mkdir()
+        (user / ".config/opencode").mkdir(parents=True)
+        env = {"HOME": str(user)}
+        out = self.tower("skill", "install", "--runtime", "claude", "--runtime", "opencode", env=env)
+        self.assertIn("Nothing written", out)
+        self.assertIn("+name: agent-hub-setup", out)
+        skill = user / ".claude/skills/agent-hub-setup/SKILL.md"
+        command = user / ".config/opencode/command/agent-hub-setup.md"
+        self.assertFalse(skill.exists())
+        self.tower("skill", "install", "--runtime", "claude", "--runtime", "opencode", "--yes", env=env)
+        self.assertIn(str(ROOT / "SETUP.md"), skill.read_text())
+        self.assertIn("$ARGUMENTS", command.read_text())
+        self.assertIn("up to date", self.tower("skill", "install", "--runtime", "claude", env=env))
 
 
 if __name__ == "__main__":

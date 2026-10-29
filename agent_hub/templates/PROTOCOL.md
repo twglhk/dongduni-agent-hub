@@ -42,6 +42,11 @@ A human reads it on a phone with none of your context. Write in the board langua
 
 One image shows one thing. Keep sizes and framing equal when images are compared. Numbers say what was measured.
 
+## Keeping the record
+
+- The tower appends every decision to `.tower/decisions.md`. Read it before asking for a decision that may already exist.
+- If this workspace keeps decisions, notes or memory somewhere of its own (your lane file's `## This workspace` says where: a memory MCP, a wiki, a docs folder), also record there what was decided and what you shipped, the way that place is normally used.
+
 ## Answers
 
 - **ok / choice**: go ahead with exactly that. A note with it is part of the answer.

@@ -45,6 +45,7 @@ class Lane:
     label: str = ""
     port: int | None = None      # opencode only
     model: str = ""
+    agent: str = ""              # the runtime's own agent (OpenCode agent, Claude --agent); empty = its default
     args: list[str] = field(default_factory=list)
     instructions: str = ""       # path relative to home
     env: dict[str, str] = field(default_factory=dict)
@@ -102,11 +103,15 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None) -> Lane:
     runtime = str(raw.get("runtime") or "opencode")
     if runtime not in RUNTIMES:
         raise ConfigError(f"lane {lid}: runtime must be one of {', '.join(RUNTIMES)}")
+    agent = str(raw.get("agent") or "")
+    if agent and runtime == "codex":
+        raise ConfigError(f"lane {lid}: codex has no agents; pick a profile with \"args\": [\"--profile\", NAME]")
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
     return Lane(
         id=lid, kind=kind, runtime=runtime, label=str(raw.get("label") or lid),
         port=int(raw["port"]) if raw.get("port") else (port if runtime == "opencode" else None),
         model=str(raw.get("model") or ""),
+        agent=agent,
         args=[str(a) for a in raw["args"]] if isinstance(raw.get("args"), list) else list(DEFAULT_ARGS[runtime]),
         instructions=str(raw.get("instructions") or f"{TOWER_DIR}/lanes/{lid}.md"),
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},

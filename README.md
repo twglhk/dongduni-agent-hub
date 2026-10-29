@@ -27,6 +27,8 @@ The intended setup is agent-driven, because every team keeps its agents, docs an
 
 > Set up agent-hub for my workspace. Follow SETUP.md.
 
+To start it from your own workspace instead, install the setup entry for your agents once: `bin/tower skill install` shows the global `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) it would add, and `--yes` writes them. Then ask any agent, in any workspace, to set up agent-hub.
+
 The agent follows [SETUP.md](SETUP.md): it surveys how you work (`tower discover`: agent CLIs, their configs and MCP servers, where your knowledge lives, which hosting tools you have), asks you a handful of questions, installs the tower into your workspace with lane instructions tailored to it, starts it, puts the board where your phone can reach it, and checks the whole loop end to end.
 
 ## Or by hand
@@ -60,6 +62,8 @@ The full working rules every lane follows are in [`templates/PROTOCOL.md`](agent
 | `opencode` | `opencode serve --port P` per lane, HTTP API. You can also run `opencode --port P` yourself and watch the TUI; the tower then uses it and never kills it. | yes |
 | `claude` | `claude -p --session-id` to start, `claude -p --resume` for each prompt | no (lanes post items instead) |
 | `codex` | `codex exec --json` to start, `codex exec resume` for each prompt | no |
+
+Each lane runs your agent as you configured it: your instruction files, MCP servers, plugins, skills and hooks load as usual. Set `"agent"` on a lane to run one of your own agents (OpenCode agent name, Claude `--agent`); without it the runtime's default agent runs. Every decision is also appended to `.tower/decisions.md`.
 
 Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox. `tower init --safe` writes sandboxed arguments instead; per-lane `args` in `tower.json` override either.
 

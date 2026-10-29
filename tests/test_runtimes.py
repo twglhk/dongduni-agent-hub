@@ -11,6 +11,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agent_hub.config import ConfigError
 from agent_hub.runtimes import Runtimes
 from agent_hub.store import Store
 from tests.helpers import make_home
@@ -61,7 +62,8 @@ class HeadlessTest(unittest.TestCase):
         os.environ["FAKE_LOG"] = str(self.log)
         os.environ["TOWER_CLAUDE_BIN"] = str(script(self.tmp, "claude", FAKE_CLAUDE))
         os.environ["TOWER_CODEX_BIN"] = str(script(self.tmp, "codex", FAKE_CODEX))
-        self.cfg = make_home({"hub": {"runtime": "claude", "model": "opus"}, "docs": {"runtime": "codex"}})
+        self.cfg = make_home({"hub": {"runtime": "claude", "model": "opus"}, "docs": {"runtime": "codex"},
+                              "review": {"runtime": "claude", "agent": "code-reviewer"}})
         self.s = Store(self.cfg.db)
         self.rt = Runtimes(self.cfg, self.s)
 
@@ -81,6 +83,7 @@ class HeadlessTest(unittest.TestCase):
         self.assertIn("--session-id", first["argv"])
         self.assertIn("bypassPermissions", first["argv"])
         self.assertEqual(first["argv"][first["argv"].index("--model") + 1], "opus")
+        self.assertNotIn("--agent", first["argv"])  # no agent set: the runtime's default
         self.assertEqual(first["lane"], "hub")
         self.assertEqual(first["home"], str(self.cfg.home))
         self.assertEqual(self.rt.last_text("hub"), ["said: hello there"])
@@ -101,6 +104,18 @@ class HeadlessTest(unittest.TestCase):
             self.assertEqual(self.rt.status("hub"), "closed")
         finally:
             os.environ.pop("FAKE_SLEEP")
+
+    def test_claude_lane_runs_its_agent_on_every_prompt(self) -> None:
+        sid = self.rt.open("review", "look")
+        wait_for(lambda: self.rt.status("review") == "idle")
+        self.rt.send("review", sid, "again")
+        wait_for(lambda: self.rt.status("review") == "idle")
+        for call in self.calls():
+            self.assertEqual(call["argv"][call["argv"].index("--agent") + 1], "code-reviewer")
+
+    def test_codex_rejects_an_agent(self) -> None:
+        with self.assertRaises(ConfigError):
+            make_home({"hub": {"runtime": "codex", "agent": "x"}})
 
     def test_codex_thread_id_and_resume(self) -> None:
         sid = self.rt.open("docs", "do docs")
@@ -171,6 +186,7 @@ class OpenCodeTest(unittest.TestCase):
         sid = self.rt.open("hub", "hi")
         self.assertEqual(sid, "ses_1")
         self.assertEqual(FakeOpenCode.prompts[0]["model"], {"providerID": "anthropic", "modelID": "claude-x"})
+        self.assertNotIn("agent", FakeOpenCode.prompts[0])  # no agent set: the server's default agent
         self.assertFalse(self.rt.owned("hub"))
         self.assertEqual(self.rt.status("hub"), "idle")
         FakeOpenCode.busy = {"ses_1": {"type": "busy"}}
@@ -184,6 +200,13 @@ class OpenCodeTest(unittest.TestCase):
         FakeOpenCode.busy = {}
         self.rt.close("hub")  # not owned: clears the session, leaves the server up
         self.assertEqual(self.rt.status("hub"), "idle")
+
+    def test_lane_agent_goes_with_every_prompt(self) -> None:
+        cfg = make_home({"hub": {"runtime": "opencode", "port": self.srv.server_address[1], "agent": "writer"}})
+        rt = Runtimes(cfg, Store(cfg.db))
+        sid = rt.open("hub", "hi")
+        rt.send("hub", sid, "more")
+        self.assertEqual([p["agent"] for p in FakeOpenCode.prompts], ["writer", "writer"])
 
 
 if __name__ == "__main__":

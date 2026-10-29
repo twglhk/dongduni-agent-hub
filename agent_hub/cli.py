@@ -539,6 +539,29 @@ def cmd_install(args: argparse.Namespace) -> None:
         print(w)
 
 
+def cmd_skill(args: argparse.Namespace) -> None:
+    """Global setup entry for each agent, so "set up agent-hub here" works from any workspace."""
+    import difflib
+    from .install import skill_plan
+    plan = skill_plan(Path.home(), args.runtime)
+    if not plan:
+        raise TowerError("no agent config found (~/.claude, ~/.config/opencode, ~/.codex); pass --runtime")
+    for runtime, path, old, new in plan:
+        if old == new:
+            print(f"{runtime}: {path} is up to date")
+            continue
+        if not args.yes:
+            print(f"{runtime}: {'update' if old else 'create'} {path}")
+            sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
+                                                       str(path) if old else "/dev/null", str(path)))
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(new, encoding="utf-8")
+        print(f"{runtime}: wrote {path}")
+    if not args.yes and any(old != new for _, _, old, new in plan):
+        print("\nNothing written. These are global agent files: run again with --yes to write them.")
+
+
 def cmd_lane(args: argparse.Namespace) -> None:
     c = cfg()
     if args.sub == "list":
@@ -553,6 +576,10 @@ def cmd_lane(args: argparse.Namespace) -> None:
         entry: dict[str, Any] = {"runtime": args.runtime, "label": args.label or args.id}
         if args.model:
             entry["model"] = args.model
+        if args.agent:
+            if args.runtime == "codex":
+                raise TowerError("codex has no agents; set \"args\": [\"--profile\", NAME] in tower.json instead")
+            entry["agent"] = args.agent
         edit_config(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
         c = config_mod.load(c.home)
         path = c.instructions(args.id)
@@ -689,6 +716,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("install", help="(re)write protocol, lane files and command shims")
     p.add_argument("--force", action="store_true")
+    p = sub.add_parser("skill", help="install the global agent-hub-setup skill/command for your agents")
+    ssub = p.add_subparsers(dest="sub", required=True)
+    q = ssub.add_parser("install")
+    q.add_argument("--runtime", action="append", choices=RUNTIMES, help="only this agent (repeatable)")
+    q.add_argument("--yes", action="store_true", help="write the files (without it: show the diff only)")
     p = sub.add_parser("lane", help="list, add or remove lanes")
     lsub = p.add_subparsers(dest="sub", required=True)
     lsub.add_parser("list")
@@ -697,6 +729,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--runtime", choices=RUNTIMES, required=True)
     q.add_argument("--label")
     q.add_argument("--model")
+    q.add_argument("--agent", help="the runtime's own agent for this lane (OpenCode agent, Claude --agent)")
     q = lsub.add_parser("remove")
     q.add_argument("id")
     p = sub.add_parser("member", help="people who use the board")
@@ -717,7 +750,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
     "status": cmd_status, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "install": cmd_install, "lane": cmd_lane, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "install": cmd_install, "skill": cmd_skill, "lane": cmd_lane, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

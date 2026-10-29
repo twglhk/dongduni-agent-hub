@@ -10,11 +10,16 @@
   live asks        hub and infra may ask (opencode only): each question becomes a board item for humans and the
                    answer goes back to the ask. Team lanes' asks are bounced to the board.
   human items      push notification once.
+  stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
+                   session working, a turn that never ends), humans get one board item about it.
+  decision log     every human or hub decision is appended to `.tower/decisions.md`, a plain file the workspace's
+                   own memory tools and agents can read and keep in git.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any, Callable
 
 from .config import HUB, INFRA, Config
@@ -26,6 +31,21 @@ NUDGE_AFTER = 120
 NUDGE_LIMIT = 2
 RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
+HUB_STUCK_SECONDS = 900
+DECISIONS_FILE = "decisions.md"
+STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음"}
+STUCK_BODY = {
+    "en": ("## What happened\n{n} piece(s) of news for the hub have waited {m} min: the tower only writes into the hub "
+           "while it is idle, and it has stayed busy.\n\n## Likely causes\n- A hook or plugin in the hub's agent keeps "
+           "the session working (auto-continue, todo loops).\n- One very long turn.\n\n## What to do\n- `tower last hub` "
+           "and `.tower/state/logs/hub.err` show what it is doing.\n- Give the hub lane a lighter agent (`\"agent\"` in "
+           "`.tower/tower.json`) or another runtime: a memo to infra can do it.\n- Approve this item once you have seen it."),
+    "ko": ("## 무슨 일\n허브에 보낼 소식 {n}건이 {m}분째 대기 중입니다. tower는 허브가 idle일 때만 소식을 넣는데, 허브가 계속 "
+           "busy 상태입니다.\n\n## 흔한 원인\n- 허브 에이전트의 hook이나 플러그인이 세션을 계속 돌림(자동 계속, todo 루프).\n"
+           "- 아주 긴 한 턴.\n\n## 할 일\n- `tower last hub`와 `.tower/state/logs/hub.err`로 무엇을 하는지 확인.\n"
+           "- 허브 레인에 더 가벼운 에이전트(`.tower/tower.json`의 `\"agent\"`)나 다른 런타임 지정: infra에 메모하면 됩니다.\n"
+           "- 확인했으면 이 항목을 승인하세요."),
+}
 FOLLOW_VERDICTS = ("ok", "no", "answer")
 VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
                 "merged": "merged"}
@@ -77,6 +97,7 @@ class Engine:
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
+        self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
 
     # ---------- prompts ----------
 
@@ -189,6 +210,7 @@ class Engine:
             self.rt.reply_question(lane, q["id"], [ask_answer(have[k]) for k in keys])
             for k in keys:
                 self.store.update_item(have[k]["id"], delivered=self.clock())
+                self._record(have[k])
             self.log(f"{lane}: board answer → ask")
 
     def _ask_item(self, lane: str, key: str, sub: dict[str, Any], i: int, n: int) -> int:
@@ -222,6 +244,23 @@ class Engine:
                 raise
             finally:
                 con.close()
+            self._record(it)
+
+    def _record(self, it: dict[str, Any]) -> None:
+        """Append one decision to `.tower/decisions.md` (tower housekeeping such as vanished asks is skipped)."""
+        if it.get("decided_by") == TOWER:
+            return
+        path = self.cfg.home / ".tower" / DECISIONS_FILE
+        when = datetime.fromtimestamp(it.get("decided") or self.clock()).strftime("%Y-%m-%d %H:%M")
+        try:
+            new = not path.exists()
+            with path.open("a", encoding="utf-8") as f:
+                if new:
+                    f.write("# Decisions\n\nAppended by the tower for every decision made on the board or by the hub. "
+                            "`tower show ID` has the full item.\n\n")
+                f.write(f"- {when} · {it['lane']} · {' '.join(decision_line(it).split())}\n")
+        except OSError as e:
+            self.log(f"decision log not written: {e}")
 
     def _route(self, con: Any, it: dict[str, Any]) -> None:
         line = decision_line(it)
@@ -355,6 +394,8 @@ class Engine:
                 self.log("hub: opened")
             return
         idle_for = self._idle_for(HUB, st)
+        if st == "busy":
+            self._watch_stuck()
         if st != "idle" or not info.get("enabled"):
             return
         sid = info.get("session")
@@ -376,6 +417,23 @@ class Engine:
             self.rt.open(HUB, self.hub_prompt())
             self.idle_since.pop(HUB, None)
             self.log("hub: context grew large, fresh session")
+
+    def _watch_stuck(self) -> None:
+        msgs = self.store.pending(HUB)
+        if not msgs:
+            return
+        oldest = msgs[0]
+        waited = self.clock() - oldest["created"]
+        if waited < HUB_STUCK_SECONDS or self.stuck_for == oldest["id"]:
+            return
+        self.stuck_for = oldest["id"]
+        lang = self.cfg.lang if self.cfg.lang in STUCK_TITLE else "en"
+        title = STUCK_TITLE[lang]
+        if any(it["title"] == title for it in self.store.items(state="open", lane=HUB)):
+            return  # already on the board (e.g. raised before a config reload)
+        body = STUCK_BODY[lang].format(n=len(msgs), m=int(waited // 60))
+        self.store.add_item(HUB, None, "review", title, body, [], [], audience=HUMAN)
+        self.log(f"hub: busy with news waiting {int(waited // 60)} min, told humans")
 
     # ---------- infra ----------
 

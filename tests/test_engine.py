@@ -1,6 +1,6 @@
 import unittest
 
-from agent_hub.engine import BATCH_SECONDS, NUDGE_AFTER, NUDGE_LIMIT, RESPAWN_LIMIT, Engine
+from agent_hub.engine import BATCH_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT, RESPAWN_LIMIT, Engine
 from agent_hub.store import HUB, HUMAN, INFRA, Store
 from tests.helpers import Clock, FakeRuntime, make_home
 
@@ -55,6 +55,41 @@ class EngineTest(unittest.TestCase):
         self.run_ticks(10, step=5)
         self.assertIn(HUB, self.rt.closed)
         self.assertEqual(sum(1 for lane, _ in self.rt.opened if lane == HUB), 2)
+
+    def test_busy_hub_with_waiting_news_is_raised_once(self) -> None:
+        self.s.set_lane(HUB, enabled=1)
+        self.e.tick()  # opens: busy, and stays busy (a hook keeps it working)
+        self.s.push(HUB, "ana", "memo", "ship it")
+        self.clock.tick(HUB_STUCK_SECONDS - 10)
+        self.e.tick()
+        self.assertEqual(self.s.items(state="open"), [])
+        self.clock.tick(20)
+        self.run_ticks(3)
+        alerts = self.s.items(state="open", audience=HUMAN)
+        self.assertEqual(len(alerts), 1)
+        self.assertIn("idle", alerts[0]["title"])
+        self.assertEqual(len(self.notes), 1)
+        self.s.decide(alerts[0]["id"], "ok", "ana")  # seen: no new alert for the same waiting news
+        self.run_ticks(3)
+        self.assertEqual(self.s.items(state="open", audience=HUMAN), [])
+        self.assertEqual(self.rt.sent, [])  # nothing was forced into the busy session
+
+    def test_decisions_are_appended_to_the_decision_log(self) -> None:
+        t = self.s.add_task("docs", "A", "b")
+        self.e.tick()
+        first = self.item("docs", t)
+        self.s.decide(first, "hold", HUB, basis="later")
+        second = self.item(INFRA, None, HUMAN)
+        self.s.decide(second, "ok", "ana", note="go\nnow")
+        self.e.tick()
+        self.e.tick()
+        log = (self.cfg.home / ".tower" / "decisions.md").read_text()
+        lines = [x for x in log.splitlines() if x.startswith("- ")]
+        self.assertEqual(len(lines), 2)
+        self.assertIn(f"Decision #{first}", lines[0])
+        self.assertIn("by hub, basis: later", lines[0])
+        self.assertIn(f"Decision #{second}", lines[1])
+        self.assertIn("note: go now", lines[1])
 
     # ----- team lanes -----
 

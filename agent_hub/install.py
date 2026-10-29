@@ -61,6 +61,39 @@ def ignore_state(home: Path, wrote: list[str]) -> None:
         wrote.append(".gitignore")
 
 
+REPO = Path(__file__).resolve().parents[1]
+SKILL_NAME = "agent-hub-setup"
+SKILL_DESC = ("Set up agent-hub (the tower and its review board) in this workspace, or port it into the person's agent "
+              "environment. Use when asked to install, set up or transplant agent-hub / the tower.")
+SKILL_BODY = """Set up agent-hub for the workspace you are in (or the one the person names).
+
+- agent-hub lives at `{repo}`. Put `{repo}/bin` on PATH so `tower` runs.
+- Read `{repo}/SETUP.md` and work through its phases in order. Do not improvise the order or skip the survey.
+- The person's own agents, instruction files, MCP servers, skills and subagents stay as they are; the tower drives them.
+"""
+SKILL_FILES = {
+    "claude": (Path(".claude/skills") / SKILL_NAME / "SKILL.md",
+               f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
+    "opencode": (Path(".config/opencode/command") / f"{SKILL_NAME}.md",
+                 f"---\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY + "\n$ARGUMENTS\n"),
+    "codex": (Path(".codex/prompts") / f"{SKILL_NAME}.md",
+              f"---\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY + "\n$ARGUMENTS\n"),
+}
+SKILL_HOMES = {"claude": Path(".claude"), "opencode": Path(".config/opencode"), "codex": Path(".codex")}
+
+
+def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple[str, Path, str, str]]:
+    """(runtime, path, current text, new text) for each agent this person has. Writes nothing."""
+    chosen = runtimes or [r for r in SKILL_FILES if (user_home / SKILL_HOMES[r]).is_dir() or shutil.which(r)]
+    plan = []
+    for runtime in chosen:
+        rel, text = SKILL_FILES[runtime]
+        path = user_home / rel
+        old = path.read_text(encoding="utf-8") if path.is_file() else ""
+        plan.append((runtime, path, old, text.format(repo=REPO)))
+    return plan
+
+
 def default_runtime() -> str | None:
     return next((r for r in ("opencode", "claude", "codex") if shutil.which(r)), None)
 

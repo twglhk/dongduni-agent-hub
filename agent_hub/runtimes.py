@@ -181,6 +181,8 @@ class OpenCode(Adapter):
         body: dict[str, Any] = {"parts": [{"type": "text", "text": text}]}
         if self._model():
             body["model"] = self._model()
+        if self.lane.agent:
+            body["agent"] = self.lane.agent
         code, resp = http(self.port, "POST", f"/session/{sid}/prompt_async", body, timeout=10)
         if code not in (200, 204):
             raise RuntimeFailure(f"{self.lane.id}: prompt failed (http {code}): {resp}")
@@ -281,6 +283,7 @@ class Headless(Adapter):
 class Claude(Headless):
     def _base(self) -> list[str]:
         argv = [os.environ.get("TOWER_CLAUDE_BIN", "claude"), "-p", "--output-format", "json", *self.lane.args]
+        argv += ["--agent", self.lane.agent] if self.lane.agent else []
         return argv + (["--model", self.lane.model] if self.lane.model else [])
 
     def open(self, prompt: str) -> str:
