@@ -84,5 +84,42 @@ class StoreTest(unittest.TestCase):
             self.s.history("nope")
 
 
+    def test_goals_rank_plan_and_close(self) -> None:
+        a, b, c = (self.s.add_goal(t, "", "ana") for t in ("A", "B", "C"))
+        self.assertEqual(self.s.move_goal(c, 1), [c, a, b])
+        self.assertEqual(self.s.move_goal(c, 99), [a, b, c])
+        self.s.set_goal_state(a, "dropped", "not now")
+        self.assertEqual([(g["id"], g["priority"]) for g in self.s.goals()], [(b, 1), (c, 2)])
+        with self.assertRaises(StoreError):
+            self.s.move_goal(a, 1)
+        self.s.set_goal_state(a, "active")
+        self.assertEqual([g["id"] for g in self.s.goals()], [b, c, a])
+        self.s.plan_goal(b, ["one", "two"])
+        self.s.check_steps(b, [2])
+        g = self.s.plan_goal(b, ["zero", "two", "three"])
+        self.assertEqual([s["done"] for s in g["steps"]], [False, True, False])
+        self.assertEqual(g["progress"], 33)
+        with self.assertRaises(StoreError):
+            self.s.check_steps(b, [4])
+        self.assertEqual(self.s.set_goal_state(b, "done")["progress"], 100)
+        self.assertEqual([g["id"] for g in self.s.goals(("done", "dropped"))], [b])
+        with self.assertRaises(StoreError):
+            self.s.add_goal(" ", "", "ana")
+
+    def test_old_database_gains_goal_column(self) -> None:
+        import sqlite3
+        path = make_home().db
+        path.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE tasks(id INTEGER PRIMARY KEY, lane TEXT NOT NULL, title TEXT NOT NULL, brief TEXT "
+                    "NOT NULL, state TEXT NOT NULL, session TEXT, created REAL NOT NULL, started REAL, closed REAL, "
+                    "last_prompt REAL, last_signal REAL, nudges INTEGER NOT NULL DEFAULT 0, respawns INTEGER NOT NULL "
+                    "DEFAULT 0, handoff TEXT, rotate_ready REAL)")
+        con.commit()
+        con.close()
+        s = Store(path)
+        g = s.add_goal("G", "", "ana")
+        self.assertEqual(s.task(s.add_task("docs", "t", "b", g))["goal_id"], g)
+
 if __name__ == "__main__":
     unittest.main()

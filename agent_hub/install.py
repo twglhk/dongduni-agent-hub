@@ -8,7 +8,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, template
+from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, free_ports, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 SHIM_DIRS = {"opencode": Path(".opencode/command"), "claude": Path(".claude/commands")}
@@ -61,16 +61,27 @@ def ignore_state(home: Path, wrote: list[str]) -> None:
         wrote.append(".gitignore")
 
 
-REPO = Path(__file__).resolve().parents[1]
+GUIDE = Path(__file__).resolve().parent / "guide"
+CLONE_BIN = Path(__file__).resolve().parents[1] / "bin" / "tower"
+INSTALL_HINT = ("pipx install git+https://github.com/twglhk/agent-hub  (or `uv tool install git+https://github.com/"
+                "twglhk/agent-hub`, or `npm install -g github:twglhk/agent-hub`)")
 SKILL_NAME = "agent-hub-setup"
-SKILL_DESC = ("Set up agent-hub (the tower and its review board) in this workspace, or port it into the person's agent "
-              "environment. Use when asked to install, set up or transplant agent-hub / the tower.")
+SKILL_DESC = ("Set up agent-hub (the tower, its hub and lanes, and the review board) in this workspace. Use when asked to "
+              "install, set up or transplant agent-hub / the tower, for this project or globally.")
 SKILL_BODY = """Set up agent-hub for the workspace you are in (or the one the person names).
 
-- agent-hub lives at `{repo}`. Put `{repo}/bin` on PATH so `tower` runs.
-- Read `{repo}/SETUP.md` and work through its phases in order. Do not improvise the order or skip the survey.
+- `tower` must run: `{tower} -h`. If it does not, it installs with {hint}. Installing software is the person's call: ask first.
+- Run `{tower} guide` and work through that playbook's phases in order. Do not improvise the order or skip the survey.
 - The person's own agents, instruction files, MCP servers, skills and subagents stay as they are; the tower drives them.
 """
+
+
+def tower_command() -> str:
+    """How the person's agents should call this tower: `tower` when it is on PATH, else the clone's own script."""
+    found = shutil.which("tower")
+    if found or not CLONE_BIN.is_file():
+        return "tower"
+    return str(CLONE_BIN)
 SKILL_FILES = {
     "claude": (Path(".claude/skills") / SKILL_NAME / "SKILL.md",
                f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
@@ -90,7 +101,7 @@ def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple
         rel, text = SKILL_FILES[runtime]
         path = user_home / rel
         old = path.read_text(encoding="utf-8") if path.is_file() else ""
-        plan.append((runtime, path, old, text.format(repo=REPO)))
+        plan.append((runtime, path, old, text.format(tower=tower_command(), hint=INSTALL_HINT)))
     return plan
 
 
@@ -103,7 +114,8 @@ def init(home: Path, name: str, lang: str, hub: str, infra: str, project: str | 
     path = home / TOWER_DIR / CONFIG_NAME
     if path.exists() and not force:
         raise FileExistsError(f"{path} exists (use --force to overwrite)")
-    data = template(name, lang, hub, infra, safe)
+    web_port, opencode_port = free_ports(home)
+    data = template(name, lang, hub, infra, safe, web_port, opencode_port)
     if project:
         data["project"] = project
     path.parent.mkdir(parents=True, exist_ok=True)

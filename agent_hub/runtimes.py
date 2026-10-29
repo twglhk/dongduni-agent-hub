@@ -17,6 +17,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -71,8 +72,10 @@ def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     env.update(lane.env)
     env["TOWER_HOME"] = str(cfg.home)
     env["TOWER_LANE"] = lane.id
-    if (BIN_DIR / "tower").is_file():
-        env["PATH"] = f"{BIN_DIR}{os.pathsep}{env.get('PATH', '')}"
+    for d in (BIN_DIR, Path(sys.executable).parent):  # a clone's bin/, or the venv a pip/pipx install put tower in
+        if (d / "tower").is_file():
+            env["PATH"] = f"{d}{os.pathsep}{env.get('PATH', '')}"
+            break
     return env
 
 

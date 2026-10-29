@@ -1,59 +1,95 @@
 # agent-hub
 
-A control tower and a phone-friendly review board for a team of AI coding agents.
+**Stop typing to every agent. Set the goal; the hub runs the lanes.**
 
-One **hub** agent stays on, turns your requests into tasks, hands them to other agent sessions (**lanes**), reviews what comes back, and sends you only the calls that need a human. An **infra** agent looks after the system itself. You steer it all from a web board on your phone: pick an option, approve a result, write a memo. The tower in the middle is a small Python loop with no LLM in it; it opens, prompts, watches and closes the agent sessions.
+How long will you keep five terminals open, re-explaining context to each agent session, spawning subagents by hand, and digging through scrollback to find out who finished what? agent-hub turns that around. You write down what you want done and in which order. One always-on **hub** agent plans it with you, hands the work to agent sessions it controls (**lanes**: OpenCode, Claude Code or Codex, mixed freely), checks what comes back, and reports to a review board on your phone. You only step in for the calls that need a human.
 
-It works with the agents you already use: **OpenCode**, **Claude Code** and **Codex**, mixed freely per lane.
+![Without agent-hub: you type to every terminal and keep the state in your head. With agent-hub: you set and rank goals on a board; the hub assigns work to lanes and reports back.](docs/images/why.svg)
 
-```
- phone / laptop                         your machine or a server
-┌──────────────┐   HTTPS (Cloudflare,  ┌─────────────────────────────────────────────┐
-│ review board │ ◀─ Tailscale, AWS …) ─▶│ tower run                                   │
-│  Hub · Infra │                        │  ├─ board (web, :8787)                      │
-│  Lanes · Log │                        │  ├─ loop: every 4 s                         │
-└──────────────┘                        │  │   hub ◀─ news, decisions, requests       │
-                                        │  │   infra ◀─ one memo per fresh session    │
-                                        │  │   team lanes ◀─ one task per session     │
-                                        │  └─ SQLite: tasks · items · messages · …    │
-                                        │                                             │
-                                        │  opencode serve · claude -p · codex exec    │
-                                        └─────────────────────────────────────────────┘
-```
+## What you get
 
-## Set it up with your agent
+- **Goals, not prompts.** Add as many goals as you like, rank them, pause or drop them. The board shows which goal the team is on now and how far each one is (its achievement rate is the share of its agreed steps that are done).
+- **A hub that runs the team.** It agrees a plan with you, splits it into tasks, starts a fresh agent session per task (up to `max_lanes` at once), nudges stalled lanes, reviews results against the real output, and decides what is inside the approved scope.
+- **Lanes that work on their own.** Each lane is your agent as you configured it, with your instruction files, skills, MCP servers, hooks and subagents. It reports `done`, `blocked` or posts a decision; it never waits in chat.
+- **A board instead of chat.** Decisions with options, reviews of artifacts (images, video, text inline), memos to the hub or to infra, history. Built for a phone; translated into English, 한국어, 日本語, 中文 and Español.
+- **Your setup, your rules.** Lane instructions, runtimes, models, agents, permissions, notifications, auth and hosting are plain files you (or the infra lane) edit. The tower in the middle is a small Python loop with no LLM in it.
 
-The intended setup is agent-driven, because every team keeps its agents, docs and servers somewhere different. Clone this repo, open your coding agent in it, and say:
+![The loop: you set goals, the hub plans them with you, tasks go to lanes, lanes work and report, the hub reviews and asks you only what needs a human.](docs/images/how.svg)
 
-> Set up agent-hub for my workspace. Follow SETUP.md.
+<p align="center">
+  <img src="docs/images/board-goals.png" width="300" alt="The board's Hub tab: ranked goals with progress, the goal in progress marked Now">
+  &nbsp;&nbsp;
+  <img src="docs/images/board-decide.png" width="300" alt="A decision on the board: options, recommendation, Decide button">
+</p>
 
-To start it from your own workspace instead, install the setup entry for your agents once: `bin/tower skill install` shows the global `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) it would add, and `--yes` writes them. Then ask any agent, in any workspace, to set up agent-hub.
+## Install
 
-The agent follows [SETUP.md](SETUP.md): it surveys how you work (`tower discover`: agent CLIs, their configs and MCP servers, where your knowledge lives, which hosting tools you have), asks you a handful of questions, installs the tower into your workspace with lane instructions tailored to it, starts it, puts the board where your phone can reach it, and checks the whole loop end to end.
-
-## Or by hand
+Python 3.10+ and nothing else (standard library only). Pick the tool you already have:
 
 ```sh
-git clone https://github.com/twglhk/agent-hub && export PATH="$PWD/agent-hub/bin:$PATH"
+pipx install git+https://github.com/twglhk/agent-hub      # or
+uv tool install git+https://github.com/twglhk/agent-hub   # or
+npm install -g github:twglhk/agent-hub                     # npm wraps the same Python code
+```
+
+Check with `tower -h`. Or skip installing: `git clone https://github.com/twglhk/agent-hub` and use `agent-hub/bin/tower`.
+
+## Set it up: ask your agent
+
+Setup is agent-driven, because every team keeps its agents, docs and servers somewhere different. Open your coding agent in your workspace and say one of:
+
+> Install agent-hub in this project.
+
+> Install agent-hub globally.
+
+**In this project**: the agent follows the setup playbook (`tower guide`): it surveys how you work (`tower discover`: agent CLIs, their configs, MCP servers, skills, where your knowledge lives, hosting tools), asks you a handful of questions (which agents run the hub and infra, board language, where your team's memory lives, how your phone should reach the board), writes `.tower/` with lane instructions tailored to your workspace, starts the tower, adds your first goals, and checks the whole loop end to end.
+
+**Globally**: the agent installs the `tower` command for your user and runs `tower skill install`, which adds an `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) to your agents after showing you the diff. From then on, "set up agent-hub here" works in any workspace.
+
+If your agent cannot find the playbook, point it at [agent_hub/guide/SETUP.md](agent_hub/guide/SETUP.md).
+
+### By hand
+
+```sh
 cd ~/my-workspace
-tower init --name "My Team" --hub opencode --infra claude   # writes .tower/
-tower start                                                   # tower + board on http://127.0.0.1:8787
+tower init --name "My Team" --lang en --hub claude --infra claude   # writes .tower/, picks free ports
+tower start                                                          # tower + board, URL printed
+tower goal add "Launch the public beta" --detail "sign-up open, onboarding under 2 minutes"
 tower status
 ```
 
-Python 3.10+ and nothing else (standard library only). Add `.tower/state/` to git ignore (`init` does it).
+## One board, every project
+
+Each workspace has its own tower, state and board port. `tower init` registers it on this machine (`tower workspaces` lists them), and every board can switch to the others from its title: other workspaces are served under `/w/<name>/`. Expose one board and you reach all your projects from the phone; a workspace that only trusts local visitors stays hidden behind a board that signs people in.
+
+## Reach the board from your phone
+
+The board listens on `127.0.0.1` by default. `tower guide <name>` prints each path:
+
+| situation | path |
+| --- | --- |
+| phone on the same Wi-Fi, trying it out | `tower guide lan`: listen on the network, token sign-in |
+| Tailscale on the machine and the phone | `tower guide tailscale`: `tailscale serve`, identity from Tailscale |
+| a domain on Cloudflare | `tower guide cloudflare`: Tunnel + Access (email code, Google, GitHub, Okta …) |
+| agents on a server | `tower guide aws`: EC2 with one of the above, or an ALB with OIDC |
+
+Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 
 ## Concepts
 
 | | |
 | --- | --- |
-| **lane** | one agent role with its own session: `hub`, `infra`, and any team lanes you add (`tower lane add docs --runtime codex`). Instructions live in `.tower/lanes/<lane>.md`. |
-| **task** | a brief the hub gives a team lane. Each task runs in a fresh session; the tower closes it when the lane wraps. |
-| **item** | something a human or the hub must decide: a `decision` with options or a `review` of an artifact. Lanes post items; the hub decides what is in scope and escalates the rest to people. |
-| **memo** | what people write on the board: to `infra` (the system) or to `hub` (the work). Each gets a reply on the board. |
-| **follow-up** | a decided item on a lane's task becomes one new task in a fresh session, so decisions never pile into an old context. |
+| **goal** | an outcome you want, ranked against the others. The first active goal is what the team works on now. The hub agrees its steps with you; progress is the share of steps done. Add, rank, pause, finish and drop goals on the board or with `tower goal`. |
+| **hub** | the always-on lane. Turns goals and requests into tasks, reviews results, decides inside approved scope, escalates the rest to people. |
+| **lane** | one agent role with its own session: `hub`, `infra`, and any team lanes you add (`tower lane add docs --runtime codex`). Instructions live in `.tower/lanes/<lane>.md`; edit them freely. |
+| **task** | a brief the hub gives a team lane, usually for one step of a goal. Each task runs in a fresh session; the tower closes it when the lane wraps. |
+| **item** | something a human or the hub must decide: a `decision` with options or a `review` of an artifact. |
+| **memo** | what people write on the board: to the `hub` (the work, priorities) or to `infra` (the system: lanes, models, access). Each gets a reply on the board. |
+| **infra** | the lane that maintains the tower itself: adds lanes, changes models, sets up access, one memo per fresh session. |
 
-The full working rules every lane follows are in [`templates/PROTOCOL.md`](agent_hub/templates/PROTOCOL.md).
+**Memory is yours.** agent-hub keeps the board's history (goals, decisions, reports, memos) and nothing else. Where your team keeps decisions and notes (a memory MCP, a wiki, a docs folder) is your choice: setup writes it into the lane instructions, and lanes record there the way you normally do.
+
+The working rules every lane follows are in [`templates/PROTOCOL.md`](agent_hub/templates/PROTOCOL.md).
 
 ## Runtimes
 
@@ -63,9 +99,11 @@ The full working rules every lane follows are in [`templates/PROTOCOL.md`](agent
 | `claude` | `claude -p --session-id` to start, `claude -p --resume` for each prompt | no (lanes post items instead) |
 | `codex` | `codex exec --json` to start, `codex exec resume` for each prompt | no |
 
-Each lane runs your agent as you configured it: your instruction files, MCP servers, plugins, skills and hooks load as usual. Set `"agent"` on a lane to run one of your own agents (OpenCode agent name, Claude `--agent`); without it the runtime's default agent runs. Every decision is also appended to `.tower/decisions.md`.
+Each lane runs your agent as you configured it. Set `"agent"` on a lane to run one of your own agents (OpenCode agent name, Claude `--agent`), `"model"` to pick a model, `"args"` for anything else. Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox; `tower init --safe` writes sandboxed arguments instead.
 
-Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox. `tower init --safe` writes sandboxed arguments instead; per-lane `args` in `tower.json` override either.
+## Language
+
+`--lang` takes any language code: agents write everything people read on the board in that language. The board's buttons and labels come in English, Korean, Japanese, Chinese and Spanish; each viewer can switch them from the board's header.
 
 ## Teams
 
@@ -77,17 +115,13 @@ Lanes run unattended, so by default Claude runs with `bypassPermissions` and Cod
 
 Every decision records who made it, and the hub can route an item to one person (`tower escalate ID --to ana`).
 
-## Hosting
-
-The tower runs wherever your agents run: your laptop, a dev box, an EC2 instance. To reach the board from a phone, see [deploy/](deploy): Cloudflare Tunnel + Access, Tailscale, or AWS.
-
 ## Development
 
 ```sh
 python3 -m unittest discover -s tests -t .
 ```
 
-Tests drive the adapters against stand-in CLIs and a stand-in OpenCode server; no model is called.
+Tests drive the adapters against stand-in CLIs and a stand-in OpenCode server; no model is called. See [AGENTS.md](AGENTS.md) for the layout and rules.
 
 ## License
 

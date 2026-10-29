@@ -12,14 +12,15 @@
   human items      push notification once.
   stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
                    session working, a turn that never ends), humans get one board item about it.
-  decision log     every human or hub decision is appended to `.tower/decisions.md`, a plain file the workspace's
-                   own memory tools and agents can read and keep in git.
+  goals            when the hub is idle, nothing is queued or running and the goals changed since it was last told,
+                   the hub gets the ranked goals and moves the first one forward. Unchanged goals never re-prompt it,
+                   so a hub that is waiting on humans is left alone.
 """
 
 from __future__ import annotations
 
+import json
 import time
-from datetime import datetime
 from typing import Any, Callable
 
 from .config import HUB, INFRA, Config
@@ -32,8 +33,9 @@ NUDGE_LIMIT = 2
 RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
 HUB_STUCK_SECONDS = 900
-DECISIONS_FILE = "decisions.md"
-STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음"}
+GOAL_IDLE_SECONDS = 60
+STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음",
+               "ja": "ハブがアイドルに戻らない", "zh": "中枢一直没有回到空闲", "es": "El hub no vuelve a quedar libre"}
 STUCK_BODY = {
     "en": ("## What happened\n{n} piece(s) of news for the hub have waited {m} min: the tower only writes into the hub "
            "while it is idle, and it has stayed busy.\n\n## Likely causes\n- A hook or plugin in the hub's agent keeps "
@@ -45,6 +47,20 @@ STUCK_BODY = {
            "- 아주 긴 한 턴.\n\n## 할 일\n- `tower last hub`와 `.tower/state/logs/hub.err`로 무엇을 하는지 확인.\n"
            "- 허브 레인에 더 가벼운 에이전트(`.tower/tower.json`의 `\"agent\"`)나 다른 런타임 지정: infra에 메모하면 됩니다.\n"
            "- 확인했으면 이 항목을 승인하세요."),
+    "ja": ("## 何が起きたか\nハブ宛ての知らせ {n} 件が {m} 分待っています。tower はハブがアイドルのときだけ知らせを書き込みますが、"
+           "ハブがずっと作業中のままです。\n\n## よくある原因\n- ハブのエージェントの hook やプラグインがセッションを動かし続けている"
+           "(自動継続、todo ループ)。\n- とても長い 1 ターン。\n\n## すること\n- `tower last hub` と `.tower/state/logs/hub.err` "
+           "で何をしているか確認。\n- ハブのレーンに軽いエージェント(`.tower/tower.json` の `\"agent\"`)か別のランタイムを指定: "
+           "infra へのメモで頼めます。\n- 確認したらこの項目を承認してください。"),
+    "zh": ("## 发生了什么\n发给中枢的 {n} 条消息已等待 {m} 分钟。tower 只在中枢空闲时写入消息，而中枢一直在忙。\n\n"
+           "## 常见原因\n- 中枢代理的 hook 或插件让会话一直运行(自动继续、todo 循环)。\n- 一个非常长的回合。\n\n## 怎么办\n"
+           "- 用 `tower last hub` 和 `.tower/state/logs/hub.err` 查看它在做什么。\n- 给中枢通道换一个更轻的代理"
+           "(`.tower/tower.json` 里的 `\"agent\"`)或别的运行时：给 infra 写备忘即可。\n- 看过后请批准此项。"),
+    "es": ("## Qué pasó\n{n} aviso(s) para el hub llevan {m} min esperando: la torre solo escribe al hub cuando está libre, "
+           "y sigue ocupado.\n\n## Causas probables\n- Un hook o plugin del agente del hub mantiene la sesión trabajando "
+           "(auto-continuar, bucles de tareas).\n- Un turno muy largo.\n\n## Qué hacer\n- `tower last hub` y "
+           "`.tower/state/logs/hub.err` muestran qué hace.\n- Asigna al hub un agente más ligero (`\"agent\"` en "
+           "`.tower/tower.json`) u otro runtime: basta una nota a infra.\n- Aprueba este elemento cuando lo hayas visto."),
 }
 FOLLOW_VERDICTS = ("ok", "no", "answer")
 VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
@@ -98,6 +114,7 @@ class Engine:
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
         self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
+        self.goals_told = ""  # the goals as the hub last heard them; unchanged goals never re-prompt it
 
     # ---------- prompts ----------
 
@@ -142,7 +159,21 @@ class Engine:
         m = len(self.store.items(state="open", audience=HUMAN))
         run = len(self.store.tasks(("running", "wrapping")))
         q = len(self.store.tasks(("queued",)))
-        return f"(now: {h} items for the hub · {m} for humans · {run} tasks running · {q} queued)"
+        g = len(self.store.goals(("active",)))
+        return f"(now: {g} active goals · {h} items for the hub · {m} for humans · {run} tasks running · {q} queued)"
+
+    def goals_prompt(self, goals: list[dict[str, Any]]) -> str:
+        lines = []
+        for g in goals:
+            plan = f"{g['steps_done']}/{len(g['steps'])} steps" if g["steps"] else "no plan yet"
+            nxt = next((f" · next: {s['text']}" for s in g["steps"] if not s.get("done")), "")
+            lines.append(f"{g['priority']}. goal #{g['id']} \"{g['title']}\" ({plan}{nxt})")
+        return ("[tower] Nothing is queued or running. Active goals, first priority first:\n" + "\n".join(lines)
+                + "\n\nMove the first goal you can forward. No plan yet: propose one to the humans (a board item, or "
+                  "`tower goal plan ID --step ...` when the request already says what to do). Otherwise queue the next "
+                  "step as a task (`tower task LANE --goal ID ...`) or do it yourself, and tick finished steps "
+                  "(`tower goal check ID N`). A goal is met: `tower goal done ID \"what was delivered\"`. If every goal "
+                  "waits on humans, end your turn.")
 
     # ---------- tick ----------
 
@@ -210,7 +241,6 @@ class Engine:
             self.rt.reply_question(lane, q["id"], [ask_answer(have[k]) for k in keys])
             for k in keys:
                 self.store.update_item(have[k]["id"], delivered=self.clock())
-                self._record(have[k])
             self.log(f"{lane}: board answer → ask")
 
     def _ask_item(self, lane: str, key: str, sub: dict[str, Any], i: int, n: int) -> int:
@@ -244,23 +274,6 @@ class Engine:
                 raise
             finally:
                 con.close()
-            self._record(it)
-
-    def _record(self, it: dict[str, Any]) -> None:
-        """Append one decision to `.tower/decisions.md` (tower housekeeping such as vanished asks is skipped)."""
-        if it.get("decided_by") == TOWER:
-            return
-        path = self.cfg.home / ".tower" / DECISIONS_FILE
-        when = datetime.fromtimestamp(it.get("decided") or self.clock()).strftime("%Y-%m-%d %H:%M")
-        try:
-            new = not path.exists()
-            with path.open("a", encoding="utf-8") as f:
-                if new:
-                    f.write("# Decisions\n\nAppended by the tower for every decision made on the board or by the hub. "
-                            "`tower show ID` has the full item.\n\n")
-                f.write(f"- {when} · {it['lane']} · {' '.join(decision_line(it).split())}\n")
-        except OSError as e:
-            self.log(f"decision log not written: {e}")
 
     def _route(self, con: Any, it: dict[str, Any]) -> None:
         line = decision_line(it)
@@ -277,8 +290,9 @@ class Engine:
                      f"`tower log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
                      f"allows and nothing beyond it. If it is unclear, `tower item add` or `tower report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
-            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created) VALUES(?,?,?,?,?)",
-                              (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock()))
+            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
+                              (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
+                               src["goal_id"]))
             self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
                             it["task_id"], it["id"], con=con)
             return
@@ -411,12 +425,28 @@ class Engine:
             self._send(HUB, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")
             self.store.mark_delivered(m["id"] for m in msgs)
             return
+        if not msgs and sid and idle_for >= GOAL_IDLE_SECONDS and self._drive_goals(sid):
+            return
         if (not msgs and sid and idle_for >= 30 and self.rt.owned(HUB)
                 and self.rt.context_k(HUB, sid) >= HUB_ROTATE_K):
             self.rt.close(HUB)
             self.rt.open(HUB, self.hub_prompt())
             self.idle_since.pop(HUB, None)
             self.log("hub: context grew large, fresh session")
+
+    def _drive_goals(self, sid: str) -> bool:
+        goals = self.store.goals(("active",))
+        if not goals or self.store.tasks(("queued", "running", "wrapping"), limit=1):
+            return False
+        closed = self.store.goal_tasks()
+        mark = json.dumps([(g["id"], g["priority"], g["steps"], g["updated"], closed.get(g["id"], {}).get("closed", 0))
+                           for g in goals])
+        if mark == self.goals_told:
+            return False
+        self.goals_told = mark
+        self._send(HUB, sid, self.goals_prompt(goals))
+        self.log(f"hub: told about {len(goals)} active goal(s)")
+        return True
 
     def _watch_stuck(self) -> None:
         msgs = self.store.pending(HUB)
@@ -427,7 +457,8 @@ class Engine:
         if waited < HUB_STUCK_SECONDS or self.stuck_for == oldest["id"]:
             return
         self.stuck_for = oldest["id"]
-        lang = self.cfg.lang if self.cfg.lang in STUCK_TITLE else "en"
+        lang = self.cfg.lang.split("-")[0].lower()
+        lang = lang if lang in STUCK_TITLE else "en"
         title = STUCK_TITLE[lang]
         if any(it["title"] == title for it in self.store.items(state="open", lane=HUB)):
             return  # already on the board (e.g. raised before a config reload)

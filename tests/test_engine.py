@@ -1,6 +1,7 @@
 import unittest
 
-from agent_hub.engine import BATCH_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT, RESPAWN_LIMIT, Engine
+from agent_hub.engine import (BATCH_SECONDS, GOAL_IDLE_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
+                              RESPAWN_LIMIT, Engine)
 from agent_hub.store import HUB, HUMAN, INFRA, Store
 from tests.helpers import Clock, FakeRuntime, make_home
 
@@ -74,22 +75,42 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.s.items(state="open", audience=HUMAN), [])
         self.assertEqual(self.rt.sent, [])  # nothing was forced into the busy session
 
-    def test_decisions_are_appended_to_the_decision_log(self) -> None:
-        t = self.s.add_task("docs", "A", "b")
+    def test_idle_hub_is_told_goals_once_per_change(self) -> None:
+        self.s.set_lane(HUB, enabled=1)
         self.e.tick()
-        first = self.item("docs", t)
-        self.s.decide(first, "hold", HUB, basis="later")
-        second = self.item(INFRA, None, HUMAN)
-        self.s.decide(second, "ok", "ana", note="go\nnow")
+        self.rt.st[HUB] = "idle"
+        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
+        self.assertEqual(self.rt.sent, [])  # no goals, nothing to say
+        g1 = self.s.add_goal("Ship v2", "", "ana")
+        g2 = self.s.add_goal("Fix login", "", "ana")
+        self.s.move_goal(g2, 1)
+        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
+        self.assertEqual(len(self.rt.sent), 1)
+        text = self.rt.sent[0][2]
+        self.assertLess(text.index(f"goal #{g2}"), text.index(f"goal #{g1}"))
+        self.assertIn("no plan yet", text)
+        self.rt.st[HUB] = "idle"
+        self.run_ticks(5, step=GOAL_IDLE_SECONDS)
+        self.assertEqual(len(self.rt.sent), 1)  # unchanged goals: left alone
+        self.s.plan_goal(g2, ["repro", "fix"])
+        self.s.check_steps(g2, [1])
+        t = self.s.add_task("docs", "fix", "b", goal_id=g2)
+        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
+        self.assertEqual(len(self.rt.sent), 1)  # a task is in flight
+        self.s.update_task(t, state="closed")
+        self.rt.st[HUB] = "idle"
+        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
+        self.assertEqual(len(self.rt.sent), 2)
+        self.assertIn("1/2 steps · next: fix", self.rt.sent[1][2])
+
+    def test_follow_up_task_keeps_its_goal(self) -> None:
+        g = self.s.add_goal("Docs site", "", "ana")
+        t = self.s.add_task("docs", "A", "b", goal_id=g)
         self.e.tick()
+        self.s.decide(self.item("docs", t), "ok", HUB, basis="in scope")
         self.e.tick()
-        log = (self.cfg.home / ".tower" / "decisions.md").read_text()
-        lines = [x for x in log.splitlines() if x.startswith("- ")]
-        self.assertEqual(len(lines), 2)
-        self.assertIn(f"Decision #{first}", lines[0])
-        self.assertIn("by hub, basis: later", lines[0])
-        self.assertIn(f"Decision #{second}", lines[1])
-        self.assertIn("note: go now", lines[1])
+        follow = [x for x in self.s.tasks() if x["id"] != t][0]
+        self.assertEqual(follow["goal_id"], g)
 
     # ----- team lanes -----
 

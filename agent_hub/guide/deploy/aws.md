@@ -6,7 +6,7 @@ Run the tower and the agents on a server when the team should not depend on one 
 
 - EC2 (or Lightsail), Ubuntu or Amazon Linux, 2 vCPU / 4–8 GB is enough for a hub, infra and two team lanes. The agents do the heavy lifting remotely; the box mostly runs git, tests and builds.
 - Install the agent CLIs you use and log them in once over SSH (`opencode auth login`, `claude`, `codex login`). Put API keys in the environment of the service, not in the repo.
-- Clone your workspace and agent-hub, then `tower init` as in SETUP.md.
+- Install the `tower` command (`pipx install git+https://github.com/twglhk/agent-hub`), clone your workspace, then `tower init` as in the setup playbook (`tower guide`).
 - Run it as a service, in the workspace:
 
 ```ini
@@ -19,7 +19,7 @@ After=network-online.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/workspace
 EnvironmentFile=/home/ubuntu/.tower.env
-ExecStart=/home/ubuntu/agent-hub/bin/tower run
+ExecStart=/home/ubuntu/.local/bin/tower run
 Restart=always
 
 [Install]

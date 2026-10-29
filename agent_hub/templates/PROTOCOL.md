@@ -1,6 +1,6 @@
 # Tower protocol
 
-You are one lane in a team of AI agent sessions run by **the tower**. Humans steer the team from two places only: the **hub** lane and the **review board** (a web page they open on their phones). Everything a human must choose, approve or know goes through the board; status goes to the hub through the tower. Nothing waits in chat.
+You are one lane in a team of AI agent sessions run by **the tower**. Humans steer the team from two places only: the **hub** lane and the **review board** (a web page they open on their phones). They set **goals** there and rank them; the hub turns the first goal into a plan and tasks, and the board shows each goal's progress. Everything a human must choose, approve or know goes through the board; status goes to the hub through the tower. Nothing waits in chat.
 
 `tower` is the CLI. The tower sets `TOWER_LANE` in sessions it opens, so it knows who you are (`--as LANE` when you run it by hand).
 
@@ -21,12 +21,14 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 | any lane | `tower item update ID [--title] [--body-file] [--option ...] [--attach ...]` | fix an open item in place; never re-post it under a new number |
 | team lane | `tower report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
 | hub | `tower status` · `tower doing "one line"` | see everything · show what you are doing on the board |
-| hub | `tower task LANE --title T "brief"` · `tower tell LANE "text"` · `tower wrap LANE` · `tower cancel TASK` | run the team |
+| hub | `tower goal plan ID --step "..."...` · `tower goal check ID N...` · `tower goal done ID "what was delivered"` | set a goal's steps (its progress is the share of ticked steps) · tick them · finish it |
+| hub | `tower goal add "title" [--detail]` · `tower goal priority ID N` · `tower goal pause\|resume\|drop ID` | when a human asks for it in a request |
+| hub | `tower task LANE --title T [--goal ID] "brief"` · `tower tell LANE "text"` · `tower wrap LANE` · `tower cancel TASK` | run the team |
 | hub | `tower decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
 | hub | `tower escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
 | hub | `tower memo reply ID "text"` · `tower memo send infra "text"` | answer a human request · hand tower work to infra |
 | infra | `tower memo reply ID "text"` · `tower memo forward ID` · `tower report wrapped "text"` | answer a memo · pass it to the hub · finish |
-| anyone | `tower show ID` · `tower items [--open]` · `tower tasks` · `tower log TASK` · `tower last LANE` | read |
+| anyone | `tower show ID` · `tower items [--open]` · `tower tasks` · `tower log TASK` · `tower last LANE` · `tower goal list\|show ID` | read |
 
 Attachments are paths inside the project. The board shows images and video inline and opens text files.
 
@@ -42,10 +44,16 @@ A human reads it on a phone with none of your context. Write in the board langua
 
 One image shows one thing. Keep sizes and framing equal when images are compared. Numbers say what was measured.
 
+## Goals
+
+- Goals are ranked: the first active goal is what the team works on now. Humans rank them on the board or ask the hub to.
+- A task that serves a goal says so (`tower mine` shows the goal). Stay inside the goal and the task; report what moved it.
+- Only the hub (and humans) change goals. A lane that thinks a goal is wrong, done or blocked says it in its report.
+
 ## Keeping the record
 
-- The tower appends every decision to `.tower/decisions.md`. Read it before asking for a decision that may already exist.
-- If this workspace keeps decisions, notes or memory somewhere of its own (your lane file's `## This workspace` says where: a memory MCP, a wiki, a docs folder), also record there what was decided and what you shipped, the way that place is normally used.
+- agent-hub keeps no memory of its own beyond the board's history. Memory is the workspace's: your lane file's `## This workspace` says where it lives (a memory MCP, a wiki, a docs folder, notes the person keeps).
+- Record there what was decided and what you shipped, the way that place is normally used. If the workspace has none, keep nothing extra.
 
 ## Answers
 

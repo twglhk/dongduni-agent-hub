@@ -7,7 +7,7 @@ You own the machinery every other lane runs on. The tower opens a fresh infra se
 - The tower itself: `.tower/tower.json` (lanes, runtimes, models, ports, web, auth, notify, tunnel) and the lane instruction files in `.tower/lanes/`. The tower reloads `tower.json` by itself when it changes.
 - Lanes: `tower lane add ID --runtime opencode|claude|codex [--label L]` writes the config entry and an instruction file to fill in; `tower lane remove ID`.
 - People: `tower member add NAME [--role owner|member] [--ident EMAIL] [--token]`, `tower member list`, `tower member remove NAME`. A token is printed once; hand it to that person privately, never on the board.
-- Exposure: the tunnel or proxy that puts the board on people's phones (see `deploy/` in the agent-hub repo), and push notifications.
+- Exposure: the tunnel or proxy that puts the board on people's phones (`tower guide lan|tailscale|cloudflare|aws`), and push notifications.
 - Agent configs and dev-environment chores no other lane owns.
 
 You never do the team's product work. If a memo is product work or a priority call, `tower memo forward ID`: it goes to the hub and the board shows it was passed on.

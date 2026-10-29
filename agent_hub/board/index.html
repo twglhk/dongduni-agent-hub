@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233182f6'/%3E%3Cpath d='M9 16.5l5 5 9-10' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>Board</title>
 <style>
@@ -314,6 +314,74 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 body.sheet-open #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 
+/* ---- header extras ---- */
+#brand-btn{display:inline-flex;align-items:center;gap:2px;max-width:100%;min-width:0;font:inherit;border-radius:var(--r-xs);padding:0 2px 0 0}
+#brand-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#brand-btn svg{width:18px;height:18px;stroke:var(--text-3);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#langbtn{padding:0 var(--s2);color:var(--text-3);font-size:var(--t6);font-weight:700;letter-spacing:.04em;border-radius:var(--r-xs);white-space:nowrap}
+#stopped{flex:none}
+
+/* ---- goals ---- */
+.goals{display:grid;gap:var(--s2)}
+.pbar{flex:1;min-width:48px;height:8px;border-radius:4px;background:var(--surface-3);overflow:hidden}
+.pbar>i{display:block;height:100%;border-radius:4px;background:var(--green);transition:width .4s var(--ease)}
+.pbar.big{height:12px;border-radius:6px;margin-bottom:var(--s5)}
+.pct{font-size:var(--t6);font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
+.g-now{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);box-shadow:inset 0 0 0 1.5px var(--blue)}
+.g-now .title{font-size:var(--t4);font-weight:700;line-height:1.4;margin:var(--s2) 0 var(--s3);letter-spacing:-.01em}
+.g-now .prog,.g-row .prog{display:flex;align-items:center;gap:var(--s3)}
+.g-sub{display:flex;flex-wrap:wrap;gap:4px var(--s3);margin-top:var(--s2);font-size:var(--t6);color:var(--text-3)}
+.g-sub .live{color:var(--blue-ink);font-weight:600}
+.g-row{display:flex;align-items:center;gap:var(--s3);background:var(--surface);border-radius:var(--r-l);padding:var(--s3) var(--s4) var(--s3) var(--s5);min-height:64px}
+.g-row .rk{width:26px;height:26px;border-radius:50%;background:var(--grey-weak);color:var(--text-2);font-size:var(--t6);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-variant-numeric:tabular-nums}
+.g-row .body{flex:1;min-width:0}
+.g-row .title{font-weight:600;font-size:var(--t5);line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
+.g-row .none{font-size:var(--t6);color:var(--text-3)}
+.g-row.muted .title,.g-row.muted .rk{color:var(--text-3)}
+.g-row.muted .pbar>i{background:var(--text-4)}
+.chip.now{background:var(--blue);color:#fff}
+.chip.g-active{background:var(--blue-weak);color:var(--blue-ink)}
+.chip.g-paused{background:var(--orange-weak);color:var(--orange-ink)}
+.chip.g-done{background:var(--green-weak);color:var(--green-ink)}
+.chip.g-dropped{color:var(--text-3)}
+.g-fold{margin-top:var(--s2)}
+.g-add{background:var(--surface);border-radius:var(--r-l);padding:var(--s2);margin-top:var(--s3)}
+.g-add:focus-within{box-shadow:inset 0 0 0 1.5px var(--blue)}
+.g-add .r{display:flex;gap:var(--s2);align-items:center}
+.g-add input{flex:1;min-width:0;height:var(--tap);border:0;outline:none;background:transparent;padding:0 var(--s3);font-size:var(--fs)}
+.g-add textarea{display:block;width:100%;min-height:64px;border:0;border-top:1px solid var(--line);outline:none;resize:vertical;background:transparent;margin-top:var(--s2);padding:var(--s3) var(--s3) var(--s2);font-size:var(--t5);line-height:1.5}
+.g-add input::placeholder,.g-add textarea::placeholder{color:var(--text-4)}
+.hint{font-size:var(--t6);color:var(--text-3);padding:var(--s2) var(--s1) 0;line-height:1.5}
+.big-pct{display:flex;align-items:baseline;gap:var(--s3);margin:0 0 var(--s2)}
+.big-pct b{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--green-ink)}
+.big-pct span{color:var(--text-3);font-size:var(--t5);font-weight:600}
+.steps{list-style:none;margin:0;padding:0;background:var(--surface-3);border-radius:var(--r);overflow:hidden}
+.steps li{display:flex;gap:var(--s3);align-items:flex-start;padding:var(--s3) var(--s4);font-size:var(--t5);line-height:1.5}
+.steps li+li{border-top:1px solid var(--line)}
+.steps .mk{width:20px;height:20px;border-radius:6px;border:2px solid var(--line-2);flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center}
+.steps li.on .mk{background:var(--green);border-color:var(--green)}
+.steps .mk svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}
+.steps li.on .tx{color:var(--text-3);text-decoration:line-through}
+.list.in-sheet{background:var(--surface-3)}
+.gtag{font-size:var(--t6);color:var(--blue-ink);margin-top:2px;line-height:1.45}
+.moves{display:flex;gap:var(--s2);margin-bottom:var(--s2)}
+.moves .btn{flex:1;height:44px;font-size:var(--t6)}
+.btn-text.warn{color:var(--red-ink)}
+
+/* ---- menus (language, workspaces) ---- */
+.sh .ttl{flex:1;font-size:var(--t4);font-weight:700}
+.menu{display:grid;gap:var(--s2)}
+.mrow{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;background:var(--surface-3);border-radius:var(--r);padding:var(--s3) var(--s4);min-height:60px}
+.mrow .body{flex:1;min-width:0}
+.mrow .nm{font-weight:600;font-size:var(--t5);line-height:1.4}
+.mrow .sub{font-size:var(--t6);color:var(--text-3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mrow.on{background:var(--blue-weak)}
+.mrow.on .nm{color:var(--blue-ink)}
+.mrow:disabled{opacity:.5;cursor:default}
+.mrow .ck{width:20px;height:20px;stroke:var(--blue);fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mrow .badge{position:static;flex:none}
+.dot.on{background:var(--green)}
+
 @media (min-width:760px){
   #sheet{bottom:24px;border-radius:var(--r-l);max-height:calc(100vh - 48px);transform:translateY(calc(100% + 32px))}
   .cta{border-radius:0 0 var(--r-l) var(--r-l);padding-bottom:var(--s4)}
@@ -323,7 +391,7 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 </head>
 <body>
 <header id="top"><div class="in">
-  <div class="r1"><h1 id="brand"></h1><span id="off" class="chip st-unknown hidden"></span><span class="sp"></span><span id="me"></span><button id="signout" type="button" class="hidden"></button></div>
+  <div class="r1"><h1 id="brand"></h1><span id="off" class="chip st-unknown hidden"></span><span id="stopped" class="chip paused hidden"></span><span class="sp"></span><span id="me"></span><button id="langbtn" type="button" aria-haspopup="dialog"></button><button id="signout" type="button" class="hidden"></button></div>
   <div id="strip"></div>
 </div></header>
 <main>
@@ -340,20 +408,24 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
+// The same file serves this workspace at / and other workspaces at /w/<name>/: every URL is relative to BASE.
+const BASE = location.pathname.replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
     tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Lanes', history: 'History' },
     sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', hubReq: 'Ask hub', sentReq: 'Recent requests',
-      infraItems: 'Open items', infraMemo: 'Memo to infra', sentMemo: 'Recent memos', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports' },
+      infraItems: 'Open items', infraMemo: 'Memo to infra', sentMemo: 'Recent memos', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
+      goals: 'Goals', finished: 'Finished {n}' },
     empty: { yours: 'Nothing to decide', infra: 'No open items', reqs: 'No requests yet', memos: 'No memos yet', tasks: 'No live tasks',
-      reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all' },
+      reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all',
+      goals: 'No goals yet. Add the first one below.' },
     status: { busy: 'Working', asking: 'Asking', idle: 'Idle', closed: 'Closed', unknown: 'No response' },
     task: { queued: 'Queued', running: 'Running', wrapping: 'Wrapping up', closed: 'Closed', cancelled: 'Cancelled' },
     report: { done: 'Done', blocked: 'Blocked', note: 'Note', handoff: 'Handoff', wrapped: 'Wrapped' },
     kind: { decision: 'Decision', review: 'Review', ask: 'Question' },
     verdict: { ok: 'Decided', okReview: 'Approved', no: 'Rejected', hold: 'On hold', answer: 'Answered', merged: 'Merged' },
-    hist: { decided: 'Decided', reports: 'Reports', closed: 'Closed', memos: 'Memos', requests: 'Requests' },
+    hist: { decided: 'Decided', goals: 'Goals', reports: 'Reports', closed: 'Closed', memos: 'Memos', requests: 'Requests' },
     memo: { wait: 'Waiting', delivered: 'Delivered', replied: 'Replied' },
     label: { why: 'Why it came to you', question: 'Question', options: 'Options', pickMany: 'Pick any', note: 'Note', answer: 'Answer',
       attachments: 'Attachments', noTask: 'No task', cap: '{u}/{c} busy', paused: 'Paused', reply: 'Reply', hubSide: 'Hub', ctx: 'ctx' },
@@ -361,22 +433,32 @@ const UI = {
     btn: { decide: 'Decide', answer: 'Answer myself', hold: 'Hold', done: 'Done reviewing', send: 'Send', more: 'More', less: 'Less',
       close: 'Close', prev: 'Previous', next: 'Next', login: 'Sign in', logout: 'Sign out', open: 'Open' },
     msg: { decided: 'Decided', held: 'Put on hold', answered: 'Answer sent', reviewed: 'Review done', sent: 'Sent', fail: 'Couldn’t send',
-      net: 'Offline', badToken: 'Wrong token', notFound: 'Item not found' },
+      net: 'Offline', badToken: 'Wrong token', notFound: 'Not found', stopped: 'Tower stopped' },
     time: { now: 'now', m: '{n}m', h: '{n}h' },
     login: { title: 'Sign in' },
+    goal: { now: 'Now', rank: 'Priority {n}', steps: '{d}/{n} steps', noPlan: 'No plan yet', live: '{n} tasks running', add: 'New goal',
+      addBtn: 'Add', ph: 'What should the team achieve?', phDetail: 'What does done look like? (optional)',
+      hint: 'The hub plans it with you and reports progress here.', summary: '{n} active · {p}%', stepsH: 'Steps', tasksH: 'Tasks',
+      by: 'Added by {who}', again: 'Tap again to confirm', top: 'Move to top', up: 'Up', down: 'Down', pause: 'Pause', resume: 'Resume',
+      done: 'Mark done', drop: 'Drop', reopen: 'Reopen', added: 'Goal added', saved: 'Saved', tag: 'Goal' },
+    gstate: { active: 'Active', paused: 'Paused', done: 'Done', dropped: 'Dropped' },
+    ws: { title: 'Workspaces', local: 'Local only', running: 'Running', stopped: 'Stopped' },
+    lang: { title: 'Language', note: 'Changes the board’s buttons on this device. Agents keep writing in the workspace language.' },
   },
   ko: {
     tabs: { hub: '허브', infra: '인프라', lanes: '레인', history: '기록' },
     sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', hubReq: '허브에 요청', sentReq: '최근 요청',
-      infraItems: '열린 항목', infraMemo: '인프라에 메모', sentMemo: '최근 메모', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고' },
+      infraItems: '열린 항목', infraMemo: '인프라에 메모', sentMemo: '최근 메모', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
+      goals: '목표', finished: '끝난 목표 {n}' },
     empty: { yours: '정할 게 없어요', infra: '열린 항목이 없어요', reqs: '보낸 요청이 없어요', memos: '보낸 메모가 없어요', tasks: '진행 중인 작업이 없어요',
-      reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요' },
+      reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요',
+      goals: '아직 목표가 없어요. 아래에서 첫 목표를 추가해 보세요.' },
     status: { busy: '작업 중', asking: '질문 중', idle: '쉬는 중', closed: '닫힘', unknown: '응답 없음' },
     task: { queued: '대기', running: '진행 중', wrapping: '정리 중', closed: '끝남', cancelled: '취소됨' },
     report: { done: '완료', blocked: '막힘', note: '알림', handoff: '인계', wrapped: '정리 완료' },
     kind: { decision: '결정', review: '검수', ask: '질문' },
     verdict: { ok: '결정함', okReview: '승인', no: '반려', hold: '보류', answer: '직접 답', merged: '합침' },
-    hist: { decided: '결정', reports: '보고', closed: '작업', memos: '메모', requests: '요청' },
+    hist: { decided: '결정', goals: '목표', reports: '보고', closed: '작업', memos: '메모', requests: '요청' },
     memo: { wait: '대기', delivered: '전달됨', replied: '답 옴' },
     label: { why: '나에게 온 이유', question: '질문', options: '선택지', pickMany: '여러 개 선택', note: '메모', answer: '내 답',
       attachments: '첨부', noTask: '맡은 작업 없음', cap: '{u}/{c} 사용 중', paused: '일시 정지', reply: '답', hubSide: '허브', ctx: '컨텍스트' },
@@ -384,13 +466,123 @@ const UI = {
     btn: { decide: '결정', answer: '직접 답', hold: '보류', done: '검수 완료', send: '보내기', more: '더 보기', less: '접기',
       close: '닫기', prev: '이전', next: '다음', login: '로그인', logout: '로그아웃', open: '열기' },
     msg: { decided: '결정했어요', held: '보류했어요', answered: '답을 보냈어요', reviewed: '검수를 마쳤어요', sent: '보냈어요', fail: '보내지 못했어요',
-      net: '연결 끊김', badToken: '토큰이 맞지 않아요', notFound: '항목을 찾을 수 없어요' },
+      net: '연결 끊김', badToken: '토큰이 맞지 않아요', notFound: '찾을 수 없어요', stopped: 'tower 멈춤' },
     time: { now: '방금', m: '{n}분 전', h: '{n}시간 전' },
     login: { title: '로그인' },
+    goal: { now: '지금', rank: '우선순위 {n}', steps: '{d}/{n} 단계', noPlan: '계획 전', live: '작업 {n}개 진행 중', add: '새 목표',
+      addBtn: '추가', ph: '팀이 이룰 목표를 적어 주세요', phDetail: '어떻게 되면 완료인가요? (선택)',
+      hint: '허브가 함께 계획을 세우고 진행 상황을 여기에 보고해요.', summary: '진행 중 {n}개 · {p}%', stepsH: '단계', tasksH: '작업',
+      by: '{who} 님이 추가', again: '한 번 더 누르면 확정돼요', top: '맨 위로', up: '위로', down: '아래로', pause: '일시정지', resume: '다시 시작',
+      done: '완료 처리', drop: '중단', reopen: '다시 열기', added: '목표를 추가했어요', saved: '반영했어요', tag: '목표' },
+    gstate: { active: '진행 중', paused: '일시정지', done: '완료', dropped: '중단' },
+    ws: { title: '워크스페이스', local: '로컬 전용', running: '실행 중', stopped: '멈춤' },
+    lang: { title: '언어', note: '이 기기에서 보드 버튼 언어만 바뀌어요. 에이전트는 워크스페이스 언어로 계속 써요.' },
+  },
+  ja: {
+    tabs: { hub: 'ハブ', infra: 'インフラ', lanes: 'レーン', history: '履歴' },
+    sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', hubReq: 'ハブに依頼', sentReq: '最近の依頼',
+      infraItems: '未対応の項目', infraMemo: 'インフラにメモ', sentMemo: '最近のメモ', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
+      goals: '目標', finished: '終わった目標 {n}' },
+    empty: { yours: '決めることはありません', infra: '未対応の項目はありません', reqs: 'まだ依頼はありません', memos: 'まだメモはありません',
+      tasks: '進行中の作業はありません', reports: 'まだ報告はありません', lanes: 'レーンがありません', hist: 'まだありません', loading: '読み込み中',
+      end: 'ここまでです', goals: 'まだ目標がありません。下から最初の目標を追加してください。' },
+    status: { busy: '作業中', asking: '質問中', idle: '待機中', closed: '停止', unknown: '応答なし' },
+    task: { queued: '待ち', running: '進行中', wrapping: '片付け中', closed: '完了', cancelled: '取り消し' },
+    report: { done: '完了', blocked: '停滞', note: 'お知らせ', handoff: '引き継ぎ', wrapped: '片付け完了' },
+    kind: { decision: '決定', review: '確認', ask: '質問' },
+    verdict: { ok: '決定済み', okReview: '承認', no: '差し戻し', hold: '保留', answer: '自分で回答', merged: '統合' },
+    hist: { decided: '決定', goals: '目標', reports: '報告', closed: '作業', memos: 'メモ', requests: '依頼' },
+    memo: { wait: '待ち', delivered: '届いた', replied: '返信あり' },
+    label: { why: 'あなたに来た理由', question: '質問', options: '選択肢', pickMany: '複数選択可', note: 'メモ', answer: '回答',
+      attachments: '添付', noTask: '担当作業なし', cap: '{u}/{c} 使用中', paused: '一時停止', reply: '返信', hubSide: 'ハブ', ctx: 'コンテキスト' },
+    ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', hub: 'ハブに任せたいことを書いてください',
+      infra: '変えたい点を書いてください', token: 'トークン' },
+    btn: { decide: '決定', answer: '自分で回答', hold: '保留', done: '確認完了', send: '送信', more: 'もっと見る', less: '閉じる',
+      close: '閉じる', prev: '前へ', next: '次へ', login: 'ログイン', logout: 'ログアウト', open: '開く' },
+    msg: { decided: '決定しました', held: '保留しました', answered: '回答を送りました', reviewed: '確認しました', sent: '送信しました',
+      fail: '送信できませんでした', net: 'オフライン', badToken: 'トークンが違います', notFound: '見つかりません', stopped: 'tower 停止中' },
+    time: { now: 'たった今', m: '{n}分前', h: '{n}時間前' },
+    login: { title: 'ログイン' },
+    goal: { now: '今', rank: '優先度 {n}', steps: '{d}/{n} ステップ', noPlan: '計画はまだ', live: '作業 {n}件 進行中', add: '新しい目標',
+      addBtn: '追加', ph: 'チームが達成したいことは?', phDetail: '完了の条件(任意)',
+      hint: 'ハブが一緒に計画を立て、進み具合をここに報告します。', summary: '進行中 {n}件 · {p}%', stepsH: 'ステップ', tasksH: '作業',
+      by: '{who} が追加', again: 'もう一度押して確定', top: '一番上へ', up: '上へ', down: '下へ', pause: '一時停止', resume: '再開',
+      done: '完了にする', drop: 'やめる', reopen: '再開する', added: '目標を追加しました', saved: '反映しました', tag: '目標' },
+    gstate: { active: '進行中', paused: '一時停止', done: '完了', dropped: '中止' },
+    ws: { title: 'ワークスペース', local: 'ローカル専用', running: '稼働中', stopped: '停止中' },
+    lang: { title: '言語', note: 'この端末のボタン表示だけが変わります。エージェントはワークスペースの言語で書き続けます。' },
+  },
+  zh: {
+    tabs: { hub: '中枢', infra: '基础设施', lanes: '通道', history: '记录' },
+    sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', hubReq: '交给中枢', sentReq: '最近的请求',
+      infraItems: '待处理事项', infraMemo: '给基础设施留言', sentMemo: '最近的留言', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
+      goals: '目标', finished: '已结束的目标 {n}' },
+    empty: { yours: '没有待决定的事', infra: '没有待处理事项', reqs: '还没有请求', memos: '还没有留言', tasks: '没有进行中的任务',
+      reports: '还没有报告', lanes: '没有通道', hist: '暂无内容', loading: '加载中', end: '就这些', goals: '还没有目标。在下面添加第一个。' },
+    status: { busy: '工作中', asking: '提问中', idle: '空闲', closed: '已关闭', unknown: '无响应' },
+    task: { queued: '排队中', running: '进行中', wrapping: '收尾中', closed: '已完成', cancelled: '已取消' },
+    report: { done: '完成', blocked: '受阻', note: '通知', handoff: '交接', wrapped: '已收尾' },
+    kind: { decision: '决定', review: '审核', ask: '问题' },
+    verdict: { ok: '已决定', okReview: '已批准', no: '已驳回', hold: '暂缓', answer: '自行回答', merged: '已合并' },
+    hist: { decided: '决定', goals: '目标', reports: '报告', closed: '任务', memos: '留言', requests: '请求' },
+    memo: { wait: '等待中', delivered: '已送达', replied: '已回复' },
+    label: { why: '为什么交给你', question: '问题', options: '选项', pickMany: '可多选', note: '备注', answer: '回答',
+      attachments: '附件', noTask: '暂无任务', cap: '{u}/{c} 使用中', paused: '已暂停', reply: '回复', hubSide: '中枢', ctx: '上下文' },
+    ph: { answer: '写下你的回答或备注', review: '留空即批准', hub: '想让中枢做什么?', infra: '想改什么?', token: '访问令牌' },
+    btn: { decide: '决定', answer: '自己回答', hold: '暂缓', done: '审核完成', send: '发送', more: '更多', less: '收起',
+      close: '关闭', prev: '上一张', next: '下一张', login: '登录', logout: '退出', open: '打开' },
+    msg: { decided: '已决定', held: '已暂缓', answered: '回答已发送', reviewed: '审核完成', sent: '已发送', fail: '发送失败',
+      net: '离线', badToken: '令牌不正确', notFound: '找不到', stopped: 'tower 已停止' },
+    time: { now: '刚刚', m: '{n} 分钟前', h: '{n} 小时前' },
+    login: { title: '登录' },
+    goal: { now: '当前', rank: '优先级 {n}', steps: '{d}/{n} 步', noPlan: '尚无计划', live: '{n} 个任务进行中', add: '新目标',
+      addBtn: '添加', ph: '团队要达成什么?', phDetail: '怎样算完成(可选)',
+      hint: '中枢会和你一起制定计划,并在这里汇报进度。', summary: '{n} 个进行中 · {p}%', stepsH: '步骤', tasksH: '任务',
+      by: '{who} 添加', again: '再点一次确认', top: '移到最前', up: '上移', down: '下移', pause: '暂停', resume: '继续',
+      done: '标为完成', drop: '放弃', reopen: '重新打开', added: '目标已添加', saved: '已更新', tag: '目标' },
+    gstate: { active: '进行中', paused: '已暂停', done: '已完成', dropped: '已放弃' },
+    ws: { title: '工作区', local: '仅限本机', running: '运行中', stopped: '已停止' },
+    lang: { title: '语言', note: '只改变本设备上看板的按钮语言。代理仍用工作区的语言写作。' },
+  },
+  es: {
+    tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Carriles', history: 'Historial' },
+    sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', hubReq: 'Pedir al hub', sentReq: 'Peticiones recientes',
+      infraItems: 'Elementos abiertos', infraMemo: 'Nota a infra', sentMemo: 'Notas recientes', lanes: 'Carriles', tasks: 'Tareas en curso',
+      reports: 'Informes recientes', goals: 'Objetivos', finished: 'Terminados {n}' },
+    empty: { yours: 'Nada que decidir', infra: 'Sin elementos abiertos', reqs: 'Aún no hay peticiones', memos: 'Aún no hay notas',
+      tasks: 'No hay tareas en curso', reports: 'Aún no hay informes', lanes: 'Sin carriles', hist: 'Aún no hay nada', loading: 'Cargando',
+      end: 'Eso es todo', goals: 'Aún no hay objetivos. Añade el primero abajo.' },
+    status: { busy: 'Trabajando', asking: 'Preguntando', idle: 'Libre', closed: 'Cerrado', unknown: 'Sin respuesta' },
+    task: { queued: 'En cola', running: 'En curso', wrapping: 'Cerrando', closed: 'Cerrada', cancelled: 'Cancelada' },
+    report: { done: 'Hecho', blocked: 'Bloqueado', note: 'Aviso', handoff: 'Relevo', wrapped: 'Cerrado' },
+    kind: { decision: 'Decisión', review: 'Revisión', ask: 'Pregunta' },
+    verdict: { ok: 'Decidido', okReview: 'Aprobado', no: 'Rechazado', hold: 'En espera', answer: 'Respondido', merged: 'Unido' },
+    hist: { decided: 'Decididos', goals: 'Objetivos', reports: 'Informes', closed: 'Tareas', memos: 'Notas', requests: 'Peticiones' },
+    memo: { wait: 'Esperando', delivered: 'Entregada', replied: 'Respondida' },
+    label: { why: 'Por qué te llega', question: 'Pregunta', options: 'Opciones', pickMany: 'Varias posibles', note: 'Nota', answer: 'Respuesta',
+      attachments: 'Adjuntos', noTask: 'Sin tarea', cap: '{u}/{c} ocupados', paused: 'En pausa', reply: 'Respuesta', hubSide: 'Hub', ctx: 'contexto' },
+    ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', hub: '¿Qué debe hacer el hub?', infra: '¿Qué debe cambiar?',
+      token: 'Token de acceso' },
+    btn: { decide: 'Decidir', answer: 'Responder yo', hold: 'Esperar', done: 'Revisión hecha', send: 'Enviar', more: 'Más', less: 'Menos',
+      close: 'Cerrar', prev: 'Anterior', next: 'Siguiente', login: 'Entrar', logout: 'Salir', open: 'Abrir' },
+    msg: { decided: 'Decidido', held: 'Puesto en espera', answered: 'Respuesta enviada', reviewed: 'Revisión hecha', sent: 'Enviado',
+      fail: 'No se pudo enviar', net: 'Sin conexión', badToken: 'Token incorrecto', notFound: 'No encontrado', stopped: 'Torre detenida' },
+    time: { now: 'ahora', m: 'hace {n} min', h: 'hace {n} h' },
+    login: { title: 'Entrar' },
+    goal: { now: 'Ahora', rank: 'Prioridad {n}', steps: '{d}/{n} pasos', noPlan: 'Sin plan aún', live: '{n} tareas en curso', add: 'Nuevo objetivo',
+      addBtn: 'Añadir', ph: '¿Qué debe lograr el equipo?', phDetail: '¿Cómo sabremos que está hecho? (opcional)',
+      hint: 'El hub lo planifica contigo e informa aquí del avance.', summary: '{n} activos · {p}%', stepsH: 'Pasos', tasksH: 'Tareas',
+      by: 'Añadido por {who}', again: 'Toca otra vez para confirmar', top: 'Al principio', up: 'Subir', down: 'Bajar', pause: 'Pausar',
+      resume: 'Reanudar', done: 'Marcar hecho', drop: 'Descartar', reopen: 'Reabrir', added: 'Objetivo añadido', saved: 'Guardado', tag: 'Objetivo' },
+    gstate: { active: 'Activo', paused: 'En pausa', done: 'Hecho', dropped: 'Descartado' },
+    ws: { title: 'Espacios de trabajo', local: 'Solo local', running: 'En marcha', stopped: 'Detenido' },
+    lang: { title: 'Idioma', note: 'Cambia solo los botones del tablero en este dispositivo. Los agentes siguen escribiendo en el idioma del espacio.' },
   },
 };
+const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', es: 'Español' };
 const TABS = ['hub', 'infra', 'lanes', 'history'];
-const HIST_KINDS = ['decided', 'reports', 'closed', 'memos', 'requests'];
+const HIST_KINDS = ['decided', 'goals', 'reports', 'closed', 'memos', 'requests'];
+const WS_MS = 30000;
 const POLL_MS = 5000;
 const IMG = /\.(png|jpe?g|gif|webp|avif|svg)$/i, VID = /\.(mp4|webm|mov|m4v)$/i, TXT = /\.(md|txt|json|log)$/i;
 const ICON = {
@@ -402,6 +594,7 @@ const ICON = {
   close: 'M6 6l12 12M18 6L6 18', check: 'M5 12l5 5L20 7',
   file: 'M6 2h8l5 5v15H6zM14 2v5h5', dl: 'M12 4v11M7 10l5 5 5-5M5 20h14',
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 017 0v3',
+  down: 'M6 9l6 6 6-6',
 };
 
 // ---------- language ----------
@@ -416,13 +609,21 @@ function setLang(code) {
   if (c === LANG) return;
   LANG = c; L = merge(UI.en, UI[c]); document.documentElement.lang = c;
 }
+const baseLang = code => String(code || '').toLowerCase().split(/[-_]/)[0];
+function savedLang() { try { return localStorage.getItem('tower.lang') || ''; } catch (e) { return ''; } }
+// This device's pick, then the workspace language, then the browser's.
+function pickLang(server) { return [savedLang(), baseLang(server), baseLang(navigator.language)].find(c => UI[c]) || 'en'; }
+function chooseLang(c) {
+  try { localStorage.setItem('tower.lang', c); } catch (e) { toast(L.msg.fail, true); }
+  setLang(c); S.menu = null; render();
+}
 function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? '')); }
 
 // ---------- state ----------
 const S = {
   data: null, raw: '', ok: null, loading: false, auth: false,
-  view: 'hub', item: null, pushed: false, sheetKey: '', sheetId: null,
-  drafts: {}, busy: {}, extra: {}, tried: {}, open: {}, hubOpen: false,
+  view: 'hub', item: null, goal: null, menu: null, pushed: false, sheetKey: '', sheetId: null,
+  drafts: {}, busy: {}, extra: {}, gx: {}, tried: {}, open: {}, hubOpen: false, goalsOpen: false, confirm: null, ws: [],
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
 };
@@ -486,7 +687,7 @@ function rel(s) {
   return fmtT(s);
 }
 function when(s) { return h('span', { class: 't', title: fmtT(s) }, rel(s)); }
-function fileUrl(p) { return '/f/' + encodeURI(String(p)); }
+function fileUrl(p) { return BASE + 'f/' + encodeURI(String(p)); }
 function fname(p) { return String(p).split('/').pop(); }
 function fext(p) { const m = /\.([a-z0-9]+)$/i.exec(p); return m ? m[1] : ''; }
 function tick() { return LANG + Math.floor(Date.now() / 30000); }
@@ -503,8 +704,12 @@ const forHuman = it => isOpen(it) && it.audience === 'human';
 const newest = (a, b) => (b.created || 0) - (a.created || 0);
 function asksFirst(list) { return [...list.filter(x => x.question).sort(newest), ...list.filter(x => !x.question).sort(newest)]; }
 function itemById(id) { return (S.data ? S.data.items.find(x => x.id === id) : null) || S.extra[id]; }
+function goalById(id) { return (S.data ? S.data.goals.find(g => g.id === id) : null) || S.gx[id]; }
+const isRanked = g => g.state === 'active' || g.state === 'paused';
+const liveFor = g => ((S.data && S.data.goal_tasks[String(g.id)]) || {}).live || 0;
 function normalize(j) {
-  for (const k of ['items', 'tasks', 'reports', 'lanes']) if (!Array.isArray(j[k])) j[k] = [];
+  for (const k of ['items', 'tasks', 'reports', 'lanes', 'goals']) if (!Array.isArray(j[k])) j[k] = [];
+  j.goal_tasks = j.goal_tasks || {};
   j.memos = { infra: [], hub: [], ...(j.memos || {}) };
   j.counts = j.counts || {};
   return j;
@@ -530,29 +735,43 @@ async function load() {
   if (S.loading) { S.again = true; return; }
   S.loading = true; S.again = false;
   try {
-    const j = normalize(await get('/api/state'));
+    const j = normalize(await get(BASE + 'api/state'));
     S.ok = true;
     const raw = JSON.stringify(j);
-    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(j.lang); }
+    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); }
   } catch (e) { if (e.status !== 401) S.ok = false; }
   S.loading = false;
   render();
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
+async function loadWs() {
+  if (S.auth) return;
+  try {
+    const j = await get(BASE + 'api/workspaces');
+    S.ws = (j && j.workspaces) || [];
+  } catch (e) {
+    if (e.status === 404) S.ws = [];  // an older tower without the switcher
+  }
+  renderTop();
+  if (S.menu === 'ws') renderSheet(true);
+}
 // ---------- routing ----------
 function route() {
   const hs = location.hash.replace(/^#/, '');
-  const m = /^item-(\d+)$/.exec(hs), prev = S.view;
-  if (m) S.item = Number(m[1]);
-  else { S.item = null; S.pushed = false; S.view = TABS.includes(hs) ? hs : 'hub'; }
+  const m = /^item-(\d+)$/.exec(hs), g = /^goal-(\d+)$/.exec(hs), prev = S.view;
+  S.item = m ? Number(m[1]) : null; S.goal = g ? Number(g[1]) : null; S.menu = null; S.confirm = null;
+  if (!m && !g) { S.pushed = false; S.view = TABS.includes(hs) ? hs : 'hub'; }
   if (S.view === 'history' && prev !== 'history') resetHist(S.hist.kind);
   render();
-  if (!m && prev !== S.view) window.scrollTo(0, 0);
+  if (!m && !g && prev !== S.view) window.scrollTo(0, 0);
 }
 function go(view) { location.hash = view; }
 function openItem(id) { S.pushed = true; location.hash = 'item-' + id; }
-function closeItem() {
+function openGoal(id) { S.pushed = true; location.hash = 'goal-' + id; }
+function openMenu(kind) { S.menu = kind; if (kind === 'ws') loadWs(); renderSheet(true); }
+function closeSheet() {
+  if (S.menu) { S.menu = null; renderSheet(true); return; }
   if (S.pushed) { S.pushed = false; history.back(); }
   else location.hash = S.view;
 }
@@ -571,8 +790,13 @@ function counts() {
   return { hub: items.filter(it => it.lane !== 'infra').length, infra: items.filter(it => it.lane === 'infra').length };
 }
 function renderTop() {
-  const d = D();
-  $('#brand').textContent = d ? d.title : '';
+  const d = D(), name = d ? d.title : '', many = S.ws.length > 1;
+  paint($('#brand'), LANG + name + many, () => many
+    ? h('button', { id: 'brand-btn', type: 'button', 'aria-haspopup': 'dialog', 'aria-label': `${name} · ${L.ws.title}`, onclick: () => openMenu('ws') },
+      h('span', null, name), svg(ICON.down))
+    : name);
+  const lb = $('#langbtn'); lb.textContent = LANG.toUpperCase(); lb.setAttribute('aria-label', L.lang.title);
+  const stop = $('#stopped'); stop.textContent = L.msg.stopped; stop.classList.toggle('hidden', !(d && d.running === false));
   const n = counts(), total = n.hub + n.infra;
   document.title = (total ? `(${total}) ` : '') + (d ? d.title : '');
   $('#me').textContent = d && d.me ? d.me.name : '';
@@ -635,7 +859,7 @@ function composer(to, title, ph) {
     const text = ta.value.trim();
     if (!text || btn.disabled) return;
     btn.disabled = true;
-    try { await post('/api/memo', { to, text }); ta.value = ''; toast(L.msg.sent); refresh(); }
+    try { await post(BASE + 'api/memo', { to, text }); ta.value = ''; toast(L.msg.sent); refresh(); }
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     btn.disabled = !ta.value.trim();
   });
@@ -668,8 +892,10 @@ function memoSec(title, list, emptyText) {
 // ---------- hub tab ----------
 function viewHub() {
   const v = $('#v-hub'), d = D(), K = tick();
-  shell(v, () => [h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
+  shell(v, () => [h('section', { class: 'sec' }, h('div', { id: 'hub-goals' }), goalComposer()),
+    h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
     composer('hub', L.sec.hubReq, L.ph.hub), h('div', { id: 'hub-sent' })]);
+  paint($('#hub-goals'), K + S.goalsOpen + JSON.stringify([d.goals, d.goal_tasks]), () => goalsBlock(d));
   const mine = d.items.filter(it => forHuman(it) && it.lane !== 'infra');
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
   const hub = lanes().find(l => l.lane === 'hub');
@@ -680,6 +906,153 @@ function viewHub() {
   paint($('#hub-handling'), K + S.hubOpen + JSON.stringify(side), () => side.length ? handling(side) : null);
   paint($('#hub-sent'), K + JSON.stringify(d.memos.hub), () => memoSec(L.sec.sentReq, d.memos.hub, L.empty.reqs));
 }
+// ---------- goals ----------
+function pbar(p, big) {
+  return h('div', { class: 'pbar' + (big ? ' big' : ''), role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(p) },
+    h('i', { style: `width:${Math.max(0, Math.min(100, p))}%` }));
+}
+function stepsText(g) { return g.steps.length ? fmt(L.goal.steps, { d: g.steps_done, n: g.steps.length }) : L.goal.noPlan; }
+function gChip(g) { return h('span', { class: 'chip g-' + g.state }, L.gstate[g.state] || g.state); }
+function goalsBlock(d) {
+  const ranked = d.goals.filter(isRanked).sort((a, b) => a.priority - b.priority);
+  const active = ranked.filter(g => g.state === 'active'), now = active[0];
+  const fin = d.goals.filter(g => !isRanked(g));
+  const avg = active.length ? Math.round(active.reduce((s, g) => s + g.progress, 0) / active.length) : 0;
+  return [
+    h('div', { class: 'sec-h' }, h('h2', null, L.sec.goals),
+      active.length ? h('span', { class: 'ext' }, h('span', { class: 'cap' }, fmt(L.goal.summary, { n: active.length, p: avg }))) : null),
+    ranked.length ? h('div', { class: 'goals' }, ranked.map(g => g === now ? goalNow(g) : goalRow(g))) : empty(L.empty.goals),
+    fin.length ? goalFold(fin) : null];
+}
+function goalNow(g) {
+  const live = liveFor(g);
+  return pressable('g-now', () => openGoal(g.id),
+    h('div', { class: 'meta' }, h('span', { class: 'chip now' }, L.goal.now), h('span', null, fmt(L.goal.rank, { n: g.priority })), when(g.updated)),
+    h('div', { class: 'title' }, g.title),
+    g.steps.length ? h('div', { class: 'prog' }, pbar(g.progress), h('span', { class: 'pct' }, g.progress + '%')) : null,
+    h('div', { class: 'g-sub' }, h('span', null, stepsText(g)), live ? h('span', { class: 'live' }, fmt(L.goal.live, { n: live })) : null));
+}
+function goalRow(g) {
+  const live = liveFor(g), paused = g.state === 'paused';
+  return pressable('g-row' + (paused ? ' muted' : ''), () => openGoal(g.id),
+    h('span', { class: 'rk' }, g.priority),
+    h('div', { class: 'body' }, h('div', { class: 'title' }, g.title),
+      h('div', { class: 'prog' },
+        paused ? gChip(g) : null,
+        g.steps.length ? [pbar(g.progress), h('span', { class: 'pct' }, g.progress + '%')] : h('span', { class: 'none' }, L.goal.noPlan),
+        live ? h('span', { class: 'none' }, fmt(L.goal.live, { n: live })) : null)),
+    svg(ICON.chev, 'chev'));
+}
+function goalFinRow(g) {
+  return pressable('row', () => openGoal(g.id), gChip(g),
+    h('div', { class: 'body' }, h('div', { class: 'title' }, g.title),
+      h('div', { class: 'sub' }, [g.progress + '%', stepsText(g), fmtT(g.closed)].filter(Boolean).join(' · '))),
+    svg(ICON.chev, 'chev'));
+}
+function goalFold(list) {
+  const tog = h('button', { class: 'fold', type: 'button', 'aria-expanded': String(S.goalsOpen), onclick: () => { S.goalsOpen = !S.goalsOpen; render(); } },
+    h('span', { class: 'nm' }, fmt(L.sec.finished, { n: list.length })), svg(ICON.chev, 'chev' + (S.goalsOpen ? ' up' : '')));
+  return h('div', { class: 'list g-fold' }, tog, S.goalsOpen ? list.map(goalFinRow) : null);
+}
+function goalComposer() {
+  const inp = h('input', { type: 'text', maxlength: '200', placeholder: L.goal.ph, 'aria-label': L.goal.add, enterkeyhint: 'done' });
+  const ta = h('textarea', { class: 'hidden', rows: '2', maxlength: '4000', placeholder: L.goal.phDetail, 'aria-label': L.goal.phDetail });
+  const btn = h('button', { class: 'btn-s', type: 'button', disabled: true }, L.goal.addBtn);
+  const sync = () => { btn.disabled = !inp.value.trim(); ta.classList.toggle('hidden', !inp.value.trim() && !ta.value.trim()); };
+  async function send() {
+    const title = inp.value.trim();
+    if (!title || btn.disabled) return;
+    btn.disabled = true;
+    try {
+      await post(BASE + 'api/goals', { title, detail: ta.value.trim() });
+      inp.value = ''; ta.value = ''; toast(L.goal.added); refresh();
+    } catch (e) { if (e.status !== 401) toast(e.message, true); }
+    sync();
+  }
+  inp.addEventListener('input', sync);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
+  btn.addEventListener('click', send);
+  return h('div', null, h('div', { class: 'g-add' }, h('div', { class: 'r' }, inp, btn), ta), h('div', { class: 'hint' }, L.goal.hint));
+}
+function goalHead(g) {
+  return h('div', { class: 'sh' }, h('span', { class: 'grab' }),
+    h('div', { class: 'meta' }, gChip(g), isRanked(g) ? h('span', null, fmt(L.goal.rank, { n: g.priority })) : null,
+      h('span', null, '#' + g.id), when(g.updated)),
+    h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
+}
+function goalTasks(g) { return S.data ? S.data.tasks.filter(t => t.goal_id === g.id) : []; }
+function goalBody(g) {
+  const tasks = goalTasks(g);
+  const out = [h('h2', { class: 'd-title' }, g.title),
+    h('div', { class: 'big-pct' }, h('b', null, g.progress + '%'), h('span', null, stepsText(g))), pbar(g.progress, true)];
+  if (g.detail) out.push(md(g.detail));
+  if (g.steps.length) out.push(h('div', { class: 'h3' }, L.goal.stepsH, h('span', { class: 'n' }, `${g.steps_done}/${g.steps.length}`)),
+    h('ul', { class: 'steps' }, g.steps.map(s => h('li', { class: s.done ? 'on' : '' },
+      h('span', { class: 'mk' }, s.done ? svg(ICON.check) : null), h('span', { class: 'tx' }, s.text)))));
+  if (tasks.length) out.push(h('div', { class: 'h3' }, L.goal.tasksH, h('span', { class: 'n' }, tasks.length)),
+    h('div', { class: 'list in-sheet' }, tasks.map(x => taskRow(x, true))));
+  if (g.note) out.push(h('div', { class: 'h3' }, L.label.note), h('div', { class: 'quote' }, md(g.note)));
+  out.push(h('div', { class: 'meta', style: 'margin-top:var(--s5)' }, h('span', null, fmt(L.goal.by, { who: g.created_by })), when(g.created)));
+  return { body: out, cta: goalCta(g) };
+}
+function goalCta(g) {
+  const busy = !!S.busy['g' + g.id], act = a => () => goalAct(g, a);
+  const b = (cls, a, label, icon) => h('button', { class: cls, type: 'button', disabled: busy, onclick: act(a) }, icon ? svg(icon) : null, label);
+  if (!isRanked(g)) return h('div', { class: 'acts one' }, b('btn primary', 'reopen', L.goal.reopen));
+  const ranked = S.data ? S.data.goals.filter(isRanked).length : g.priority;
+  const conf = S.confirm && S.confirm.id === g.id ? S.confirm.a : '';
+  const moves = [g.priority > 1 && ['top', L.goal.top], g.priority > 2 && ['up', L.goal.up], g.priority < ranked && ['down', L.goal.down]].filter(Boolean);
+  return h('div', null,
+    moves.length ? h('div', { class: 'moves' }, moves.map(([a, label]) => b('btn', a, label))) : null,
+    h('div', { class: 'acts' },
+      g.state === 'paused' ? b('btn', 'resume', L.goal.resume) : b('btn', 'pause', L.goal.pause),
+      b('btn primary', 'done', conf === 'done' ? L.goal.again : L.goal.done, ICON.check),
+      b('btn-text warn', 'drop', conf === 'drop' ? L.goal.again : L.goal.drop)));
+}
+async function goalAct(g, action) {
+  const key = 'g' + g.id;
+  if (S.busy[key]) return;
+  if ((action === 'done' || action === 'drop') && !(S.confirm && S.confirm.id === g.id && S.confirm.a === action)) {
+    S.confirm = { id: g.id, a: action };
+    clearTimeout(goalAct.tm);
+    goalAct.tm = setTimeout(() => { S.confirm = null; renderSheet(true); }, 4000);
+    renderSheet(true);
+    return;
+  }
+  S.confirm = null; S.busy[key] = true; renderSheet(true);
+  try {
+    const j = await post(BASE + `api/goals/${g.id}`, { action });
+    if (j && j.goal) S.gx[g.id] = j.goal;
+    S.busy[key] = false;
+    toast(L.goal.saved);
+    if (action === 'done' || action === 'drop') closeSheet();
+    refresh();
+  } catch (e) {
+    S.busy[key] = false;
+    if (e.status !== 401) toast(e.message, true);
+    renderSheet(true);
+  }
+}
+
+// ---------- menus ----------
+function menuHead(title) {
+  return h('div', { class: 'sh' }, h('span', { class: 'grab' }), h('span', { class: 'ttl' }, title),
+    h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
+}
+function menuBody() {
+  if (S.menu === 'lang') return [h('div', { class: 'menu', role: 'listbox' }, Object.entries(LANGS).map(([c, nm]) =>
+    h('button', { class: 'mrow' + (c === LANG ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': String(c === LANG), lang: c, onclick: () => chooseLang(c) },
+      h('div', { class: 'body' }, h('div', { class: 'nm' }, nm), h('div', { class: 'sub' }, c.toUpperCase())), c === LANG ? svg(ICON.check, 'ck') : null))),
+    h('div', { class: 'hint' }, L.lang.note)];
+  return [h('div', { class: 'menu' }, S.ws.map(w => h('button', { class: 'mrow' + (w.current ? ' on' : ''), type: 'button', disabled: !w.href,
+    'aria-current': w.current ? 'page' : null, onclick: w.href && !w.current ? () => { location.href = w.href; } : closeSheet },
+    h('i', { class: 'dot ' + (w.running ? 'on' : 'closed') }),
+    h('div', { class: 'body' }, h('div', { class: 'nm' }, w.name),
+      h('div', { class: 'sub' }, w.href ? [w.running ? L.ws.running : L.ws.stopped, w.goal].filter(Boolean).join(' · ') : L.ws.local)),
+    w.open ? h('span', { class: 'badge' }, w.open) : null,
+    w.current ? svg(ICON.check, 'ck') : null)))];
+}
+
 function doingCard(l) {
   const text = l.doing || (l.task_title ? `#${l.task_id} ${l.task_title}` : '');
   return h('div', { class: 'doing ' + l.status }, h('i', { class: 'dot ' + l.status }),
@@ -712,7 +1085,7 @@ function viewLanes() {
       cap ? h('span', { class: 'cap' + (cap.used >= cap.cap ? ' full' : '') }, fmt(L.label.cap, { u: cap.used, c: cap.cap })) : null]);
   });
   const live = d.tasks.filter(t => ['queued', 'running', 'wrapping'].includes(t.state)).sort((a, b) => a.id - b.id);
-  paint($('#ln-tasks'), K + JSON.stringify(live), () => sec(L.sec.tasks, live.length, live.length ? h('div', { class: 'list' }, live.map(taskRow)) : empty(L.empty.tasks)));
+  paint($('#ln-tasks'), K + JSON.stringify(live), () => sec(L.sec.tasks, live.length, live.length ? h('div', { class: 'list' }, live.map(t => taskRow(t))) : empty(L.empty.tasks)));
   paint($('#ln-reps'), K + JSON.stringify(d.reports), () => sec(L.sec.reports, null, d.reports.length ? h('div', { class: 'stack' }, d.reports.map(repCard)) : empty(L.empty.reports)));
 }
 function laneCard(l) {
@@ -723,10 +1096,12 @@ function laneCard(l) {
     l.doing ? h('div', { class: l.task_id ? 'dg' : 'tk' }, l.doing) : null,
     l.ctx_k > 0 ? h('div', { class: 'meta' }, `${L.label.ctx} ${l.ctx_k}K`) : null);
 }
-function taskRow(t) {
+function taskRow(t, inGoal) {
+  const g = !inGoal && t.goal_id ? goalById(t.goal_id) : null;
   return h('div', { class: 'row' }, h('span', { class: 'chip t-' + t.state }, L.task[t.state] || t.state),
     h('div', { class: 'body' }, h('div', { class: 'title' }, '#' + t.id, ' ', t.title),
-      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created))));
+      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created)),
+      g ? h('div', { class: 'gtag' }, `${L.goal.tag} · ${g.title}`) : null));
 }
 function repCard(r) {
   const key = 'rep' + r.id, atts = r.attachments || [], imgs = atts.filter(p => IMG.test(p));
@@ -784,11 +1159,11 @@ function canAct(it) { return it.state === 'open' && it.audience === 'human'; }
 async function fetchItem(id) {
   if (S.tried[id]) return;
   S.tried[id] = true;
-  try { S.extra[id] = await get('/api/items/' + id); renderSheet(true); }
+  try { S.extra[id] = await get(BASE + 'api/items/' + id); renderSheet(true); }
   catch (e) {
     if (e.status === 401) { S.tried[id] = false; return; }
     toast(e.status === 404 ? L.msg.notFound : e.message, true);
-    if (S.item === id) closeItem();
+    if (S.item === id) closeSheet();
   }
 }
 function closeSheetDom() {
@@ -798,20 +1173,38 @@ function closeSheetDom() {
   S.sheetKey = ''; S.sheetId = null;
   setTimeout(() => { if (!sh.classList.contains('open')) sh.replaceChildren(); }, 340);
 }
-function renderSheet(force) {
-  const sh = $('#sheet');
+function sheetView() {
+  if (S.menu) {
+    const title = S.menu === 'lang' ? L.lang.title : L.ws.title;
+    return { id: 'm-' + S.menu, key: [S.menu, S.menu === 'ws' ? S.ws : LANG], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
+  }
+  if (S.goal !== null) {
+    const g = goalById(S.goal);
+    if (!g) {
+      if (S.data) { toast(L.msg.notFound, true); closeSheet(); }
+      return null;
+    }
+    return { id: 'g' + g.id, key: [g, goalTasks(g), !!S.busy['g' + g.id], S.confirm, S.data && S.data.goals.filter(isRanked).length],
+      label: g.title, head: () => goalHead(g), build: () => goalBody(g) };
+  }
   const it = S.item !== null ? itemById(S.item) : null;
   if (S.item !== null && !it && S.data) fetchItem(S.item);
-  if (!it) { closeSheetDom(); return; }
-  const key = JSON.stringify([LANG, it, !!S.busy[it.id]]);
+  if (!it) return null;
+  return { id: 'i' + it.id, key: [it, !!S.busy[it.id]], label: it.title, head: () => sheetHead(it), build: () => sheetBody(it) };
+}
+function renderSheet(force) {
+  const sh = $('#sheet');
+  const view = sheetView();
+  if (!view) { closeSheetDom(); return; }
+  const key = JSON.stringify([LANG, view.id, view.key]);
   if (!force && key === S.sheetKey) return;
   const ae = document.activeElement;
   if (!force && ae && sh.contains(ae) && ae.tagName === 'TEXTAREA') return;  // never rebuild under the user's typing
-  const old = sh.querySelector('.sb'), keep = old && S.sheetId === it.id ? old.scrollTop : 0;
-  S.sheetKey = key; S.sheetId = it.id;
-  const { body, cta } = sheetBody(it);
-  sh.replaceChildren(...[sheetHead(it), h('div', { class: 'sb' }, body), cta ? h('div', { class: 'cta' }, cta) : null].filter(Boolean));
-  sh.setAttribute('aria-label', it.title);
+  const old = sh.querySelector('.sb'), keep = old && S.sheetId === view.id ? old.scrollTop : 0;
+  S.sheetKey = key; S.sheetId = view.id;
+  const { body, cta } = view.build();
+  sh.replaceChildren(...[view.head(), h('div', { class: 'sb' }, body), cta ? h('div', { class: 'cta' }, cta) : null].filter(Boolean));
+  sh.setAttribute('aria-label', view.label);
   if (keep) sh.querySelector('.sb').scrollTop = keep;
   if (!sh.classList.contains('open')) {
     void sh.offsetWidth;  // let the slide-up transition start from the closed position
@@ -823,7 +1216,7 @@ function sheetHead(it) {
     h('div', { class: 'meta' }, laneChip(it.lane), kindChip(it),
       isOpen(it) && it.audience === 'hub' ? h('span', { class: 'chip' }, L.label.hubSide) : null,
       h('span', null, '#' + it.id), when(it.created)),
-    h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeItem }, svg(ICON.close)));
+    h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
 }
 function box(cls, label, text) { return h('div', { class: 'box ' + cls }, h('span', { class: 'k' }, label), text); }
 function sheetBody(it) {
@@ -917,10 +1310,10 @@ async function decide(it, verdict) {
   if (verdict === 'ok' && it.kind === 'decision') { if (it.multi) body.choices = d.picks; else body.choice = d.choice; }
   S.busy[it.id] = true; renderSheet(true);
   try {
-    await post(`/api/items/${it.id}/decide`, body);
+    await post(BASE + `api/items/${it.id}/decide`, body);
     delete S.drafts[it.id]; delete S.extra[it.id]; S.busy[it.id] = false;
     toast(verdict === 'hold' ? L.msg.held : verdict === 'answer' ? L.msg.answered : it.kind === 'review' ? L.msg.reviewed : L.msg.decided);
-    closeItem();
+    closeSheet();
     refresh();
   } catch (e) {
     S.busy[it.id] = false;
@@ -942,6 +1335,7 @@ function viewHistory() {
 }
 function histRow(kind, r) {
   if (kind === 'decided') return decidedRow(r);
+  if (kind === 'goals') return goalFinRow(r);
   if (kind === 'reports') return repCard(r);
   if (kind === 'closed') return taskRow(r);
   return memoRow(r);
@@ -951,7 +1345,7 @@ function paintHist() {
   if (!body) return;
   paint(body, tick() + H.kind + H.rows.length + H.loaded, () => {
     if (!H.rows.length) return H.loaded ? empty(L.empty.hist) : empty(L.empty.loading);
-    const cls = { decided: 'list', closed: 'list', reports: 'stack', memos: 'sent', requests: 'sent' }[H.kind];
+    const cls = { decided: 'list', goals: 'list', closed: 'list', reports: 'stack', memos: 'sent', requests: 'sent' }[H.kind];
     return h('div', { class: cls }, H.rows.map(r => histRow(H.kind, r)));
   });
   paint(foot, LANG + H.kind + H.rows.length + H.more + H.loading + H.loaded, () => !H.loaded || !H.rows.length ? null : H.more
@@ -963,10 +1357,11 @@ async function loadHist() {
   if (H.loading) return;
   H.loading = true; paintHist();
   try {
-    const j = await get(`/api/history?kind=${encodeURIComponent(H.kind)}&offset=${H.rows.length}`);
+    const j = await get(BASE + `api/history?kind=${encodeURIComponent(H.kind)}&offset=${H.rows.length}`);
     if (S.hist !== H) return;  // switched kind meanwhile
     const rows = (j && j.rows) || [];
     if (H.kind === 'decided') for (const it of rows) S.extra[it.id] = it;
+    if (H.kind === 'goals') for (const g of rows) S.gx[g.id] = g;
     H.rows.push(...rows); H.more = !!(j && j.more); H.loaded = true;
   } catch (e) {
     if (S.hist !== H) return;
@@ -996,7 +1391,7 @@ function needLogin() {
     const token = inp.value.trim();
     if (!token || btn.disabled) return;
     btn.disabled = true;
-    try { await post('/api/login', { token }); finishLogin(); }
+    try { await post(BASE + 'api/login', { token }); finishLogin(); }
     catch (err) { toast(err.status === 401 ? L.msg.badToken : err.message, true); inp.select(); }
     btn.disabled = false;
   } }, h('div', { class: 'logo' }, svg(ICON.lock)), h('h1', null, L.login.title), inp, btn);
@@ -1010,10 +1405,10 @@ function finishLogin() {
   $('#login').classList.add('hidden'); $('#login').replaceChildren();
   document.body.classList.remove('locked');
   resetHist(S.hist.kind);
-  refresh();
+  refresh().then(loadWs);
 }
 async function logout() {
-  try { await post('/api/logout', {}); } catch (e) { if (e.status === 401) return; }
+  try { await post(BASE + 'api/logout', {}); } catch (e) { if (e.status === 401) return; }
   needLogin();
 }
 
@@ -1048,17 +1443,19 @@ function paintLb() {
       return;
     }
     const typing = document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName);
-    if (e.key === 'Escape' && S.item !== null && !typing) closeItem();
+    if (e.key === 'Escape' && (S.item !== null || S.goal !== null || S.menu) && !typing) closeSheet();
   });
-  $('#sheet-bd').addEventListener('click', closeItem);
+  $('#sheet-bd').addEventListener('click', closeSheet);
   $('#signout').addEventListener('click', logout);
+  $('#langbtn').addEventListener('click', () => openMenu('lang'));
   window.addEventListener('hashchange', route);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
   setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
+  setInterval(() => { if (!document.hidden) loadWs(); }, WS_MS);
 })();
-setLang(/^ko\b/i.test(navigator.language || '') ? 'ko' : 'en');
+setLang(pickLang(''));
 route();
-load();
+load().then(loadWs);
 </script>
 </body>
 </html>

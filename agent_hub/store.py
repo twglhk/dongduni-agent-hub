@@ -20,6 +20,8 @@ HUMAN = "human"
 TOWER = "tower"
 
 TASK_LIVE = ("running", "wrapping")
+GOAL_STATES = ("active", "paused", "done", "dropped")
+GOAL_RANKED = ("active", "paused")
 VERDICTS = ("ok", "no", "hold", "answer")  # answer = a human wrote their own answer; the note is the decision
 MULTI_SEP = " + "
 
@@ -39,7 +41,21 @@ CREATE TABLE IF NOT EXISTS tasks(
   nudges INTEGER NOT NULL DEFAULT 0,
   respawns INTEGER NOT NULL DEFAULT 0,
   handoff TEXT,
-  rotate_ready REAL
+  rotate_ready REAL,
+  goal_id INTEGER                   -- the goal this task serves, if any
+);
+CREATE TABLE IF NOT EXISTS goals(
+  id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '',
+  priority INTEGER NOT NULL,        -- 1 = first; only active and paused goals are ranked
+  state TEXT NOT NULL,              -- active | paused | done | dropped
+  steps TEXT NOT NULL DEFAULT '[]', -- the plan: [{"text", "done"}]; progress = done / all
+  note TEXT,
+  created_by TEXT NOT NULL,
+  created REAL NOT NULL,
+  updated REAL NOT NULL,
+  closed REAL
 );
 CREATE TABLE IF NOT EXISTS items(
   id INTEGER PRIMARY KEY,
@@ -140,6 +156,15 @@ def item_view(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def goal_view(row: dict[str, Any]) -> dict[str, Any]:
+    out = dict(row)
+    out["steps"] = json.loads(out["steps"] or "[]")
+    done = sum(1 for st in out["steps"] if st.get("done"))
+    out["steps_done"] = done
+    out["progress"] = 100 if out["state"] == "done" else round(100 * done / len(out["steps"])) if out["steps"] else 0
+    return out
+
+
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -151,6 +176,9 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as con:
             con.executescript(SCHEMA)
+            cols = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
+            if "goal_id" not in cols:  # databases made before goals existed
+                con.execute("ALTER TABLE tasks ADD COLUMN goal_id INTEGER")
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -262,10 +290,10 @@ class Store:
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str) -> int:
+    def add_task(self, lane: str, title: str, brief: str, goal_id: int | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created) VALUES(?,?,?,?,?)",
-                                   (lane, title, brief, "queued", self.clock())))
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
+                                   (lane, title, brief, "queued", self.clock(), goal_id)))
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -309,6 +337,104 @@ class Store:
     def signal(self, task_id: int | None) -> None:
         if task_id is not None:
             self.update_task(task_id, last_signal=self.clock(), nudges=0)
+
+    # ---------- goals: what the team works toward, ranked by humans or the hub ----------
+
+    def add_goal(self, title: str, detail: str, by: str) -> int:
+        if not title.strip():
+            raise StoreError("a goal needs a title")
+        now = self.clock()
+        with self.conn() as con:
+            last = con.execute(f"SELECT COALESCE(MAX(priority), 0) FROM goals WHERE state IN {GOAL_RANKED}").fetchone()[0]
+            return _id(con.execute("INSERT INTO goals(title, detail, priority, state, created_by, created, updated) "
+                                   "VALUES(?,?,?,?,?,?,?)", (title.strip(), detail.strip(), last + 1, "active", by,
+                                                             now, now)))
+
+    def goal(self, goal_id: int) -> dict[str, Any]:
+        with self.conn() as con:
+            row = _one(con.execute("SELECT * FROM goals WHERE id=?", (goal_id,)))
+        if not row:
+            raise StoreError(f"goal #{goal_id} not found")
+        return goal_view(row)
+
+    def goals(self, states: Iterable[str] = GOAL_RANKED) -> list[dict[str, Any]]:
+        """Ranked goals first (by priority), then the rest newest first."""
+        states = list(states)
+        with self.conn() as con:
+            rows = _rows(con.execute(f"SELECT * FROM goals WHERE state IN ({','.join('?' * len(states))}) "
+                                     f"ORDER BY state NOT IN {GOAL_RANKED}, "
+                                     f"CASE WHEN state IN {GOAL_RANKED} THEN priority END, closed DESC, id", states))
+        return [goal_view(r) for r in rows]
+
+    def _rerank(self, con: sqlite3.Connection, order: list[int]) -> None:
+        for i, gid in enumerate(order, 1):
+            con.execute("UPDATE goals SET priority=? WHERE id=?", (i, gid))
+
+    def move_goal(self, goal_id: int, position: int) -> list[int]:
+        """Put a ranked goal at `position` (1 = first). Returns the new order of goal ids."""
+        g = self.goal(goal_id)
+        if g["state"] not in GOAL_RANKED:
+            raise StoreError(f"goal #{goal_id} is {g['state']}; only active or paused goals are ranked")
+        with self.conn() as con:
+            order = [r[0] for r in con.execute(f"SELECT id FROM goals WHERE state IN {GOAL_RANKED} "
+                                               f"ORDER BY priority, id")]
+            order.remove(goal_id)
+            order.insert(max(0, min(position - 1, len(order))), goal_id)
+            self._rerank(con, order)
+            con.execute("UPDATE goals SET updated=? WHERE id=?", (self.clock(), goal_id))
+        return order
+
+    def set_goal_state(self, goal_id: int, state: str, note: str = "") -> dict[str, Any]:
+        if state not in GOAL_STATES:
+            raise StoreError(f"goal state must be one of {', '.join(GOAL_STATES)}")
+        g = self.goal(goal_id)
+        now = self.clock()
+        with self.conn() as con:
+            if state in GOAL_RANKED and g["state"] not in GOAL_RANKED:  # reopened: rank it last
+                last = con.execute(f"SELECT COALESCE(MAX(priority), 0) FROM goals WHERE state IN {GOAL_RANKED}"
+                                   ).fetchone()[0]
+                con.execute("UPDATE goals SET priority=? WHERE id=?", (last + 1, goal_id))
+            con.execute("UPDATE goals SET state=?, note=COALESCE(NULLIF(?, ''), note), updated=?, closed=? WHERE id=?",
+                        (state, note, now, None if state in GOAL_RANKED else now, goal_id))
+            order = [r[0] for r in con.execute(f"SELECT id FROM goals WHERE state IN {GOAL_RANKED} ORDER BY priority, id")]
+            self._rerank(con, order)
+        return self.goal(goal_id)
+
+    def plan_goal(self, goal_id: int, steps: list[str]) -> dict[str, Any]:
+        """Replace the plan. A step whose text is unchanged keeps its done mark."""
+        g = self.goal(goal_id)
+        was = {st["text"]: bool(st.get("done")) for st in g["steps"]}
+        new = [{"text": t.strip(), "done": was.get(t.strip(), False)} for t in steps if t.strip()]
+        with self.conn() as con:
+            con.execute("UPDATE goals SET steps=?, updated=? WHERE id=?",
+                        (json.dumps(new, ensure_ascii=False), self.clock(), goal_id))
+        return self.goal(goal_id)
+
+    def check_steps(self, goal_id: int, numbers: Iterable[int], done: bool = True) -> dict[str, Any]:
+        g = self.goal(goal_id)
+        steps = g["steps"]
+        for n in numbers:
+            if not 1 <= n <= len(steps):
+                raise StoreError(f"goal #{goal_id} has steps 1..{len(steps)}" if steps else
+                                 f"goal #{goal_id} has no plan yet (`tower goal plan`)")
+            steps[n - 1]["done"] = done
+        with self.conn() as con:
+            con.execute("UPDATE goals SET steps=?, updated=? WHERE id=?",
+                        (json.dumps(steps, ensure_ascii=False), self.clock(), goal_id))
+        return self.goal(goal_id)
+
+    def goal_tasks(self) -> dict[int, dict[str, int]]:
+        """Per goal: tasks queued or running (`live`) and finished (`closed`)."""
+        out: dict[int, dict[str, int]] = {}
+        with self.conn() as con:
+            for gid, state, n in con.execute("SELECT goal_id, state, count(*) FROM tasks WHERE goal_id IS NOT NULL "
+                                             "GROUP BY goal_id, state"):
+                d = out.setdefault(gid, {"live": 0, "closed": 0})
+                if state in ("queued", *TASK_LIVE):
+                    d["live"] += n
+                elif state == "closed":
+                    d["closed"] += n
+        return out
 
     # ---------- items ----------
 
@@ -469,6 +595,7 @@ class Store:
         "decided": ("items WHERE state='decided'", "decided DESC, id DESC"),
         "reports": ("reports", "id DESC"),
         "closed": ("tasks WHERE state IN ('closed','cancelled')", "closed DESC, id DESC"),
+        "goals": ("goals WHERE state IN ('done','dropped')", "closed DESC, id DESC"),
     }
     MEMO_HISTORY = {"memos": INFRA, "requests": HUB}
 
@@ -489,6 +616,8 @@ class Store:
             rows = _rows(con.execute(f"SELECT * FROM {src} ORDER BY {order} LIMIT ? OFFSET ?", (limit, offset)))
         if kind == "decided":
             return [item_view(r) for r in rows]
+        if kind == "goals":
+            return [goal_view(r) for r in rows]
         if kind == "reports":
             for r in rows:
                 r["attachments"] = json.loads(r["attachments"] or "[]")

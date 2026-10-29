@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" width="880" height="470" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Without agent-hub vs with agent-hub</title>
+  <desc id="d">Left: a person types into many agent terminals and keeps the state in their head. Right: the person sets and ranks goals on a phone board; one hub agent assigns work to lanes running Claude Code, Codex and OpenCode, which report back to the hub.</desc>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3182f6"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#03b26c"/>
+    </marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="879" height="469" rx="20" fill="#f9fafb" stroke="#e5e8eb"/>
+  <text x="440" y="42" text-anchor="middle" font-size="20" font-weight="700" fill="#191f28">Stop typing to every agent. Set the goal; the hub runs the lanes.</text>
+
+  <!-- ===== left: without ===== -->
+  <rect x="24" y="66" width="404" height="380" rx="18" fill="#fdf5ec" stroke="#f0d9bf"/>
+  <text x="46" y="98" font-size="16" font-weight="700" fill="#8a5a2b">Without agent-hub</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12">
+    <g transform="rotate(-3 140 160)">
+      <rect x="44" y="116" width="196" height="84" rx="8" fill="#2b2f36"/>
+      <circle cx="56" cy="128" r="3.5" fill="#f04452"/><circle cx="68" cy="128" r="3.5" fill="#fe9800"/><circle cx="80" cy="128" r="3.5" fill="#03b26c"/>
+      <text x="56" y="154" fill="#9aa4b1">$ claude</text>
+      <text x="56" y="174" fill="#e5e8eb">&gt; fix the login bug</text>
+    </g>
+    <g transform="rotate(2 270 190)">
+      <rect x="172" y="150" width="206" height="84" rx="8" fill="#343a43"/>
+      <circle cx="184" cy="162" r="3.5" fill="#f04452"/><circle cx="196" cy="162" r="3.5" fill="#fe9800"/><circle cx="208" cy="162" r="3.5" fill="#03b26c"/>
+      <text x="184" y="188" fill="#9aa4b1">$ codex</text>
+      <text x="184" y="208" fill="#e5e8eb">&gt; now update the docs</text>
+    </g>
+    <g transform="rotate(-2 150 250)">
+      <rect x="56" y="212" width="190" height="80" rx="8" fill="#2b2f36"/>
+      <circle cx="68" cy="224" r="3.5" fill="#f04452"/><circle cx="80" cy="224" r="3.5" fill="#fe9800"/><circle cx="92" cy="224" r="3.5" fill="#03b26c"/>
+      <text x="68" y="250" fill="#9aa4b1">$ opencode</text>
+      <text x="68" y="270" fill="#e5e8eb">&gt; where were we?</text>
+    </g>
+    <g transform="rotate(3 300 280)">
+      <rect x="206" y="246" width="200" height="80" rx="8" fill="#3b414b"/>
+      <circle cx="218" cy="258" r="3.5" fill="#f04452"/><circle cx="230" cy="258" r="3.5" fill="#fe9800"/><circle cx="242" cy="258" r="3.5" fill="#03b26c"/>
+      <text x="218" y="284" fill="#e5e8eb">&gt; did the tests pass?</text>
+      <text x="218" y="304" fill="#e5e8eb">&gt; spawn a subagent…</text>
+    </g>
+  </g>
+
+  <g transform="rotate(7 330 112)">
+    <rect x="292" y="88" width="104" height="44" rx="4" fill="#ffe08a"/>
+    <text x="302" y="108" font-size="12" fill="#6b4e00">who has auth?</text>
+    <text x="302" y="124" font-size="12" fill="#6b4e00">docs: blocked?</text>
+  </g>
+  <g fill="none" stroke="#c98a4a" stroke-width="1.5" stroke-dasharray="3 4">
+    <circle cx="396" cy="186" r="13"/>
+  </g>
+  <text x="396" y="190" text-anchor="middle" font-size="12" fill="#a0652c">?</text>
+
+  <g font-size="14" fill="#5c4630">
+    <text x="46" y="372">• You type every prompt, in every window</text>
+    <text x="46" y="398">• You remember who is doing what</text>
+    <text x="46" y="424">• Status is buried in scrollback</text>
+  </g>
+
+  <!-- ===== right: with ===== -->
+  <rect x="452" y="66" width="404" height="380" rx="18" fill="#ffffff" stroke="#cfe2fd"/>
+  <text x="474" y="98" font-size="16" font-weight="700" fill="#1b64da">With agent-hub</text>
+
+  <!-- phone -->
+  <rect x="472" y="114" width="150" height="236" rx="20" fill="#191f28"/>
+  <rect x="479" y="122" width="136" height="220" rx="14" fill="#f2f4f6"/>
+  <text x="489" y="144" font-size="12" font-weight="700" fill="#191f28">Goals</text>
+  <rect x="487" y="152" width="120" height="62" rx="9" fill="#ffffff" stroke="#3182f6" stroke-width="1.5"/>
+  <rect x="495" y="159" width="34" height="17" rx="5" fill="#3182f6"/>
+  <text x="512" y="172" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Now</text>
+  <text x="495" y="192" font-size="12" font-weight="700" fill="#191f28">Public beta</text>
+  <rect x="495" y="201" width="74" height="6" rx="3" fill="#e5e8eb"/>
+  <rect x="495" y="201" width="44" height="6" rx="3" fill="#03b26c"/>
+  <text x="600" y="208" text-anchor="end" font-size="12" font-weight="700" fill="#4e5968">60%</text>
+  <rect x="487" y="220" width="120" height="40" rx="9" fill="#ffffff"/>
+  <text x="495" y="237" font-size="12" font-weight="600" fill="#191f28">Checkout</text>
+  <rect x="495" y="245" width="74" height="6" rx="3" fill="#e5e8eb"/>
+  <rect x="495" y="245" width="24" height="6" rx="3" fill="#03b26c"/>
+  <text x="600" y="252" text-anchor="end" font-size="12" font-weight="700" fill="#4e5968">33%</text>
+  <rect x="487" y="268" width="120" height="62" rx="9" fill="#fff3e0"/>
+  <text x="495" y="287" font-size="12" font-weight="700" fill="#c85400">Decide</text>
+  <text x="495" y="302" font-size="12" fill="#4e5968">Google sign-in?</text>
+  <rect x="551" y="309" width="48" height="16" rx="5" fill="#3182f6"/>
+  <text x="575" y="321" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">OK</text>
+
+  <!-- phone -> hub -->
+  <path d="M626 210 L664 210" stroke="#3182f6" stroke-width="2" fill="none" marker-end="url(#ar)"/>
+  <text x="645" y="200" text-anchor="middle" font-size="12" fill="#1b64da">goals</text>
+
+  <!-- hub -->
+  <circle cx="702" cy="210" r="32" fill="#3182f6"/>
+  <text x="702" y="215" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">Hub</text>
+
+  <!-- lanes -->
+  <g font-size="12">
+    <rect x="762" y="114" width="84" height="56" rx="10" fill="#e8f3ff"/>
+    <text x="804" y="134" text-anchor="middle" font-weight="700" fill="#191f28">web</text>
+    <text x="804" y="149" text-anchor="middle" fill="#4e5968">Claude Code</text>
+    <circle cx="794" cy="160" r="3" fill="#8bb8f8"/><circle cx="804" cy="160" r="3" fill="#8bb8f8"/><circle cx="814" cy="160" r="3" fill="#8bb8f8"/>
+
+    <rect x="762" y="182" width="84" height="56" rx="10" fill="#e8f3ff"/>
+    <text x="804" y="202" text-anchor="middle" font-weight="700" fill="#191f28">docs</text>
+    <text x="804" y="217" text-anchor="middle" fill="#4e5968">Codex</text>
+    <circle cx="799" cy="228" r="3" fill="#8bb8f8"/><circle cx="809" cy="228" r="3" fill="#8bb8f8"/>
+
+    <rect x="762" y="250" width="84" height="56" rx="10" fill="#e8f3ff"/>
+    <text x="804" y="270" text-anchor="middle" font-weight="700" fill="#191f28">infra</text>
+    <text x="804" y="285" text-anchor="middle" fill="#4e5968">OpenCode</text>
+    <circle cx="804" cy="296" r="3" fill="#8bb8f8"/>
+  </g>
+  <g stroke="#3182f6" stroke-width="2" fill="none">
+    <path d="M730 196 L758 146" marker-end="url(#ar)"/>
+    <path d="M734 208 L758 208" marker-end="url(#ar)"/>
+    <path d="M730 224 L758 270" marker-end="url(#ar)"/>
+  </g>
+  <path d="M806 310 C 806 340, 730 340, 708 246" stroke="#03b26c" stroke-width="2" stroke-dasharray="5 4" fill="none" marker-end="url(#ag)"/>
+  <text x="772" y="342" text-anchor="middle" font-size="12" fill="#028a54">reports</text>
+
+  <g font-size="14" fill="#191f28">
+    <text x="474" y="372">• Set goals and rank them</text>
+    <text x="474" y="398">• The hub plans, assigns and checks</text>
+    <text x="474" y="424">• You make only the calls that need you</text>
+  </g>
+</svg>

@@ -2,13 +2,20 @@
 that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, ...) or use token sign-in.
 
   GET  /                          board (board/index.html)
-  GET  /api/state                 lanes · open items · tasks · reports · memos · counts
-  GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
+  GET  /api/state                 goals · lanes · open items · tasks · reports · memos · counts
+  GET  /api/history?kind=K&offset=N   decided | reports | closed | goals | memos | requests, 20 per page
   GET  /api/items/<id>
+  GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   POST /api/memo                  {text, to: infra | hub}
+  POST /api/goals                 {title, detail}
+  POST /api/goals/<id>            {action: top | up | down | pause | resume | drop | done | reopen, note}
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
+
+Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
+project on the machine. Each workspace keeps its own auth; a `local` workspace is only served next to another
+`local` one (local mode trusts whoever reaches it).
 
 Every POST must carry `x-tower: 1` (a custom header forces a CORS preflight, so other sites cannot post forms).
 """
@@ -24,9 +31,10 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote
 
-from .config import HUB, INFRA, Config
+from . import config as config_mod
+from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
-from .store import Store, StoreError
+from .store import GOAL_RANKED, HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "credentials", "id_rsa", "id_ed25519"}
@@ -36,6 +44,7 @@ PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+GOAL_ACTIONS = {"pause": "paused", "resume": "active", "drop": "dropped", "done": "done", "reopen": "active"}
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 
 
@@ -80,9 +89,12 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "lang": cfg.lang,
         "auth_mode": cfg.auth_mode,
         "me": me,
+        "running": tower_pid(cfg) is not None,
         "paused": (cfg.state_dir / "paused").exists(),
         "lane_cap": {"used": len({t["lane"] for t in tasks if t["state"] in ("running", "wrapping")}),
                      "cap": cfg.max_lanes},
+        "goals": s.goals(GOAL_RANKED) + s.history("goals", 0, PREVIEW),
+        "goal_tasks": {str(k): v for k, v in s.goal_tasks().items()},
         "lanes": lanes_view(cfg, s),
         "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
@@ -92,28 +104,120 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
+def goal_action(s: Store, gid: int, action: str, note: str, by: str) -> str:
+    """Apply one board action to a goal; returns the news line for the hub."""
+    g = s.goal(gid)
+    if action in ("top", "up", "down"):
+        pos = {"top": 1, "up": g["priority"] - 1, "down": g["priority"] + 1}[action]
+        order = s.move_goal(gid, max(1, pos))
+        return f"{by} moved goal #{gid} \"{g['title']}\" to priority {order.index(gid) + 1}. Order now: " + \
+            ", ".join(f"#{i}" for i in order)
+    if action not in GOAL_ACTIONS:
+        raise StoreError(f"action must be one of top, up, down, {', '.join(GOAL_ACTIONS)}")
+    g = s.set_goal_state(gid, GOAL_ACTIONS[action], note)
+    return f"{by} marked goal #{gid} \"{g['title']}\" {g['state']}" + (f": {note}" if note else "")
+
+
+class Site:
+    def __init__(self, slug: str, cfg: Config, store: Store, prefix: str, mtime: float = 0.0):
+        self.slug, self.cfg, self.s, self.prefix, self.mtime = slug, cfg, store, prefix, mtime
+
+
 def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
     secure = cfg.public_url.startswith("https://")
+    own_home = cfg.home.resolve()
+    own = Site("", cfg, s, "")
+    siblings: dict[str, Site] = {}
+
+    def sibling(slug: str) -> Site | None:
+        home = config_mod.workspaces().get(slug)
+        if home is None:
+            return None
+        if home.resolve() == own_home:
+            return own
+        try:
+            mtime = (home / TOWER_DIR / CONFIG_NAME).stat().st_mtime
+            hit = siblings.get(slug)
+            if hit and hit.mtime == mtime and hit.cfg.home == home:
+                return hit
+            c2 = config_mod.load(home)
+        except (OSError, ConfigError):
+            return None
+        site = siblings[slug] = Site(slug, c2, Store(c2.db), f"/w/{slug}", mtime)
+        return site
+
+    def reachable(site: Site) -> bool:
+        return site is own or site.cfg.auth_mode != "local" or cfg.auth_mode == "local"
+
+    def workspaces_view(current: Site) -> list[dict[str, Any]]:
+        regs = config_mod.workspaces()
+        own_slug = next((k for k, h in regs.items() if h.resolve() == own_home), "")
+        out = []
+        for slug in [own_slug if own_slug else "", *[k for k in regs if k != own_slug]]:
+            site = own if slug == own_slug else sibling(slug)
+            if site is None:
+                continue
+            ok = reachable(site)
+            row: dict[str, Any] = {"slug": slug, "name": site.cfg.name, "current": site is current,
+                                   "href": ("/" if site is own else f"/w/{slug}/") if ok else None,
+                                   "running": tower_pid(site.cfg) is not None}
+            if ok:
+                row["open"] = len(site.s.items(state="open", audience=HUMAN))
+                top = site.s.goals(("active",))
+                row["goal"] = top[0]["title"] if top else None
+            out.append(row)
+        return out
 
     class Handler(BaseHTTPRequestHandler):
+        site: Site = own
+        route = "/"
+
         def log_message(self, format: str, *args: Any) -> None:
             pass
+
+        def _resolve(self) -> bool:
+            """Pick the workspace from the path. False when a response (redirect, 404) was already sent."""
+            path, _, query = self.path.partition("?")
+            m = re.fullmatch(r"/w/([a-z0-9-]+)(/.*)?", path)
+            if not m:
+                self.site, self.route, self.query = own, path, query
+                return True
+            site = sibling(m.group(1))
+            if site is None:
+                self._json(404, {"error": "no such workspace"})
+                return False
+            if not reachable(site):
+                self._json(403, {"error": "this workspace only accepts local visitors (auth.mode local)"})
+                return False
+            if m.group(2) is None:
+                self.send_response(308)
+                self.send_header("location", f"/w/{m.group(1)}/" + (f"?{query}" if query else ""))
+                self.send_header("content-length", "0")
+                self.end_headers()
+                return False
+            self.site, self.route, self.query = site, m.group(2), query
+            return True
+
+        @property
+        def cookie(self) -> str:
+            return COOKIE if self.site is own else f"{COOKIE}_{self.site.slug}"
 
         # ----- auth -----
 
         def _me(self) -> dict[str, Any] | None:
-            if cfg.auth_mode == "local":
+            c, st = self.site.cfg, self.site.s
+            if c.auth_mode == "local":
                 return {"name": getpass.getuser(), "role": "owner"}
-            if cfg.auth_mode == "header":
+            if c.auth_mode == "header":
                 if self.client_address[0] not in LOOPBACK:
                     return None  # identity headers are only trusted from the local proxy
-                ident = (self.headers.get(cfg.auth_header) or "").strip()
+                ident = (self.headers.get(c.auth_header) or "").strip()
                 if not ident:
                     return None
-                m = s.member_by_ident(ident)
+                m = st.member_by_ident(ident)
                 if m:
                     return m
-                if any(x["ident"] for x in s.members()):
+                if any(x["ident"] for x in st.members()):
                     return None  # an allow-list exists and this person is not on it
                 return {"name": ident, "role": "member"}
             token = ""
@@ -122,9 +226,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                 token = auth[7:].strip()
             for part in (self.headers.get("cookie") or "").split(";"):
                 k, _, v = part.strip().partition("=")
-                if k == COOKIE:
+                if k == self.cookie:
                     token = token or v
-            return s.member_by_token(token) if token else None
+            return st.member_by_token(token) if token else None
 
         # ----- responses -----
 
@@ -151,29 +255,33 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
         # ----- GET -----
 
         def do_GET(self) -> None:
-            path, _, query = self.path.partition("?")
+            if not self._resolve():
+                return
+            c, st, path = self.site.cfg, self.site.s, self.route
             if path in ("/", "/index.html"):
                 return self._static(BOARD, "text/html; charset=utf-8")
             if path == "/manifest.webmanifest":
-                return self._json(200, {"name": cfg.name, "short_name": cfg.name[:12], "start_url": "/",
+                return self._json(200, {"name": c.name, "short_name": c.name[:12], "start_url": "./",
                                         "display": "standalone", "background_color": "#17171c",
                                         "theme_color": "#17171c"})
             me = self._me()
             if me is None:
                 return self._json(401, {"error": "sign in"})
             if path == "/api/state":
-                return self._json(200, state(cfg, s, me))
+                return self._json(200, state(c, st, me))
+            if path == "/api/workspaces":
+                return self._json(200, {"workspaces": workspaces_view(self.site)})
             if path == "/api/history":
-                q = parse_qs(query)
+                q = parse_qs(self.query)
                 try:
-                    rows = s.history((q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])), PAGE)
+                    rows = st.history((q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])), PAGE)
                 except (StoreError, ValueError) as e:
                     return self._json(400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:
-                    return self._json(200, s.item(int(m.group(1))))
+                    return self._json(200, st.item(int(m.group(1))))
                 except StoreError as e:
                     return self._json(404, {"error": str(e)})
             if path.startswith("/f/"):
@@ -181,7 +289,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
             self._json(404, {"error": "not found"})
 
         def _file(self, rel: str) -> None:
-            full = safe_file(cfg.workdir, rel)
+            full = safe_file(self.site.cfg.workdir, rel)
             if not full:
                 return self._json(404, {"error": "not found"})
             ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
@@ -226,6 +334,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
         def do_POST(self) -> None:
             if self.headers.get("x-tower") != "1":
                 return self._json(403, {"error": "missing x-tower header"})
+            if not self._resolve():
+                return
+            c, st, path = self.site.cfg, self.site.s, self.route
             n = int(self.headers.get("content-length") or 0)
             if n > MAX_BODY:
                 return self._json(413, {"error": "too large"})
@@ -235,36 +346,53 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                 return self._json(400, {"error": "invalid JSON"})
             if not isinstance(body, dict):
                 return self._json(400, {"error": "invalid JSON"})
-            if self.path == "/api/login":
-                m = s.member_by_token(str(body.get("token") or "")) if cfg.auth_mode == "token" else None
+            if path == "/api/login":
+                m = st.member_by_token(str(body.get("token") or "")) if c.auth_mode == "token" else None
                 if not m:
                     return self._json(401, {"error": "unknown token"})
-                cookie = f"{COOKIE}={body['token']}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000"
+                cookie = (f"{self.cookie}={body['token']}; Path={self.site.prefix}/; HttpOnly; SameSite=Strict; "
+                          f"Max-Age=2592000")
                 return self._json(200, {"ok": True, "me": m}, {"set-cookie": cookie + ("; Secure" if secure else "")})
-            if self.path == "/api/logout":
-                return self._json(200, {"ok": True}, {"set-cookie": f"{COOKIE}=; Path=/; Max-Age=0"})
+            if path == "/api/logout":
+                return self._json(200, {"ok": True}, {"set-cookie": f"{self.cookie}=; Path={self.site.prefix}/; Max-Age=0"})
             me = self._me()
             if me is None:
                 return self._json(401, {"error": "sign in"})
+            who = str(me["name"])
             try:
-                m = re.fullmatch(r"/api/items/(\d+)/decide", self.path)
+                m = re.fullmatch(r"/api/items/(\d+)/decide", path)
                 if m:
                     choices = body.get("choices")
-                    it = s.decide(int(m.group(1)), str(body.get("verdict")), str(me["name"]),
-                                  [str(c) for c in choices] if isinstance(choices, list) else body.get("choice") or None,
-                                  str(body.get("note") or "")[:4000])
-                    log(f"{me['name']} decided #{it['id']}: {it['verdict']} {it['choice'] or ''}")
+                    it = st.decide(int(m.group(1)), str(body.get("verdict")), who,
+                                   [str(x) for x in choices] if isinstance(choices, list) else body.get("choice") or None,
+                                   str(body.get("note") or "")[:4000])
+                    log(f"{who} decided #{it['id']}: {it['verdict']} {it['choice'] or ''}")
                     return self._json(200, {"ok": True, "item": it})
-                if self.path == "/api/memo":
+                if path == "/api/memo":
                     text = str(body.get("text") or "").strip()[:4000]
                     to = str(body.get("to") or INFRA)
-                    if to not in cfg.lanes or to not in (HUB, INFRA):
+                    if to not in c.lanes or to not in (HUB, INFRA):
                         raise StoreError("memos go to hub or infra")
                     if not text:
                         raise StoreError("empty memo")
-                    mid = s.push(to, str(me["name"]), "memo", text)
-                    log(f"{me['name']} memo #{mid} → {to}")
+                    mid = st.push(to, who, "memo", text)
+                    log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
+                if path == "/api/goals":
+                    gid = st.add_goal(str(body.get("title") or "")[:200], str(body.get("detail") or "")[:4000], who)
+                    g = st.goal(gid)
+                    st.push(HUB, who, "goal", f"New goal #{gid} (priority {g['priority']}) from {who}: \"{g['title']}\""
+                            + (f" — {g['detail']}" if g["detail"] else "")
+                            + ". Agree a plan with them (a board item or a memo reply), then `tower goal plan`.")
+                    log(f"{who} goal #{gid}")
+                    return self._json(200, {"ok": True, "id": gid})
+                m = re.fullmatch(r"/api/goals/(\d+)", path)
+                if m:
+                    news = goal_action(st, int(m.group(1)), str(body.get("action") or ""),
+                                       str(body.get("note") or "")[:1000], who)
+                    st.push(HUB, who, "goal", news)
+                    log(news)
+                    return self._json(200, {"ok": True, "goal": st.goal(int(m.group(1)))})
             except StoreError as e:
                 return self._json(409, {"error": str(e)})
             self._json(404, {"error": "not found"})

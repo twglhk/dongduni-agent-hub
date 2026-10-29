@@ -18,4 +18,4 @@ tower = "agent_hub.cli:main"
 packages = ["agent_hub"]
 
 [tool.setuptools.package-data]
-agent_hub = ["board/*.html", "templates/*.md", "templates/lanes/*.md"]
+agent_hub = ["board/*.html", "templates/*.md", "templates/lanes/*.md", "guide/*.md", "guide/deploy/*.md"]

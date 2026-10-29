@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import socket
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -63,6 +65,7 @@ class Config:
     auth_mode: str = "local"     # local | header | token
     auth_header: str = ""
     max_lanes: int = 2
+    opencode_port: int = FIRST_OPENCODE_PORT
     notify: dict[str, str] = field(default_factory=dict)
     tunnel: str = ""             # a command the tower keeps alive, e.g. `cloudflared tunnel run board`
     lanes: dict[str, Lane] = field(default_factory=dict)
@@ -131,7 +134,8 @@ def load(home: Path | None = None) -> Config:
     if HUB not in lanes_raw:
         raise ConfigError("tower.json needs a `hub` lane.")
     lanes: dict[str, Lane] = {}
-    next_port = FIRST_OPENCODE_PORT
+    first_port = int(raw.get("opencode_port") or FIRST_OPENCODE_PORT)
+    next_port = first_port
     for lid, lraw in lanes_raw.items():
         if not lid.replace("-", "").replace("_", "").isalnum():
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
@@ -155,20 +159,23 @@ def load(home: Path | None = None) -> Config:
         public_url=str(web.get("public_url") or ""),
         auth_mode=mode, auth_header=str(auth.get("header") or ""),
         max_lanes=int(raw.get("max_lanes") or 2),
+        opencode_port=first_port,
         notify={str(k): str(v) for k, v in (raw.get("notify") or {}).items()},
         tunnel=str(raw.get("tunnel") or ""),
         lanes=lanes,
     )
 
 
-def template(name: str, lang: str, hub: str, infra: str, safe: bool = False) -> dict[str, Any]:
+def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,
+             opencode_port: int = FIRST_OPENCODE_PORT) -> dict[str, Any]:
     args = SAFE_ARGS if safe else DEFAULT_ARGS
     return {
         "name": name,
         "lang": lang,
-        "web": {"host": "127.0.0.1", "port": 8787, "public_url": ""},
+        "web": {"host": "127.0.0.1", "port": web_port, "public_url": ""},
         "auth": {"mode": "local"},
         "max_lanes": 2,
+        "opencode_port": opencode_port,
         "notify": {},
         "tunnel": "",
         "lanes": {
@@ -176,6 +183,91 @@ def template(name: str, lang: str, hub: str, infra: str, safe: bool = False) -> 
             INFRA: {"runtime": infra, "label": "Infra", "args": args[infra]},
         },
     }
+
+
+# ---------- the workspaces this person runs a tower in (one board can switch between them) ----------
+
+def registry_path() -> Path:
+    base = os.environ.get("AGENT_HUB_HOME")
+    if not base:
+        base = str(Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "agent-hub")
+    return Path(base).expanduser() / "workspaces.json"
+
+
+def workspaces() -> dict[str, Path]:
+    """slug -> workspace home, in the order they were registered."""
+    try:
+        data = json.loads(registry_path().read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    raw = data.get("workspaces") if isinstance(data, dict) else None
+    return {str(k): Path(v["home"]) for k, v in (raw or {}).items() if isinstance(v, dict) and v.get("home")}
+
+
+def _save_workspaces(regs: dict[str, Path]) -> None:
+    path = registry_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"workspaces": {k: {"home": str(v)} for k, v in regs.items()}}
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def register(home: Path) -> str:
+    home = home.resolve()
+    regs = workspaces()
+    for slug, h in regs.items():
+        if h == home:
+            return slug
+    base = re.sub(r"[^a-z0-9]+", "-", home.name.lower()).strip("-") or "workspace"
+    slug, n = base, 2
+    while slug in regs:
+        slug, n = f"{base}-{n}", n + 1
+    regs[slug] = home
+    _save_workspaces(regs)
+    return slug
+
+
+def unregister(slug: str) -> None:
+    regs = workspaces()
+    if slug not in regs:
+        raise ConfigError(f"no workspace {slug} (`tower workspaces`)")
+    del regs[slug]
+    _save_workspaces(regs)
+
+
+def free_ports(home: Path) -> tuple[int, int]:
+    """A board port and an OpenCode base port no other registered workspace uses and nothing listens on."""
+    used: set[int] = set()
+    for h in workspaces().values():
+        if h.resolve() == home.resolve():
+            continue
+        try:
+            c = load(h)
+        except ConfigError:
+            continue
+        used.add(c.web_port)
+        used.update(ln.port for ln in c.lanes.values() if ln.port)
+
+    def free(port: int) -> bool:
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                return False
+            return True
+
+    web = next(p for p in range(8787, 8887) if p not in used and free(p))
+    base = next(b for b in range(FIRST_OPENCODE_PORT, 5301, 10)
+                if not used & set(range(b, b + 10)) and all(free(p) for p in range(b, b + 3)))
+    return web, base
+
+
+def tower_pid(c: Config) -> int | None:
+    try:
+        pid = int((c.state_dir / "tower.pid").read_text())
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError):
+        return None
 
 
 def secret(value: str) -> str:
