@@ -202,7 +202,7 @@ def _refresh_file(path: Path, versions: list[str], report: dict[str, list[str]],
     Untouched since some release (the workspace only appended below it): swap that release's text for the new one.
     Edited inside: leave it, and put the new template beside it as `<name>.new` when it changed since the release
     the file is closest to."""
-    new, rel = versions[-1], str(path.relative_to(home))
+    new, rel = versions[-1], path.relative_to(home).as_posix()
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new, encoding="utf-8")
