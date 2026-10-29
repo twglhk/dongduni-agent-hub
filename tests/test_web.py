@@ -182,7 +182,10 @@ class WorkspacesTest(unittest.TestCase):
         me, other = rows[self.slugs[0]], rows[self.slugs[1]]
         self.assertEqual((me["href"], me["current"]), ("/", True))
         self.assertEqual((other["href"], other["open"], other["name"]), (f"/w/{self.slugs[1]}/", 1, "Other"))
-        code, page, _ = self.front.req("GET", f"/w/{self.slugs[1]}")  # 308 to the trailing slash, then the board
+        code, _, headers = self.front.req("GET", f"/w/{self.slugs[1]}")  # urllib follows 308 only from Python 3.11
+        if code == 308:
+            self.assertEqual(headers["location"], f"/w/{self.slugs[1]}/")
+        code, page, _ = self.front.req("GET", f"/w/{self.slugs[1]}/")
         self.assertEqual(code, 200)
         self.assertIn(b"<!doctype html>", page)
         _, st, _ = self.front.req("GET", f"/w/{self.slugs[1]}/api/state")

@@ -593,12 +593,12 @@ def cmd_discover(args: argparse.Namespace) -> None:
 
 def cmd_init(args: argparse.Namespace) -> None:
     home = Path(args.home or os.getcwd()).resolve()
+    if not re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*", args.lang):
+        raise TowerError(f"--lang takes a language code such as en, ko, ja, zh, es, pt-BR (got {args.lang!r})")
     hub = args.hub or default_runtime()
     infra = args.infra or hub
     if not hub:
         raise TowerError("no agent CLI found (opencode, claude or codex); pass --hub/--infra")
-    if not re.fullmatch(r"[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*", args.lang):
-        raise TowerError(f"--lang takes a language code such as en, ko, ja, zh, es, pt-BR (got {args.lang!r})")
     try:
         path = init(home, args.name, args.lang, hub, infra, args.project, args.safe, args.force)
     except FileExistsError as e:

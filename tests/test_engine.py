@@ -29,7 +29,7 @@ class EngineTest(unittest.TestCase):
         self.s.set_lane(HUB, enabled=1)
         self.e.tick()
         self.assertEqual(self.rt.opened[0][0], HUB)
-        self.assertIn(".tower/lanes/hub.md", self.rt.opened[0][1])
+        self.assertIn(str(self.cfg.instructions(HUB)), self.rt.opened[0][1])
 
     def test_hub_gets_batched_news_when_idle(self) -> None:
         self.s.set_lane(HUB, enabled=1)

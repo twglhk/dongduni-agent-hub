@@ -85,7 +85,7 @@ class CliTest(unittest.TestCase):
         user = Path(tempfile.mkdtemp())
         (user / ".claude").mkdir()
         (user / ".config/opencode").mkdir(parents=True)
-        env = {"HOME": str(user)}
+        env = {"HOME": str(user), "USERPROFILE": str(user)}  # USERPROFILE: the home on Windows
         out = self.tower("skill", "install", "--runtime", "claude", "--runtime", "opencode", env=env)
         self.assertIn("Nothing written", out)
         self.assertIn("+name: agent-hub-setup", out)
