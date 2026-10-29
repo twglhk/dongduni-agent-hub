@@ -23,16 +23,32 @@ class CliTest(unittest.TestCase):
         if lane:
             env["TOWER_LANE"] = lane
         p = subprocess.run([sys.executable, "-m", "agent_hub", *args], cwd=self.home, env=env, capture_output=True,
-                           text=True)
+                           text=True, encoding="utf-8")
         if ok and p.returncode:
             self.fail(f"tower {' '.join(args)} failed: {p.stderr}")
         return p.stdout + p.stderr
 
     def test_files_written(self) -> None:
         for rel in (".tower/tower.json", ".tower/PROTOCOL.md", ".tower/lanes/hub.md", ".tower/lanes/infra.md",
-                    ".tower/lanes/docs.md", ".opencode/command/hub.md", ".claude/commands/infra.md"):
+                    ".tower/lanes/docs.md", ".opencode/command/dah-hub.md", ".claude/commands/dah-infra.md"):
             self.assertTrue((self.home / rel).is_file(), rel)
         self.assertIn(".tower/state/", (self.home / ".gitignore").read_text())
+
+    def test_every_lane_gets_a_shortcut_in_every_runtime(self) -> None:
+        # docs (codex) was added after init: every lane now has /dah-<lane> in OpenCode, Claude Code and Codex
+        for lane in ("hub", "infra", "docs"):
+            for rel in (f".opencode/command/dah-{lane}.md", f".claude/commands/dah-{lane}.md",
+                        f".agents/skills/dah-{lane}/SKILL.md"):
+                text = (self.home / rel).read_text()
+                self.assertIn(f".tower/lanes/{lane}.md", text, rel)
+        self.assertIn("name: dah-docs", (self.home / ".agents/skills/dah-docs/SKILL.md").read_text())
+        mine = self.home / ".claude/commands/dah-review.md"
+        self.assertIn("/dah-review", self.tower("lane", "add", "review", "--runtime", "claude", "--agent", "reviewer"))
+        mine.write_text("my own edit")  # a shortcut someone changed is theirs: removing the lane keeps it
+        self.tower("lane", "remove", "review")
+        self.assertEqual(mine.read_text(), "my own edit")
+        self.assertFalse((self.home / ".opencode/command/dah-review.md").exists())
+        self.assertFalse((self.home / ".agents/skills/dah-review").exists())
 
     def test_task_item_report_flow(self) -> None:
         self.assertIn("only hub", self.tower("task", "docs", "--title", "T", "b", lane="docs", ok=False))
@@ -77,7 +93,7 @@ class CliTest(unittest.TestCase):
         command = user / ".config/opencode/command/agent-hub-setup.md"
         self.assertFalse(skill.exists())
         self.tower("skill", "install", "--runtime", "claude", "--runtime", "opencode", "--yes", env=env)
-        self.assertIn("tower guide`", skill.read_text())
+        self.assertIn("dah guide`", skill.read_text())
         self.assertIn("$ARGUMENTS", command.read_text())
         self.assertIn("up to date", self.tower("skill", "install", "--runtime", "claude", env=env))
 

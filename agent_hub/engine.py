@@ -39,26 +39,26 @@ STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아
 STUCK_BODY = {
     "en": ("## What happened\n{n} piece(s) of news for the hub have waited {m} min: the tower only writes into the hub "
            "while it is idle, and it has stayed busy.\n\n## Likely causes\n- A hook or plugin in the hub's agent keeps "
-           "the session working (auto-continue, todo loops).\n- One very long turn.\n\n## What to do\n- `tower last hub` "
+           "the session working (auto-continue, todo loops).\n- One very long turn.\n\n## What to do\n- `dah last hub` "
            "and `.tower/state/logs/hub.err` show what it is doing.\n- Give the hub lane a lighter agent (`\"agent\"` in "
            "`.tower/tower.json`) or another runtime: a memo to infra can do it.\n- Approve this item once you have seen it."),
     "ko": ("## 무슨 일\n허브에 보낼 소식 {n}건이 {m}분째 대기 중입니다. tower는 허브가 idle일 때만 소식을 넣는데, 허브가 계속 "
            "busy 상태입니다.\n\n## 흔한 원인\n- 허브 에이전트의 hook이나 플러그인이 세션을 계속 돌림(자동 계속, todo 루프).\n"
-           "- 아주 긴 한 턴.\n\n## 할 일\n- `tower last hub`와 `.tower/state/logs/hub.err`로 무엇을 하는지 확인.\n"
+           "- 아주 긴 한 턴.\n\n## 할 일\n- `dah last hub`와 `.tower/state/logs/hub.err`로 무엇을 하는지 확인.\n"
            "- 허브 레인에 더 가벼운 에이전트(`.tower/tower.json`의 `\"agent\"`)나 다른 런타임 지정: infra에 메모하면 됩니다.\n"
            "- 확인했으면 이 항목을 승인하세요."),
     "ja": ("## 何が起きたか\nハブ宛ての知らせ {n} 件が {m} 分待っています。tower はハブがアイドルのときだけ知らせを書き込みますが、"
            "ハブがずっと作業中のままです。\n\n## よくある原因\n- ハブのエージェントの hook やプラグインがセッションを動かし続けている"
-           "(自動継続、todo ループ)。\n- とても長い 1 ターン。\n\n## すること\n- `tower last hub` と `.tower/state/logs/hub.err` "
+           "(自動継続、todo ループ)。\n- とても長い 1 ターン。\n\n## すること\n- `dah last hub` と `.tower/state/logs/hub.err` "
            "で何をしているか確認。\n- ハブのレーンに軽いエージェント(`.tower/tower.json` の `\"agent\"`)か別のランタイムを指定: "
            "infra へのメモで頼めます。\n- 確認したらこの項目を承認してください。"),
     "zh": ("## 发生了什么\n发给中枢的 {n} 条消息已等待 {m} 分钟。tower 只在中枢空闲时写入消息，而中枢一直在忙。\n\n"
            "## 常见原因\n- 中枢代理的 hook 或插件让会话一直运行(自动继续、todo 循环)。\n- 一个非常长的回合。\n\n## 怎么办\n"
-           "- 用 `tower last hub` 和 `.tower/state/logs/hub.err` 查看它在做什么。\n- 给中枢通道换一个更轻的代理"
+           "- 用 `dah last hub` 和 `.tower/state/logs/hub.err` 查看它在做什么。\n- 给中枢通道换一个更轻的代理"
            "(`.tower/tower.json` 里的 `\"agent\"`)或别的运行时：给 infra 写备忘即可。\n- 看过后请批准此项。"),
     "es": ("## Qué pasó\n{n} aviso(s) para el hub llevan {m} min esperando: la torre solo escribe al hub cuando está libre, "
            "y sigue ocupado.\n\n## Causas probables\n- Un hook o plugin del agente del hub mantiene la sesión trabajando "
-           "(auto-continuar, bucles de tareas).\n- Un turno muy largo.\n\n## Qué hacer\n- `tower last hub` y "
+           "(auto-continuar, bucles de tareas).\n- Un turno muy largo.\n\n## Qué hacer\n- `dah last hub` y "
            "`.tower/state/logs/hub.err` muestran qué hace.\n- Asigna al hub un agente más ligero (`\"agent\"` en "
            "`.tower/tower.json`) u otro runtime: basta una nota a infra.\n- Aprueba este elemento cuando lo hayas visto."),
 }
@@ -66,17 +66,17 @@ FOLLOW_VERDICTS = ("ok", "no", "answer")
 VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
                 "merged": "merged"}
 
-RULES = ("(Tower task. Need a decision or an approval? Post it with `tower item add` and do not wait for it: finish "
-         "the unblocked, approved scope and `tower report done \"summary · evidence paths · open item ids\"`. "
+RULES = ("(Tower task. Need a decision or an approval? Post it with `dah item add` and do not wait for it: finish "
+         "the unblocked, approved scope and `dah report done \"summary · evidence paths · open item ids\"`. "
          "Decisions arrive later as separate follow-up tasks in fresh sessions. Never ask questions in chat.)")
-ASK_BOUNCE = ("Do not ask in chat. Post a board item with `tower item add` if a human must decide, then carry on "
+ASK_BOUNCE = ("Do not ask in chat. Post a board item with `dah item add` if a human must decide, then carry on "
               "with other work or end your turn.")
 ASK_GONE = "the question disappeared (answered in the terminal, or the session ended)"
 ASK_HOW = "## How to answer\n- Your pick and note go straight back to the session.\n- No option fits? Write your own answer."
-NUDGE = ("You stopped without a report. Finished: `tower report done \"summary · evidence\"`. Need a decision: "
-         "`tower item add`. Stuck: `tower report blocked \"why\"`. Work left: keep going.")
-WRAP_RULE = ("(This session carries exactly one item. Handle it, answer it (`tower memo reply ID \"...\"` for a memo), "
-             "then `tower report wrapped \"one line\"`. The tower closes the session; anything else arrives later "
+NUDGE = ("You stopped without a report. Finished: `dah report done \"summary · evidence\"`. Need a decision: "
+         "`dah item add`. Stuck: `dah report blocked \"why\"`. Work left: keep going.")
+WRAP_RULE = ("(This session carries exactly one item. Handle it, answer it (`dah memo reply ID \"...\"` for a memo), "
+             "then `dah report wrapped \"one line\"`. The tower closes the session; anything else arrives later "
              "in a fresh one.)")
 
 
@@ -132,10 +132,10 @@ class Engine:
         hand = f"\n\nHandoff:\n{task['handoff']}" if task.get("handoff") else ""
         return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\" continued: {why}\n\n"
                 f"{self._read_first(task['lane'])}\n\nOriginal brief:\n{task['brief']}\n\nReports so far:\n{done}{hand}"
-                f"\n\nRun `tower mine` for this task's open board items, then continue. {RULES}")
+                f"\n\nRun `dah mine` for this task's open board items, then continue. {RULES}")
 
     def hub_prompt(self) -> str:
-        return f"[tower] You are the hub lane.\n\n{self._read_first(HUB)}\n\nThen run `tower status` and handle what is open."
+        return f"[tower] You are the hub lane.\n\n{self._read_first(HUB)}\n\nThen run `dah status` and handle what is open."
 
     def inbox_prompt(self, msg: dict[str, Any]) -> str:
         body = (f"Memo #{msg['id']} from {msg['sender']}:\n{msg['text']}" if msg["kind"] == "memo" else msg["text"])
@@ -170,9 +170,9 @@ class Engine:
             lines.append(f"{g['priority']}. goal #{g['id']} \"{g['title']}\" ({plan}{nxt})")
         return ("[tower] Nothing is queued or running. Active goals, first priority first:\n" + "\n".join(lines)
                 + "\n\nMove the first goal you can forward. No plan yet: propose one to the humans (a board item, or "
-                  "`tower goal plan ID --step ...` when the request already says what to do). Otherwise queue the next "
-                  "step as a task (`tower task LANE --goal ID ...`) or do it yourself, and tick finished steps "
-                  "(`tower goal check ID N`). A goal is met: `tower goal done ID \"what was delivered\"`. If every goal "
+                  "`dah goal plan ID --step ...` when the request already says what to do). Otherwise queue the next "
+                  "step as a task (`dah task LANE --goal ID ...`) or do it yourself, and tick finished steps "
+                  "(`dah goal check ID N`). A goal is met: `dah goal done ID \"what was delivered\"`. If every goal "
                   "waits on humans, end your turn.")
 
     # ---------- tick ----------
@@ -279,16 +279,16 @@ class Engine:
         line = decision_line(it)
         lane = it["lane"]
         if lane == INFRA and self.has_infra:
-            self.store.push(INFRA, TOWER, "decision", line + f"\n(`tower show {it['id']}` for the full item.)",
+            self.store.push(INFRA, TOWER, "decision", line + f"\n(`dah show {it['id']}` for the full item.)",
                             it["task_id"], it["id"], con=con)
             return
         src = con.execute("SELECT * FROM tasks WHERE id=?", (it["task_id"],)).fetchone() if it["task_id"] else None
         follow = (lane in self.team and src is not None and it["verdict"] in FOLLOW_VERDICTS
                   and src["state"] in ("running", "wrapping", "closed"))
         if follow:
-            brief = (f"Follow-up to board item #{it['id']} only (fresh session). `tower show {it['id']}` has the item, "
-                     f"`tower log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
-                     f"allows and nothing beyond it. If it is unclear, `tower item add` or `tower report blocked`."
+            brief = (f"Follow-up to board item #{it['id']} only (fresh session). `dah show {it['id']}` has the item, "
+                     f"`dah log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
+                     f"allows and nothing beyond it. If it is unclear, `dah item add` or `dah report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
             cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
                               (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
@@ -345,7 +345,7 @@ class Engine:
                 self.store.update_task(task["id"], nudges=n + 1)
             elif n == NUDGE_LIMIT:
                 self.store.push(HUB, TOWER, "stalled", f"Stalled: {lane} task #{task['id']} \"{task['title']}\" went "
-                                f"quiet after {NUDGE_LIMIT} nudges. Its last words: `tower last {lane}`.", task["id"])
+                                f"quiet after {NUDGE_LIMIT} nudges. Its last words: `dah last {lane}`.", task["id"])
                 self.store.update_task(task["id"], nudges=n + 1)
 
     def _start_queued(self, statuses: dict[str, str]) -> None:
@@ -384,7 +384,7 @@ class Engine:
         if task["respawns"] >= RESPAWN_LIMIT:
             if task["respawns"] == RESPAWN_LIMIT:
                 self.store.push(HUB, TOWER, "stalled", f"Closed: {lane} task #{task['id']} closed {RESPAWN_LIMIT} times "
-                                f"after reopening. `tower cancel {task['id']}` or reassign it.", task["id"])
+                                f"after reopening. `dah cancel {task['id']}` or reassign it.", task["id"])
                 self.store.update_task(task["id"], respawns=RESPAWN_LIMIT + 1)
             return
         handed = bool(task.get("rotate_ready"))
@@ -419,7 +419,7 @@ class Engine:
             for m in msgs:
                 if m["kind"] == "memo":
                     lines.append(f"• Request #{m['id']} from {m['sender']}: {m['text']} "
-                                 f"(answer with `tower memo reply {m['id']} \"...\"`)")
+                                 f"(answer with `dah memo reply {m['id']} \"...\"`)")
                 else:
                     lines.append(f"• {m['text']}")
             self._send(HUB, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")

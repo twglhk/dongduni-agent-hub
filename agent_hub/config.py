@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from . import procs
+
 HUB = "hub"
 INFRA = "infra"
 RUNTIMES = ("opencode", "claude", "codex")
@@ -23,7 +25,7 @@ FIRST_OPENCODE_PORT = 4301
 
 DEFAULT_ARGS = {
     # Lanes run unattended, so they need to act without a human approving each tool call.
-    # `tower init --safe` writes the stricter variants instead; see SETUP.md "Permissions".
+    # `dah init --safe` writes the stricter variants instead; see SETUP.md "Permissions".
     "claude": ["--permission-mode", "bypassPermissions"],
     "codex": ["--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"],
     "opencode": [],
@@ -98,7 +100,7 @@ def find_home(start: Path | None = None) -> Path:
     for d in (here, *here.parents):
         if (d / TOWER_DIR / CONFIG_NAME).is_file():
             return d
-    raise ConfigError("No .tower/tower.json found here or above. Run `tower init` in your workspace, "
+    raise ConfigError("No .tower/tower.json found here or above. Run `dah init` in your workspace, "
                       "or set TOWER_HOME.")
 
 
@@ -127,7 +129,7 @@ def load(home: Path | None = None) -> Config:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        raise ConfigError(f"{path} does not exist. Run `tower init`.")
+        raise ConfigError(f"{path} does not exist. Run `dah init`.")
     except json.JSONDecodeError as e:
         raise ConfigError(f"{path} is not valid JSON: {e}")
     lanes_raw = raw.get("lanes") or {}
@@ -189,6 +191,8 @@ def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web
 
 def registry_path() -> Path:
     base = os.environ.get("AGENT_HUB_HOME")
+    if not base and os.name == "nt" and os.environ.get("APPDATA"):
+        base = str(Path(os.environ["APPDATA"]) / "agent-hub")
     if not base:
         base = str(Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "agent-hub")
     return Path(base).expanduser() / "workspaces.json"
@@ -229,7 +233,7 @@ def register(home: Path) -> str:
 def unregister(slug: str) -> None:
     regs = workspaces()
     if slug not in regs:
-        raise ConfigError(f"no workspace {slug} (`tower workspaces`)")
+        raise ConfigError(f"no workspace {slug} (`dah workspaces`)")
     del regs[slug]
     _save_workspaces(regs)
 
@@ -263,11 +267,10 @@ def free_ports(home: Path) -> tuple[int, int]:
 
 def tower_pid(c: Config) -> int | None:
     try:
-        pid = int((c.state_dir / "tower.pid").read_text())
-        os.kill(pid, 0)
-        return pid
+        pid = int((c.state_dir / "tower.pid").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    return pid if procs.alive(pid) else None
 
 
 def secret(value: str) -> str:

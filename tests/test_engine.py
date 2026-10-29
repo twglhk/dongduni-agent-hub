@@ -44,7 +44,7 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(len(self.rt.sent), 1)
         text = self.rt.sent[0][2]
         self.assertIn("Request #", text)
-        self.assertIn("tower memo reply", text)
+        self.assertIn("dah memo reply", text)
         self.assertIn("Done: docs", text)
         self.assertEqual(self.s.pending(HUB), [])
 
@@ -259,7 +259,7 @@ class EngineTest(unittest.TestCase):
         self.rt.qs["docs"] = [{"id": "q9", "questions": [{"question": "?"}]}]
         self.e.tick()
         self.assertEqual(self.rt.replies[0][1], "q9")
-        self.assertIn("tower item add", self.rt.replies[0][2][0][0])
+        self.assertIn("dah item add", self.rt.replies[0][2][0][0])
 
 
 if __name__ == "__main__":

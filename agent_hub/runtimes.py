@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -25,6 +24,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from . import procs
 from .config import Config, Lane
 from .store import Store
 
@@ -56,15 +56,7 @@ def listening(port: int) -> bool:
 
 
 def pid_alive(pid: int | None) -> bool:
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return procs.alive(pid)
 
 
 def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
@@ -72,8 +64,8 @@ def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     env.update(lane.env)
     env["TOWER_HOME"] = str(cfg.home)
     env["TOWER_LANE"] = lane.id
-    for d in (BIN_DIR, Path(sys.executable).parent):  # a clone's bin/, or the venv a pip/pipx install put tower in
-        if (d / "tower").is_file():
+    for d in (BIN_DIR, Path(sys.executable).parent):  # a clone's bin/, or the venv a pip/pipx/uv install put dah in
+        if (d / "dah").is_file() or (d / "dah.exe").is_file():
             env["PATH"] = f"{d}{os.pathsep}{env.get('PATH', '')}"
             break
     return env
@@ -95,7 +87,7 @@ class Adapter:
     def _spawn(self, argv: list[str]) -> int:
         with self.log_path.open("ab") as out, (self.logs / f"{self.lane.id}.err").open("ab") as err:
             proc = subprocess.Popen(argv, cwd=self.cfg.workdir, env=lane_env(self.cfg, self.lane), stdout=out,
-                                    stderr=err, stdin=subprocess.DEVNULL, start_new_session=True)
+                                    stderr=err, stdin=subprocess.DEVNULL, **procs.detached())
         self.procs[proc.pid] = proc
         self.store.set_lane(self.lane.id, pid=proc.pid)
         return proc.pid
@@ -107,20 +99,14 @@ class Adapter:
         proc = self.procs.get(pid)
         if proc is not None:  # our child: poll() also reaps it, so a finished run never looks alive
             return proc.poll() is None
-        try:  # a child of this process we lost the handle for (config reload): reap it if it finished
-            if os.waitpid(pid, os.WNOHANG)[0] == pid:
-                return False
-        except ChildProcessError:
-            pass
+        if procs.reap(pid):  # a child of this process we lost the handle for (config reload) that finished
+            return False
         return pid_alive(pid)
 
     def _kill(self) -> None:
         pid = self.store.lane(self.lane.id).get("pid")
         if pid and self._running():
-            try:
-                os.killpg(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+            procs.terminate(pid)
             deadline = time.time() + 10
             while self._running() and time.time() < deadline:
                 time.sleep(0.2)
@@ -192,8 +178,8 @@ class OpenCode(Adapter):
 
     def open(self, prompt: str) -> str:
         if not listening(self.port):
-            binary = os.environ.get("TOWER_OPENCODE_BIN", "opencode")
-            self._spawn([binary, "serve", "--port", str(self.port), "--hostname", "127.0.0.1", *self.lane.args])
+            binary = procs.command(os.environ.get("TOWER_OPENCODE_BIN", "opencode"))
+            self._spawn([*binary, "serve", "--port", str(self.port), "--hostname", "127.0.0.1", *self.lane.args])
             deadline = time.time() + 90
             while http(self.port, "GET", "/session/status", timeout=2)[0] != 200:
                 if time.time() > deadline or not self._running():
@@ -285,7 +271,7 @@ class Headless(Adapter):
 
 class Claude(Headless):
     def _base(self) -> list[str]:
-        argv = [os.environ.get("TOWER_CLAUDE_BIN", "claude"), "-p", "--output-format", "json", *self.lane.args]
+        argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), "-p", "--output-format", "json", *self.lane.args]
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
         return argv + (["--model", self.lane.model] if self.lane.model else [])
 
@@ -320,7 +306,7 @@ class Codex(Headless):
     OPEN_WAIT = 60
 
     def _base(self) -> list[str]:
-        argv = [os.environ.get("TOWER_CODEX_BIN", "codex"), "exec", "--json", *self.lane.args]
+        argv = [*procs.command(os.environ.get("TOWER_CODEX_BIN", "codex")), "exec", "--json", *self.lane.args]
         return argv + (["--model", self.lane.model] if self.lane.model else [])
 
     @staticmethod

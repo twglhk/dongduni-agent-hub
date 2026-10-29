@@ -20,7 +20,7 @@ FAKE_CLAUDE = r'''#!PY
 import json, os, sys, time
 args = sys.argv[1:]
 sid = args[args.index("--session-id") + 1] if "--session-id" in args else args[args.index("--resume") + 1]
-with open(os.environ["FAKE_LOG"], "a") as f:
+with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"argv": args, "lane": os.environ.get("TOWER_LANE"), "home": os.environ.get("TOWER_HOME")}) + "\n")
 time.sleep(float(os.environ.get("FAKE_SLEEP", "0.3")))
 print(json.dumps({"type": "result", "session_id": sid, "result": "said: " + args[-1][:20],
@@ -30,7 +30,7 @@ print(json.dumps({"type": "result", "session_id": sid, "result": "said: " + args
 FAKE_CODEX = r'''#!PY
 import json, os, sys, time
 args = sys.argv[1:]
-with open(os.environ["FAKE_LOG"], "a") as f:
+with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"argv": args}) + "\n")
 tid = args[args.index("resume") + 1] if "resume" in args else "thread-123"
 print(json.dumps({"type": "thread.started", "thread_id": tid}), flush=True)
@@ -41,8 +41,14 @@ print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 12000, "ou
 
 
 def script(dirpath: Path, name: str, body: str) -> Path:
+    """A stand-in CLI: an executable Python script, or on Windows a .cmd that runs one."""
+    if os.name == "nt":
+        (dirpath / f"{name}.py").write_text(body.replace("#!PY", ""), encoding="utf-8")
+        p = dirpath / f"{name}.cmd"
+        p.write_text(f'@"{sys.executable}" "%~dp0{name}.py" %*\r\n', encoding="utf-8")
+        return p
     p = dirpath / name
-    p.write_text(body.replace("#!PY", "#!" + sys.executable))
+    p.write_text(body.replace("#!PY", "#!" + sys.executable), encoding="utf-8")
     p.chmod(p.stat().st_mode | stat.S_IEXEC)
     return p
 
@@ -72,7 +78,7 @@ class HeadlessTest(unittest.TestCase):
             os.environ.pop(k, None)
 
     def calls(self) -> list[dict]:
-        return [json.loads(x) for x in self.log.read_text().splitlines()]
+        return [json.loads(x) for x in self.log.read_text(encoding="utf-8").splitlines()]
 
     def test_claude_session_lifecycle(self) -> None:
         self.assertEqual(self.rt.status("hub"), "closed")

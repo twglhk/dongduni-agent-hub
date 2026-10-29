@@ -416,7 +416,7 @@ class Store:
         for n in numbers:
             if not 1 <= n <= len(steps):
                 raise StoreError(f"goal #{goal_id} has steps 1..{len(steps)}" if steps else
-                                 f"goal #{goal_id} has no plan yet (`tower goal plan`)")
+                                 f"goal #{goal_id} has no plan yet (`dah goal plan`)")
             steps[n - 1]["done"] = done
         with self.conn() as con:
             con.execute("UPDATE goals SET steps=?, updated=? WHERE id=?",

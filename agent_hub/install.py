@@ -1,24 +1,56 @@
-"""Write the tower's files into a workspace: config, protocol, lane instructions, and slash-command shims
-so a human can also open a lane by hand in their agent (`/hub` in OpenCode or Claude Code).
+"""Write the tower's files into a workspace: config, protocol, lane instructions, and a `/dah-<lane>` shortcut per
+lane so a human can also open a lane by hand in their own agent (a command in OpenCode and Claude Code, a skill
+in Codex). A lane is a role put on top of the agent the person already uses, not a new agent.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, free_ports, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
-SHIM_DIRS = {"opencode": Path(".opencode/command"), "claude": Path(".claude/commands")}
-SHIM = """---
-description: Open the {lane} lane of the tower
----
-Read `.tower/lanes/{lane}.md` and `.tower/PROTOCOL.md` and follow them. You are the {lane} lane (run `tower` with `--as {lane}` if TOWER_LANE is not set).
+SHIM_PREFIX = "dah-"
+SHIM_BODY = ("Read `.tower/lanes/{lane}.md` and `.tower/PROTOCOL.md` and follow them. You are the {lane} lane "
+             "(run `dah` with `--as {lane}` if TOWER_LANE is not set).\n")
+SHIM_DESC = "Work as the {lane} lane of this workspace's agent-hub"
 
-$ARGUMENTS
-"""
+
+def shim_files(lane: str, runtime: str) -> tuple[Path, str] | None:
+    """Where the `/dah-<lane>` shortcut lives for one runtime, and its text."""
+    name, desc, body = SHIM_PREFIX + lane, SHIM_DESC.format(lane=lane), SHIM_BODY.format(lane=lane)
+    if runtime == "opencode":
+        return Path(".opencode/command") / f"{name}.md", f"---\ndescription: {desc}\n---\n{body}\n$ARGUMENTS\n"
+    if runtime == "claude":
+        return Path(".claude/commands") / f"{name}.md", f"---\ndescription: {desc}\n---\n{body}\n$ARGUMENTS\n"
+    if runtime == "codex":  # Codex has no project commands; a project skill is invoked the same way
+        return Path(".agents/skills") / name / "SKILL.md", f"---\nname: {name}\ndescription: {desc}\n---\n{body}"
+    return None
+
+
+def write_shims(cfg: Config, lanes: list[str], force: bool, wrote: list[str]) -> None:
+    for runtime in sorted({ln.runtime for ln in cfg.lanes.values()}):
+        for lid in lanes:
+            f = shim_files(lid, runtime)
+            if f:
+                _write(cfg.workdir / f[0], f[1], force, wrote, cfg.home)
+
+
+def remove_shims(cfg: Config, lane: str) -> list[str]:
+    """Delete a lane's shortcuts, but only files still exactly as we wrote them."""
+    gone = []
+    for runtime in ("opencode", "claude", "codex"):
+        f = shim_files(lane, runtime)
+        path = cfg.workdir / f[0] if f else None
+        if f and path and path.is_file() and path.read_text(encoding="utf-8") == f[1]:
+            path.unlink()
+            if path.name == "SKILL.md" and not any(path.parent.iterdir()):
+                path.parent.rmdir()
+            gone.append(str(f[0]))
+    return gone
 
 
 def _write(path: Path, text: str, force: bool, wrote: list[str], home: Path) -> None:
@@ -42,12 +74,7 @@ def install(cfg: Config, force: bool = False) -> list[str]:
     _write(home / TOWER_DIR / "PROTOCOL.md", (TEMPLATES / "PROTOCOL.md").read_text(encoding="utf-8"), force, wrote, home)
     for lid in cfg.lanes:
         _write(cfg.instructions(lid), lane_template(lid), force, wrote, home)
-    for runtime in sorted({ln.runtime for ln in cfg.lanes.values()}):
-        shim_dir = SHIM_DIRS.get(runtime)
-        if shim_dir:
-            for lid in (HUB, INFRA):
-                if lid in cfg.lanes:
-                    _write(cfg.workdir / shim_dir / f"{lid}.md", SHIM.format(lane=lid), force, wrote, home)
+    write_shims(cfg, list(cfg.lanes), force, wrote)
     ignore_state(home, wrote)
     return wrote
 
@@ -62,26 +89,31 @@ def ignore_state(home: Path, wrote: list[str]) -> None:
 
 
 GUIDE = Path(__file__).resolve().parent / "guide"
-CLONE_BIN = Path(__file__).resolve().parents[1] / "bin" / "tower"
-INSTALL_HINT = ("pipx install git+https://github.com/twglhk/agent-hub  (or `uv tool install git+https://github.com/"
-                "twglhk/agent-hub`, or `npm install -g github:twglhk/agent-hub`)")
+PACKAGE = "dongduni-agent-hub"
+REPO = "https://github.com/twglhk/dongduni-agent-hub"
+CLONE_BIN = Path(__file__).resolve().parents[1] / "bin" / "dah"
+INSTALL_HINT = f"`uv tool install {PACKAGE}` (or `pipx install {PACKAGE}`)"
 SKILL_NAME = "agent-hub-setup"
 SKILL_DESC = ("Set up agent-hub (the tower, its hub and lanes, and the review board) in this workspace. Use when asked to "
               "install, set up or transplant agent-hub / the tower, for this project or globally.")
 SKILL_BODY = """Set up agent-hub for the workspace you are in (or the one the person names).
 
-- `tower` must run: `{tower} -h`. If it does not, it installs with {hint}. Installing software is the person's call: ask first.
+- `dah` must run: `{tower} -h`. If it does not, it installs with {hint}. Installing software is the person's call: ask first.
 - Run `{tower} guide` and work through that playbook's phases in order. Do not improvise the order or skip the survey.
 - The person's own agents, instruction files, MCP servers, skills and subagents stay as they are; the tower drives them.
 """
 
 
 def tower_command() -> str:
-    """How the person's agents should call this tower: `tower` when it is on PATH, else the clone's own script."""
-    found = shutil.which("tower")
-    if found or not CLONE_BIN.is_file():
-        return "tower"
-    return str(CLONE_BIN)
+    """How the person's agents should call dah: `dah` when it is on PATH, else the full path of this install's
+    command (a project venv), else a clone's script."""
+    if shutil.which("dah"):
+        return "dah"
+    for exe in (Path(sys.executable).parent / "dah", Path(sys.executable).parent / "dah.exe"):
+        if exe.is_file():
+            return str(exe)
+    return str(CLONE_BIN) if CLONE_BIN.is_file() else "dah"
+
 SKILL_FILES = {
     "claude": (Path(".claude/skills") / SKILL_NAME / "SKILL.md",
                f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),

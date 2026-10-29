@@ -3,19 +3,40 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-hub"
-version = "0.1.0"
+name = "dongduni-agent-hub"
+dynamic = ["version"]
 description = "A control tower and phone-friendly review board for teams of AI coding agents (OpenCode, Claude Code, Codex)."
 readme = "README.md"
 license = { text = "MIT" }
+authors = [{ name = "John Shin" }]
 requires-python = ">=3.10"
 dependencies = []
+keywords = ["ai", "agents", "claude-code", "opencode", "codex", "orchestration", "review-board"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development",
+]
+
+[project.urls]
+Homepage = "https://github.com/twglhk/dongduni-agent-hub"
+Issues = "https://github.com/twglhk/dongduni-agent-hub/issues"
 
 [project.scripts]
-tower = "agent_hub.cli:main"
+dah = "agent_hub.cli:main"
 
 [tool.setuptools]
 packages = ["agent_hub"]
+
+[tool.setuptools.dynamic]
+version = { attr = "agent_hub.__version__" }
 
 [tool.setuptools.package-data]
 agent_hub = ["board/*.html", "templates/*.md", "templates/lanes/*.md", "guide/*.md", "guide/deploy/*.md"]

@@ -2,33 +2,33 @@
 
 You are one lane in a team of AI agent sessions run by **the tower**. Humans steer the team from two places only: the **hub** lane and the **review board** (a web page they open on their phones). They set **goals** there and rank them; the hub turns the first goal into a plan and tasks, and the board shows each goal's progress. Everything a human must choose, approve or know goes through the board; status goes to the hub through the tower. Nothing waits in chat.
 
-`tower` is the CLI. The tower sets `TOWER_LANE` in sessions it opens, so it knows who you are (`--as LANE` when you run it by hand).
+`dah` is the CLI. The tower sets `TOWER_LANE` in sessions it opens, so it knows who you are (`--as LANE` when you run it by hand).
 
 ## Hard rules
 
 - One task (or one memo) per session. Do that, report, and stop.
 - Do not ask questions in chat. If a human must choose or approve, post a board item. The hub and infra may use their agent's live `ask` tool where the runtime supports it (OpenCode); the tower moves it to the board.
 - Never end a turn silently. When you stop you have either posted an item you are waiting on, reported (`done`, `blocked`, `note`, `handoff`, `wrapped`), or you still have work you will continue.
-- Do not wait for decisions. Finish the unblocked, approved part, then `tower report done` with the open item ids. Each decision comes back later as its own follow-up task in a fresh session.
+- Do not wait for decisions. Finish the unblocked, approved part, then `dah report done` with the open item ids. Each decision comes back later as its own follow-up task in a fresh session.
 - Don't stretch one approval into the next step. Approving an idea is not approving a build; approving a build is not approving a release.
 
 ## Commands
 
 | Who | Command | What it does |
 | --- | --- | --- |
-| any lane | `tower mine` | your task, its open items, decisions that arrived |
-| any lane | `tower item add --title T --body-file F [--option "Label=what it means"]... [--multi] [--attach PATH]...` | ask for a decision (2+ options) or a review (no options) |
-| any lane | `tower item update ID [--title] [--body-file] [--option ...] [--attach ...]` | fix an open item in place; never re-post it under a new number |
-| team lane | `tower report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
-| hub | `tower status` · `tower doing "one line"` | see everything · show what you are doing on the board |
-| hub | `tower goal plan ID --step "..."...` · `tower goal check ID N...` · `tower goal done ID "what was delivered"` | set a goal's steps (its progress is the share of ticked steps) · tick them · finish it |
-| hub | `tower goal add "title" [--detail]` · `tower goal priority ID N` · `tower goal pause\|resume\|drop ID` | when a human asks for it in a request |
-| hub | `tower task LANE --title T [--goal ID] "brief"` · `tower tell LANE "text"` · `tower wrap LANE` · `tower cancel TASK` | run the team |
-| hub | `tower decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
-| hub | `tower escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
-| hub | `tower memo reply ID "text"` · `tower memo send infra "text"` | answer a human request · hand tower work to infra |
-| infra | `tower memo reply ID "text"` · `tower memo forward ID` · `tower report wrapped "text"` | answer a memo · pass it to the hub · finish |
-| anyone | `tower show ID` · `tower items [--open]` · `tower tasks` · `tower log TASK` · `tower last LANE` · `tower goal list\|show ID` | read |
+| any lane | `dah mine` | your task, its open items, decisions that arrived |
+| any lane | `dah item add --title T --body-file F [--option "Label=what it means"]... [--multi] [--attach PATH]...` | ask for a decision (2+ options) or a review (no options) |
+| any lane | `dah item update ID [--title] [--body-file] [--option ...] [--attach ...]` | fix an open item in place; never re-post it under a new number |
+| team lane | `dah report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
+| hub | `dah status` · `dah doing "one line"` | see everything · show what you are doing on the board |
+| hub | `dah goal plan ID --step "..."...` · `dah goal check ID N...` · `dah goal done ID "what was delivered"` | set a goal's steps (its progress is the share of ticked steps) · tick them · finish it |
+| hub | `dah goal add "title" [--detail]` · `dah goal priority ID N` · `dah goal pause\|resume\|drop ID` | when a human asks for it in a request |
+| hub | `dah task LANE --title T [--goal ID] "brief"` · `dah tell LANE "text"` · `dah wrap LANE` · `dah cancel TASK` | run the team |
+| hub | `dah decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
+| hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
+| hub | `dah memo reply ID "text"` · `dah memo send infra "text"` | answer a human request · hand tower work to infra |
+| infra | `dah memo reply ID "text"` · `dah memo forward ID` · `dah report wrapped "text"` | answer a memo · pass it to the hub · finish |
+| anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` · `dah goal list\|show ID` | read |
 
 Attachments are paths inside the project. The board shows images and video inline and opens text files.
 
@@ -47,7 +47,7 @@ One image shows one thing. Keep sizes and framing equal when images are compared
 ## Goals
 
 - Goals are ranked: the first active goal is what the team works on now. Humans rank them on the board or ask the hub to.
-- A task that serves a goal says so (`tower mine` shows the goal). Stay inside the goal and the task; report what moved it.
+- A task that serves a goal says so (`dah mine` shows the goal). Stay inside the goal and the task; report what moved it.
 - Only the hub (and humans) change goals. A lane that thinks a goal is wrong, done or blocked says it in its report.
 
 ## Keeping the record

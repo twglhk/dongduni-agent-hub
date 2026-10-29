@@ -14,7 +14,7 @@ Tailscale Serve proxies to `127.0.0.1:8787` and adds `Tailscale-User-Login` (the
 "auth": {"mode": "header", "header": "Tailscale-User-Login"}
 ```
 
-Pin people if you want names and roles: `tower member add ana --ident ana@example.com --role owner`.
+Pin people if you want names and roles: `dah member add ana --ident ana@example.com --role owner`.
 
 Restart the tower after changing `web` or `auth`. Use your tailnet ACLs to decide which devices may reach the machine.
 

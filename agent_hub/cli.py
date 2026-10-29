@@ -1,4 +1,4 @@
-"""tower: the CLI lanes, the hub, infra and humans use. Run `tower -h` or `tower COMMAND -h`.
+"""dah: the CLI lanes, the hub, infra and humans use. Run `dah -h` or `dah COMMAND -h`.
 
 Who is calling comes from TOWER_LANE (set in sessions the tower opens) or `--as LANE`.
 """
@@ -10,7 +10,6 @@ import getpass
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -20,9 +19,10 @@ from pathlib import Path
 from typing import Any
 
 from . import config as config_mod
+from . import procs
 from .config import HUB, INFRA, RUNTIMES, Config, ConfigError, tower_pid
 from .engine import VERDICT_WORD, Engine, clip
-from .install import default_runtime, edit_config, init, install, lane_template
+from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
 from .notify import notifier
 from .store import GOAL_RANKED, GOAL_STATES, HUMAN, Store, StoreError
 
@@ -135,13 +135,13 @@ def cmd_item_add(args: argparse.Namespace) -> None:
         raise TowerError(str(e))
     if audience == HUMAN:
         print(f"#{iid} posted for humans (push notification). Don't wait: finish your scope; the decision comes back "
-              f"later (`tower show {iid}`).")
+              f"later (`dah show {iid}`).")
         return
     s.push(HUB, me, "item", f"Item #{iid} from {me}" + (f" task #{task['id']}" if task else "")
-           + f" \"{args.title}\" → `tower show {iid}`", task["id"] if task else None, iid)
+           + f" \"{args.title}\" → `dah show {iid}`", task["id"] if task else None, iid)
     s.signal(task["id"] if task else None)
     print(f"#{iid} posted; the hub sees it first. Don't wait: finish the unblocked scope and list #{iid} in "
-          f"`tower report done`.")
+          f"`dah report done`.")
 
 
 def cmd_item_update(args: argparse.Namespace) -> None:
@@ -162,7 +162,7 @@ def cmd_item_update(args: argparse.Namespace) -> None:
         raise TowerError(str(e))
     if me in c.team():
         task = s.live_task(me)
-        s.push(HUB, me, "item", f"Item #{args.id} updated by {me} → `tower show {args.id}`",
+        s.push(HUB, me, "item", f"Item #{args.id} updated by {me} → `dah show {args.id}`",
                task["id"] if task else None, args.id)
     print(f"#{args.id} updated.")
 
@@ -183,7 +183,7 @@ def cmd_report(args: argparse.Namespace) -> None:
     if me == HUB:
         raise TowerError("the hub does not report; it decides, tells and wraps")
     if me == INFRA and args.kind != "wrapped":
-        raise TowerError("infra only uses `report wrapped`; answer memos with `tower memo reply`")
+        raise TowerError("infra only uses `report wrapped`; answer memos with `dah memo reply`")
     task = s.live_task(me)
     tid = task["id"] if task else None
     atts = check_paths(c, args.attach)
@@ -246,7 +246,7 @@ def cmd_goal(args: argparse.Namespace) -> None:
     s = store(c)
     if args.sub == "list":
         goals = s.goals(GOAL_STATES if args.all else GOAL_RANKED)
-        print("\n".join(goal_line(g) for g in goals) if goals else "No goals. `tower goal add \"title\"`")
+        print("\n".join(goal_line(g) for g in goals) if goals else "No goals. `dah goal add \"title\"`")
         return
     if args.sub == "show":
         g = s.goal(args.id)
@@ -268,7 +268,7 @@ def cmd_goal(args: argparse.Namespace) -> None:
             s.move_goal(gid, args.priority)
         g = s.goal(gid)
         news = f"New goal #{gid} (priority {g['priority']}) from {me}: \"{g['title']}\"" + (
-            f" — {g['detail']}" if g["detail"] else "") + ". Agree a plan with the humans, then `tower goal plan`."
+            f" — {g['detail']}" if g["detail"] else "") + ". Agree a plan with the humans, then `dah goal plan`."
         print(f"goal #{gid} added at priority {g['priority']}")
     elif args.sub == "priority":
         order = s.move_goal(args.id, args.position)
@@ -305,7 +305,7 @@ def cmd_tell(args: argparse.Namespace) -> None:
     s = store(c)
     task = s.live_task(args.lane)
     if not task:
-        raise TowerError(f"{args.lane} has no running task; use `tower task`")
+        raise TowerError(f"{args.lane} has no running task; use `dah task`")
     s.push(args.lane, HUB, "tell", f"From the hub: {args.text}", task["id"])
     print(f"→ {args.lane} task #{task['id']} (delivered when idle)")
 
@@ -320,7 +320,7 @@ def cmd_wrap(args: argparse.Namespace) -> None:
         raise TowerError(f"{args.lane} has no running task")
     s.update_task(task["id"], state="wrapping")
     s.push(args.lane, HUB, "wrap", f"Wrap up task #{task['id']}: remove temp files, save what the next session needs, "
-           f"then `tower report wrapped \"one line\"`. {args.note or ''}".strip(), task["id"])
+           f"then `dah report wrapped \"one line\"`. {args.note or ''}".strip(), task["id"])
     print(f"→ {args.lane} wrap requested")
 
 
@@ -339,7 +339,7 @@ def cmd_escalate(args: argparse.Namespace) -> None:
     need(args, c, HUB)
     s = store(c)
     if args.to and args.to not in {m["name"] for m in s.members()}:
-        raise TowerError(f"no member {args.to} (`tower member list`)")
+        raise TowerError(f"no member {args.to} (`dah member list`)")
     try:
         s.escalate(args.id, args.why, args.to)
     except StoreError as e:
@@ -478,7 +478,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if tower_pid(c) and tower_pid(c) != os.getpid():
         raise TowerError(f"the tower already runs (pid {tower_pid(c)})")
     s = store(c)
-    (c.state_dir / "tower.pid").write_text(str(os.getpid()))
+    (c.state_dir / "tower.pid").write_text(str(os.getpid()), encoding="utf-8")
     config_mod.register(c.home)
     if not args.no_hub:
         s.set_lane(HUB, enabled=1)
@@ -493,7 +493,7 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     def start_tunnel(cmd: str) -> subprocess.Popen[bytes]:
         with (c.state_dir / "tunnel.log").open("ab") as log:
-            return subprocess.Popen(cmd, shell=True, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+            return subprocess.Popen(cmd, shell=True, stdout=log, stderr=subprocess.STDOUT, **procs.detached())
 
     try:
         while True:
@@ -504,7 +504,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     if (c2.web_host, c2.web_port, c2.auth_mode) != (c.web_host, c.web_port, c.auth_mode):
                         say("web/auth changed in tower.json: restart the tower to apply it")
                     if c2.tunnel != c.tunnel and tunnel:
-                        os.killpg(tunnel.pid, signal.SIGTERM)
+                        procs.terminate(tunnel.pid)
                         tunnel = None
                     c = c2
                     engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say)
@@ -525,7 +525,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     finally:
         httpd.shutdown()
         if tunnel and tunnel.poll() is None:
-            os.killpg(tunnel.pid, signal.SIGTERM)
+            procs.terminate(tunnel.pid)
         (c.state_dir / "tower.pid").unlink(missing_ok=True)
 
 
@@ -537,7 +537,7 @@ def cmd_start(_args: argparse.Namespace) -> None:
     c.state_dir.mkdir(parents=True, exist_ok=True)
     log = (c.state_dir / "tower.log").open("ab")
     proc = subprocess.Popen([sys.executable, "-m", "agent_hub", "run"], cwd=c.home, stdout=log, stderr=log,
-                            stdin=subprocess.DEVNULL, start_new_session=True,
+                            stdin=subprocess.DEVNULL, **procs.detached(),
                             env={**os.environ, "TOWER_HOME": str(c.home),
                                  "PYTHONPATH": str(Path(__file__).resolve().parents[1])
                                  + os.pathsep + os.environ.get("PYTHONPATH", "")})
@@ -554,7 +554,7 @@ def cmd_stop(args: argparse.Namespace) -> None:
     c = cfg()
     pid = tower_pid(c)
     if pid:  # stop the loop first, or it reopens the hub the moment its session closes
-        os.kill(pid, signal.SIGTERM)
+        procs.terminate(pid, group=False)  # the loop only: lane sessions are its children on Windows
         for _ in range(40):
             if not tower_pid(c):
                 break
@@ -609,8 +609,8 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"wrote {path}")
     for w in wrote:
         print(f"wrote {w}")
-    print(f"board port {c.web_port} · workspace \"{slug}\" registered (`tower workspaces`)")
-    print("next: `tower start`, then open the board")
+    print(f"board port {c.web_port} · workspace \"{slug}\" registered (`dah workspaces`)")
+    print("next: `dah start`, then open the board")
 
 
 def cmd_install(args: argparse.Namespace) -> None:
@@ -659,7 +659,7 @@ def cmd_workspaces(args: argparse.Namespace) -> None:
         return
     regs = config_mod.workspaces()
     if not regs:
-        print("No workspaces yet. `tower init` in a workspace registers it.")
+        print("No workspaces yet. `dah init` in a workspace registers it.")
         return
     for slug, home in regs.items():
         try:
@@ -697,14 +697,18 @@ def cmd_lane(args: argparse.Namespace) -> None:
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(lane_template(args.id), encoding="utf-8")
-        print(f"lane {args.id} added ({args.runtime}). Fill in {path.relative_to(c.home)}: what it owns and its done "
-              f"criteria.")
+        wrote: list[str] = []
+        write_shims(c, list(c.lanes), False, wrote)  # a new runtime gets every lane's shortcut, too
+        print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "") + "). "
+              f"Fill in {path.relative_to(c.home)}: what it owns and its done criteria. "
+              f"Open it by hand with /{SHIM_PREFIX}{args.id}.")
         return
     if args.id not in c.lanes:
         raise TowerError(f"no lane {args.id}")
     if store(c).live_task(args.id):
         raise TowerError(f"{args.id} has a running task; wrap or cancel it first")
     edit_config(c.home, lambda d: d["lanes"].pop(args.id))
+    remove_shims(c, args.id)
     print(f"lane {args.id} removed (its instruction file is kept)")
 
 
@@ -727,7 +731,7 @@ def cmd_member(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------- parser
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="tower", description="Control tower and review board for AI agent lanes.")
+    ap = argparse.ArgumentParser(prog="dah", description="Control tower and review board for AI agent lanes.")
     ap.add_argument("--as", dest="as_", metavar="LANE", help="act as this lane (default: $TOWER_LANE)")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
 
@@ -873,7 +877,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--runtime", choices=RUNTIMES, required=True)
     q.add_argument("--label")
     q.add_argument("--model")
-    q.add_argument("--agent", help="the runtime's own agent for this lane (OpenCode agent, Claude --agent)")
+    q.add_argument("--agent", help="run the role on one of your own agents (an OpenCode agent or a Claude --agent "
+                                   "name); default: the agent you normally get")
     q = lsub.add_parser("remove")
     q.add_argument("id")
     p = sub.add_parser("member", help="people who use the board")
@@ -899,10 +904,19 @@ HANDLERS = {
 }
 
 
+def utf8_output() -> None:
+    """Agents read dah's output through a pipe; on Windows that defaults to the ANSI code page, which cannot
+    hold Korean or Japanese text. Board text is UTF-8 everywhere."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> None:
+    utf8_output()
     args = build_parser().parse_args(argv)
     try:
         HANDLERS[args.cmd](args)
     except (TowerError, ConfigError, StoreError) as e:
-        print(f"tower: {e}", file=sys.stderr)
+        print(f"dah: {e}", file=sys.stderr)
         sys.exit(1)

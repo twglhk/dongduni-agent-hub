@@ -6,7 +6,7 @@ Run the tower and the agents on a server when the team should not depend on one 
 
 - EC2 (or Lightsail), Ubuntu or Amazon Linux, 2 vCPU / 4–8 GB is enough for a hub, infra and two team lanes. The agents do the heavy lifting remotely; the box mostly runs git, tests and builds.
 - Install the agent CLIs you use and log them in once over SSH (`opencode auth login`, `claude`, `codex login`). Put API keys in the environment of the service, not in the repo.
-- Install the `tower` command (`pipx install git+https://github.com/twglhk/agent-hub`), clone your workspace, then `tower init` as in the setup playbook (`tower guide`).
+- Install the `dah` command (`uv tool install dongduni-agent-hub` or `pipx install dongduni-agent-hub`), clone your workspace, then `dah init` as in the setup playbook (`dah guide`).
 - Run it as a service, in the workspace:
 
 ```ini
@@ -19,7 +19,7 @@ After=network-online.target
 User=ubuntu
 WorkingDirectory=/home/ubuntu/workspace
 EnvironmentFile=/home/ubuntu/.tower.env
-ExecStart=/home/ubuntu/.local/bin/tower run
+ExecStart=/home/ubuntu/.local/bin/dah run
 Restart=always
 
 [Install]
@@ -38,7 +38,7 @@ Pick one:
    "auth": {"mode": "header", "header": "x-amzn-oidc-identity"}
    ```
 
-   then pin people with `tower member add ana --ident <their subject id>`. Keep the instance's security group open only to the ALB.
+   then pin people with `dah member add ana --ident <their subject id>`. Keep the instance's security group open only to the ALB.
 4. **No public endpoint**: `aws ssm start-session --target <id> --document-name AWS-StartPortForwardingSession --parameters portNumber=8787,localPortNumber=8787` and open `http://127.0.0.1:8787` locally (laptop only, not phones).
 
 ## Backups

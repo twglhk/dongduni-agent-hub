@@ -1,4 +1,4 @@
-"""Review board web server (a thread inside `tower run`). Binds 127.0.0.1 by default; expose it through a proxy
+"""Review board web server (a thread inside `dah run`). Binds 127.0.0.1 by default; expose it through a proxy
 that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, ...) or use token sign-in.
 
   GET  /                          board (board/index.html)
@@ -383,7 +383,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                     g = st.goal(gid)
                     st.push(HUB, who, "goal", f"New goal #{gid} (priority {g['priority']}) from {who}: \"{g['title']}\""
                             + (f" — {g['detail']}" if g["detail"] else "")
-                            + ". Agree a plan with them (a board item or a memo reply), then `tower goal plan`.")
+                            + ". Agree a plan with them (a board item or a memo reply), then `dah goal plan`.")
                     log(f"{who} goal #{gid}")
                     return self._json(200, {"ok": True, "id": gid})
                 m = re.fullmatch(r"/api/goals/(\d+)", path)

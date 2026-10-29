@@ -1,4 +1,4 @@
-"""`tower discover`: a read-only survey of how this person works with AI agents, as JSON for the setup agent.
+"""`dah discover`: a read-only survey of how this person works with AI agents, as JSON for the setup agent.
 
 It reports names, counts and booleans only. It never prints a config value, a token, an env value or file
 contents, so the output is safe to paste into a chat or a board item.
@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+from . import procs
 
 AGENT_CLIS = ("opencode", "claude", "codex", "gemini", "cursor-agent", "aider", "goose", "amp")
 EXPOSE_CLIS = ("cloudflared", "tailscale", "ngrok", "aws", "gcloud", "az", "flyctl", "docker", "gh")
@@ -78,7 +80,8 @@ def version(binary: str) -> str | None:
     if not path:
         return None
     try:
-        p = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=8)
+        p = subprocess.run([*procs.command(path), "--version"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=8)
     except (OSError, subprocess.TimeoutExpired):
         return "installed"
     line = (p.stdout or p.stderr).strip().splitlines()
@@ -119,7 +122,8 @@ def opencode_agents(project_dir: Path) -> list[str]:
     if not binary:
         return []
     try:
-        p = subprocess.run([binary, "agent", "list"], cwd=project_dir, capture_output=True, text=True, timeout=30)
+        p = subprocess.run([*procs.command(binary), "agent", "list"], cwd=project_dir, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return []
     found = re.findall(r"^(\S[^\n]*?) \((primary|subagent|all)\)\s*$", p.stdout, re.M)
@@ -221,7 +225,8 @@ def exposure(home: Path) -> dict[str, Any]:
     out["cloudflared_tunnels"] = count(cf, "*.json")
     aws = home / ".aws" / "config"
     try:
-        out["aws_profiles"] = sorted(set(re.findall(r"^\[(?:profile )?([^\]]+)\]", aws.read_text(), re.M)))
+        text = aws.read_text(encoding="utf-8", errors="replace")
+        out["aws_profiles"] = sorted(set(re.findall(r"^\[(?:profile )?([^\]]+)\]", text, re.M)))
     except OSError:
         out["aws_profiles"] = []
     if out["gh"]:

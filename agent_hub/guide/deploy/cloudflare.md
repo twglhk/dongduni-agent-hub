@@ -43,9 +43,9 @@ Access adds `Cf-Access-Authenticated-User-Email` to every request it lets throug
 "auth": {"mode": "header", "header": "Cf-Access-Authenticated-User-Email"}
 ```
 
-Optionally pin people to names and roles: `tower member add ana --role owner --ident ana@example.com`. Once any member has an ident, only those members get in.
+Optionally pin people to names and roles: `dah member add ana --role owner --ident ana@example.com`. Once any member has an ident, only those members get in.
 
-Restart the tower (`tower stop && tower start`) after changing `web` or `auth`.
+Restart the tower (`dah stop && dah start`) after changing `web` or `auth`.
 
 ## Notes
 
