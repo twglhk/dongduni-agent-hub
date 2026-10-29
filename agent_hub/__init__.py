@@ -1,3 +1,3 @@
 """agent-hub: a control tower and review board for teams of AI coding agents."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
