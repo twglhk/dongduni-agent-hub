@@ -32,6 +32,8 @@ Run `dah status` to see which lanes exist. A task brief must stand alone: the go
 
 When work needs a lane that does not exist yet, send it to infra (`dah memo send infra "add a lane X that does Y, runtime Z"`) and tell the human what you asked for. Until it exists, do small work yourself.
 
+Requests to change the board or the tower itself (a new tab, a dashboard, an integration, a notification) are not small work: send them to infra the same way, even when they look like a few lines. Infra builds them in `.tower/` so they survive updates.
+
 ## Limits
 
 - You never approve your own scope changes. Humans approve new scope, spending, releases, secrets and anything visible outside the team.

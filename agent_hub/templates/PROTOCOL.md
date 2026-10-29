@@ -50,6 +50,11 @@ One image shows one thing. Keep sizes and framing equal when images are compared
 - A task that serves a goal says so (`dah mine` shows the goal). Stay inside the goal and the task; report what moved it.
 - Only the hub (and humans) change goals. A lane that thinks a goal is wrong, done or blocked says it in its report.
 
+## agent-hub itself
+
+- The board, the tower and their features are infra's. A request to change them (a board tab or section, a dashboard, an API for another tool, a notification when something happens) goes to infra: `dah memo send infra "..."` from the hub, a note in your report from any other lane.
+- Never edit the installed agent-hub package (its board, its Python): `dah update` replaces it. Changes are built as extensions in `.tower/board/` and `.tower/ext/` (`dah guide extend`).
+
 ## Keeping the record
 
 - agent-hub keeps no memory of its own beyond the board's history. Memory is the workspace's: your lane file's `## This workspace` says where it lives (a memory MCP, a wiki, a docs folder, notes the person keeps).
