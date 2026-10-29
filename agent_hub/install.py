@@ -80,11 +80,13 @@ def install(cfg: Config, force: bool = False) -> list[str]:
 
 
 def ignore_state(home: Path, wrote: list[str]) -> None:
+    """Runtime state and a project install's venv never belong in the workspace's git."""
     gi = home / ".gitignore"
-    line = f"{TOWER_DIR}/state/"
     text = gi.read_text(encoding="utf-8") if gi.exists() else ""
-    if line not in text.splitlines():
-        gi.write_text(text + ("" if text.endswith("\n") or not text else "\n") + line + "\n", encoding="utf-8")
+    missing = [ln for ln in (f"{TOWER_DIR}/state/", f"{TOWER_DIR}/venv/") if ln not in text.splitlines()]
+    if missing:
+        gi.write_text(text + ("" if text.endswith("\n") or not text else "\n") + "\n".join(missing) + "\n",
+                      encoding="utf-8")
         wrote.append(".gitignore")
 
 

@@ -4,7 +4,7 @@
 
 How long will you keep five terminals open, re-explaining context to each agent session, spawning subagents by hand, and digging through scrollback to find out who finished what? agent-hub turns that around. You write down what you want done and in which order. One always-on **hub** agent plans it with you, hands the work to agent sessions it controls (**lanes**: OpenCode, Claude Code or Codex, mixed freely), checks what comes back, and reports to a review board on your phone. You only step in for the calls that need a human.
 
-![Without agent-hub: you type to every terminal and keep the state in your head. With agent-hub: you set and rank goals on a board; the hub assigns work to lanes and reports back.](docs/images/why.svg)
+![Without agent-hub: you type to every terminal and keep the state in your head. With agent-hub: you set and rank goals on a board; the hub assigns work to lanes and reports back.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/why.svg)
 
 ## What you get
 
@@ -14,13 +14,15 @@ How long will you keep five terminals open, re-explaining context to each agent 
 - **A board instead of chat.** Decisions with options, reviews of artifacts (images, video, text inline), memos to the hub or to infra, history. Built for a phone; translated into English, 한국어, 日本語, 中文 and Español.
 - **Your setup, your rules.** Lane instructions, runtimes, models, agents, permissions, notifications, auth and hosting are plain files you (or the infra lane) edit. The tower in the middle is a small Python loop with no LLM in it.
 
-![The loop: you set goals, the hub plans them with you, tasks go to lanes, lanes work and report, the hub reviews and asks you only what needs a human.](docs/images/how.svg)
+![The loop: you set goals, the hub plans them with you, tasks go to lanes, lanes work and report, the hub reviews and asks you only what needs a human.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/how.svg)
 
 <p align="center">
-  <img src="docs/images/board-goals.png" width="300" alt="The board's Hub tab: ranked goals with progress, the goal in progress marked Now">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-goals.png" width="300" alt="The board's Hub tab: ranked goals with progress, the goal in progress marked Now">
   &nbsp;&nbsp;
-  <img src="docs/images/board-decide.png" width="300" alt="A decision on the board: options, recommendation, Decide button">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-decide.png" width="300" alt="A decision on the board: options, recommendation, Decide button">
 </p>
+
+> **Agents:** asked to install or set up agent-hub / dongduni-agent-hub? Install the package (`uv tool install dongduni-agent-hub`, or `pipx install dongduni-agent-hub`; for one project only, see [Install](#install)), then run `dah guide` and follow that playbook phase by phase. It is also [online](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/guide/SETUP.md).
 
 ## Install
 
@@ -47,7 +49,7 @@ Setup is agent-driven, because every team keeps its agents, docs and servers som
 
 **Globally**: the agent installs the `dah` command for your user and runs `dah skill install`, which adds an `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) to your agents after showing you the diff. From then on, "set up agent-hub here" works in any workspace.
 
-If your agent cannot find the playbook, point it at [agent_hub/guide/SETUP.md](agent_hub/guide/SETUP.md).
+If your agent cannot find the playbook, point it at [agent_hub/guide/SETUP.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/guide/SETUP.md).
 
 ### By hand
 
@@ -90,7 +92,7 @@ Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 
 **Memory is yours.** agent-hub keeps the board's history (goals, decisions, reports, memos) and nothing else. Where your team keeps decisions and notes (a memory MCP, a wiki, a docs folder) is your choice: setup writes it into the lane instructions, and lanes record there the way you normally do.
 
-The working rules every lane follows are in [`templates/PROTOCOL.md`](agent_hub/templates/PROTOCOL.md).
+The working rules every lane follows are in [`templates/PROTOCOL.md`](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/templates/PROTOCOL.md).
 
 ## Runtimes
 
@@ -124,7 +126,7 @@ python3 -m unittest discover -s tests -t .
 bin/dah -h          # runs from the clone without installing
 ```
 
-Pushing a tag `vX.Y.Z` tests on Linux, macOS and Windows and publishes to PyPI. Tests drive the adapters against stand-in CLIs and a stand-in OpenCode server; no model is called. See [AGENTS.md](AGENTS.md) for the layout and rules.
+Releasing (from any machine with push access): [docs/RELEASING.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/docs/RELEASING.md). Tests drive the adapters against stand-in CLIs and a stand-in OpenCode server; no model is called. See [AGENTS.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/AGENTS.md) for the layout and rules.
 
 ## License
 

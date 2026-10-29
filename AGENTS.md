@@ -29,5 +29,5 @@ Instructions for coding agents working in this repository.
 - The board is one HTML file with no build step and no external requests. All UI strings live in its `UI` dict (en, ko, ja, zh, es; a new key goes into every language).
 - `discover` reports names, counts and booleans only. A test plants secrets and fails if any leaks; keep it that way.
 - It runs on Linux, macOS and Windows. Start, check and stop processes only through `procs.py`; never `os.kill(pid, 0)` (it kills on Windows), `os.killpg` or `start_new_session` directly. Read and write text files with `encoding="utf-8"`.
-- Releases: bump `__version__` in `agent_hub/__init__.py`, push tag `vX.Y.Z`; `.github/workflows/release.yml` tests on all three systems and publishes `dongduni-agent-hub` to PyPI.
+- Releases: follow [docs/RELEASING.md](docs/RELEASING.md) (bump `__version__`, push tag `vX.Y.Z`; CI tests on all three systems and publishes `dongduni-agent-hub` to PyPI).
 - Run `python3 -m unittest discover -s tests -t .` before you finish; it must print `OK`.

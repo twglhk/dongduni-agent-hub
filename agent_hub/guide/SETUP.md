@@ -16,7 +16,7 @@ You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person as
 
 agent-hub is the Python package `dongduni-agent-hub` (Python 3.10+, no dependencies, same package on Windows, macOS and Linux); it installs one command, `dah`. If `dah -h` already works, skip to the part below that matches their request. Two ways people ask:
 
-- **"Install it in this project"**: nothing global. Install the package into a virtual environment inside the workspace and add `.tower/venv/` to the workspace's `.gitignore`:
+- **"Install it in this project"**: nothing global. Install the package into a virtual environment inside the workspace (`dah init` adds `.tower/venv/` to the workspace's `.gitignore`):
   - with uv: `uv venv .tower/venv && uv pip install --python .tower/venv dongduni-agent-hub`
   - without uv: `python3 -m venv .tower/venv` (Windows: `py -m venv .tower\venv`), then `.tower/venv/bin/pip install dongduni-agent-hub` (Windows: `.tower\venv\Scripts\pip install dongduni-agent-hub`)
 

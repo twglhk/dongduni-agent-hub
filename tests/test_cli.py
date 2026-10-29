@@ -32,7 +32,7 @@ class CliTest(unittest.TestCase):
         for rel in (".tower/tower.json", ".tower/PROTOCOL.md", ".tower/lanes/hub.md", ".tower/lanes/infra.md",
                     ".tower/lanes/docs.md", ".opencode/command/dah-hub.md", ".claude/commands/dah-infra.md"):
             self.assertTrue((self.home / rel).is_file(), rel)
-        self.assertIn(".tower/state/", (self.home / ".gitignore").read_text())
+        self.assertEqual((self.home / ".gitignore").read_text().split(), [".tower/state/", ".tower/venv/"])
 
     def test_every_lane_gets_a_shortcut_in_every_runtime(self) -> None:
         # docs (codex) was added after init: every lane now has /dah-<lane> in OpenCode, Claude Code and Codex
