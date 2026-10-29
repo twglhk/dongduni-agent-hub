@@ -1,7 +1,8 @@
 """Review board web server (a thread inside `dah run`). Binds 127.0.0.1 by default; expose it through a proxy
 that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, ...) or use token sign-in.
 
-  GET  /                          board (board/index.html)
+  GET  /                          board (board/index.html, or the workspace's .tower/board/index.html; /?builtin
+                                  always opens the built-in one)
   GET  /api/state                 goals · lanes · open items · tasks · reports · memos · counts
   GET  /api/history?kind=K&offset=N   decided | reports | closed | goals | memos | requests, 20 per page
   GET  /api/items/<id>
@@ -13,6 +14,8 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   POST /api/goals/<id>            {action: top | up | down | pause | resume | drop | done | reopen, note}
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
+  GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
+  GET|POST /api/x/<name>          routes from the workspace's .tower/ext/*.py (see ext.py)
 
 Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
 project on the machine. Each workspace keeps its own auth; a `local` workspace is only served next to another
@@ -36,6 +39,7 @@ from . import __version__
 from . import config as config_mod
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
+from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
 from .install import edit_config
 from .store import GOAL_RANKED, HUMAN, Store, StoreError
 
@@ -50,6 +54,8 @@ LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
 GOAL_ACTIONS = {"pause": "paused", "resume": "active", "drop": "dropped", "done": "done", "reopen": "active"}
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
+for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css")):
+    mimetypes.add_type(_type, _ext)  # the Windows registry can say text/plain
 
 
 def safe_file(root: Path, rel: str) -> Path | None:
@@ -116,6 +122,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "version": __version__,
         "local_only": cfg.local_only,
         "paused": (cfg.state_dir / "paused").exists(),
+        "extensions": board_extras(cfg.home),
         "lane_cap": {"used": len({t["lane"] for t in tasks if t["state"] in ("running", "wrapping")}),
                      "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT},
         "runtimes": list(RUNTIMES),
@@ -147,15 +154,16 @@ def goal_action(s: Store, gid: int, action: str, note: str, by: str) -> str:
 
 
 class Site:
-    def __init__(self, slug: str, cfg: Config, store: Store, prefix: str, mtime: float = 0.0):
-        self.slug, self.cfg, self.s, self.prefix, self.mtime = slug, cfg, store, prefix, mtime
+    def __init__(self, slug: str, cfg: Config, store: Store, prefix: str, ext: Extensions, mtime: float = 0.0):
+        self.slug, self.cfg, self.s, self.prefix, self.ext, self.mtime = slug, cfg, store, prefix, ext, mtime
 
 
-def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
+def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensions | None = None):
     secure = cfg.public_url.startswith("https://")
     own_home = cfg.home.resolve()
     own_cfg_path = own_home / TOWER_DIR / CONFIG_NAME
-    own = Site("", cfg, s, "", own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
+    own = Site("", cfg, s, "", ext or Extensions(cfg.home, log),
+               own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
     siblings: dict[str, Site] = {}
 
     def fresh_own() -> Site:
@@ -186,7 +194,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
             c2 = config_mod.load(home)
         except (OSError, ConfigError):
             return None
-        site = siblings[slug] = Site(slug, c2, Store(c2.db), f"/w/{slug}", mtime)
+        ext2 = hit.ext if hit and hit.cfg.home == home else Extensions(home, log)
+        site = siblings[slug] = Site(slug, c2, Store(c2.db), f"/w/{slug}", ext2, mtime)
         return site
 
     def reachable(site: Site) -> bool:
@@ -302,7 +311,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
             if path in ("/", "/index.html"):
-                return self._static(BOARD, "text/html; charset=utf-8")
+                page = None if "builtin" in parse_qs(self.query, keep_blank_values=True) else board_override(c.home)
+                return self._static(page or BOARD, "text/html; charset=utf-8")
             if path == "/manifest.webmanifest":
                 return self._json(200, {"name": c.name, "short_name": c.name[:12], "start_url": "./",
                                         "display": "standalone", "background_color": "#17171c",
@@ -329,7 +339,32 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                     return self._json(404, {"error": str(e)})
             if path.startswith("/f/"):
                 return self._file(path[3:])
+            if path.startswith("/x/"):
+                full = safe_file(board_dir(c.home), path[3:])
+                if not full or full.suffix.lower() not in STATIC_SUFFIXES:
+                    return self._json(404, {"error": "not found"})
+                ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
+                if ctype.startswith(("text/", "application/json")) and "charset" not in ctype:
+                    ctype += "; charset=utf-8"
+                return self._static(full, ctype)
+            if path.startswith("/api/x/"):
+                return self._ext("GET", path[7:], me, {})
             self._json(404, {"error": "not found"})
+
+        def _ext(self, method: str, name: str, me: dict[str, Any], body: dict[str, Any]) -> None:
+            fn = self.site.ext.routes().get((method, name.strip("/")))
+            if fn is None:
+                return self._json(404, {"error": "not found"})
+            ctx = {"cfg": self.site.cfg, "store": self.site.s, "me": me, "log": log,
+                   "query": {k: v[-1] for k, v in parse_qs(self.query).items()}}
+            try:
+                out = fn(ctx, body)
+                code, data = out if isinstance(out, tuple) and len(out) == 2 and isinstance(out[0], int) else (200, out)
+                json.dumps(data)
+            except Exception as e:  # an extension's bug is its own 500, never the board's
+                log(f"extension route {method} /api/x/{name} failed: {type(e).__name__}: {e}")
+                return self._json(500, {"error": f"extension failed: {type(e).__name__}: {e}"})
+            return self._json(code, data)
 
         def _file(self, rel: str) -> None:
             full = safe_file(self.site.cfg.workdir, rel)
@@ -450,10 +485,13 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                     return self._json(200, {"ok": True, "goal": st.goal(int(m.group(1)))})
             except StoreError as e:
                 return self._json(409, {"error": str(e)})
+            if path.startswith("/api/x/"):
+                return self._ext("POST", path[7:], me, body)
             self._json(404, {"error": "not found"})
 
     return Handler
 
 
-def server(cfg: Config, s: Store, log: Callable[[str], None] = print) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((cfg.web_host, cfg.web_port), make_handler(cfg, s, log))
+def server(cfg: Config, s: Store, log: Callable[[str], None] = print,
+           ext: Extensions | None = None) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer((cfg.web_host, cfg.web_port), make_handler(cfg, s, log, ext))

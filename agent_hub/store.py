@@ -635,6 +635,38 @@ class Store:
                 r["attachments"] = json.loads(r["attachments"] or "[]")
         return rows
 
+    # ---------- changes (extension events) ----------
+
+    def changes(self, marks: dict[str, float] | None) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, float]]:
+        """What happened since `marks` as (kind, row), grouped by kind in this order, oldest first within each:
+        report, item (created), decided, memo, goal (any change). Pass the returned marks next time; None only takes
+        the marks (nothing before now is news)."""
+        with self.conn() as con:
+            now = {"report": con.execute("SELECT coalesce(max(id), 0) FROM reports").fetchone()[0],
+                   "item": con.execute("SELECT coalesce(max(id), 0) FROM items").fetchone()[0],
+                   "decided": con.execute("SELECT coalesce(max(decided), 0) FROM items").fetchone()[0],
+                   "memo": con.execute("SELECT coalesce(max(id), 0) FROM messages").fetchone()[0],
+                   "goal": con.execute("SELECT coalesce(max(updated), 0) FROM goals").fetchone()[0]}
+            if marks is None:
+                return [], now
+            out: list[tuple[str, dict[str, Any]]] = []
+            for r in _rows(con.execute("SELECT * FROM reports WHERE id>? AND id<=? ORDER BY id",
+                                       (marks.get("report", 0), now["report"]))):
+                r["attachments"] = json.loads(r["attachments"] or "[]")
+                out.append(("report", r))
+            out += [("item", item_view(r)) for r in _rows(con.execute(
+                "SELECT * FROM items WHERE id>? AND id<=? ORDER BY id", (marks.get("item", 0), now["item"])))]
+            out += [("decided", item_view(r)) for r in _rows(con.execute(
+                "SELECT * FROM items WHERE decided>? AND decided<=? ORDER BY decided, id",
+                (marks.get("decided", 0), now["decided"])))]
+            out += [("memo", r) for r in _rows(con.execute(
+                "SELECT * FROM messages WHERE kind='memo' AND id>? AND id<=? ORDER BY id",
+                (marks.get("memo", 0), now["memo"])))]
+            out += [("goal", goal_view(r)) for r in _rows(con.execute(
+                "SELECT * FROM goals WHERE updated>? AND updated<=? ORDER BY updated, id",
+                (marks.get("goal", 0), now["goal"])))]
+        return out, now
+
     # ---------- lanes ----------
 
     def lane(self, lane: str) -> dict[str, Any]:

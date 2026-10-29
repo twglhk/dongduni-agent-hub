@@ -77,6 +77,8 @@ def install(cfg: Config, force: bool = False) -> list[str]:
         _write(cfg.instructions(lid), lane_template(lid), force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
     ignore_state(home, wrote)
+    if not (home / TOWER_DIR / "state" / "board.sha").is_file():
+        board_changed(home)  # remember which built-in board this workspace started from
     return wrote
 
 
@@ -252,3 +254,114 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
     ignore_state(home, report["shortcuts"])
     return report
+
+
+# ---------- package files changed in place (kept across upgrades) ----------
+
+PATCHES_DIR = "patches"
+PYPI_JSON = "https://pypi.org/pypi/{package}/{version}/json"
+BUILTIN_BOARD = Path(__file__).resolve().parent / "board" / "index.html"
+
+
+def file_hash(path: Path) -> str:
+    """The form wheel RECORD files use: sha256=<urlsafe base64, no padding>."""
+    import base64
+    import hashlib
+    return "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest()).rstrip(b"=").decode()
+
+
+def modified_files(entries: list[tuple[str, str | None]], base: Path) -> list[str]:
+    """The package's own files (RECORD path, hash) that no longer match what was installed."""
+    out = []
+    for rel, digest in entries:
+        if not digest or not rel.startswith("agent_hub/") or "__pycache__" in rel or rel.endswith(".pyc"):
+            continue
+        path = base / rel
+        if path.is_file() and file_hash(path) != digest:
+            out.append(rel)
+    return sorted(out)
+
+
+def installed_package() -> tuple[str, Path, list[tuple[str, str | None]]] | None:
+    """(version, site dir, RECORD entries) of the installed package this code runs from; None for a clone."""
+    import importlib.metadata
+    try:
+        dist = importlib.metadata.distribution(PACKAGE)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    base = Path(str(dist.locate_file(""))).resolve()
+    if (base / "agent_hub").resolve() != Path(__file__).resolve().parent:
+        return None  # running from a clone while another copy is installed
+    entries = [(f.as_posix(), f"{f.hash.mode}={f.hash.value}" if f.hash else None) for f in dist.files or []]
+    return dist.version, base, entries
+
+
+def fetch_originals(version: str, files: list[str], index: str = PYPI_JSON) -> dict[str, str] | None:
+    """The released text of each file, from that version's wheel on PyPI. None when it cannot be fetched."""
+    import io
+    import urllib.request
+    import zipfile
+    try:
+        with urllib.request.urlopen(index.format(package=PACKAGE, version=version), timeout=20) as r:
+            meta = json.loads(r.read().decode("utf-8"))
+        url = next(u["url"] for u in meta["urls"] if u.get("packagetype") == "bdist_wheel")
+        with urllib.request.urlopen(url, timeout=60) as r:
+            wheel = zipfile.ZipFile(io.BytesIO(r.read()))
+        names = set(wheel.namelist())
+        return {rel: wheel.read(rel).decode("utf-8", errors="replace") for rel in files if rel in names}
+    except Exception:  # offline, a private index, a yanked release: keep the files without a diff
+        return None
+
+
+def backup_patches(home: Path, version: str, base: Path, files: list[str],
+                   originals: dict[str, str] | None) -> Path:
+    """Copy the changed package files to .tower/patches/<version>/files/, with changes.diff against the release
+    when the originals are known, and index.json (what was saved, whether infra was asked to re-apply it)."""
+    import difflib
+    root = home / TOWER_DIR / PATCHES_DIR / version
+    old = json.loads((root / "index.json").read_text(encoding="utf-8")) if (root / "index.json").is_file() else {}
+    diff = []
+    for rel in files:
+        dest = root / "files" / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(base / rel, dest)
+        if originals and rel in originals:
+            now = (base / rel).read_text(encoding="utf-8", errors="replace")
+            diff += difflib.unified_diff(originals[rel].splitlines(keepends=True), now.splitlines(keepends=True),
+                                         f"a/{rel}", f"b/{rel}")
+    if diff:
+        (root / "changes.diff").write_text("".join(d if d.endswith("\n") else d + "\n" for d in diff),
+                                           encoding="utf-8")
+    index = {"version": version, "files": files, "diff": bool(diff),
+             "hashes": {rel: file_hash(base / rel) for rel in files}, "requested": None}
+    if old.get("files") == files and old.get("requested"):
+        index["requested"] = old["requested"]
+    (root / "index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
+    return root
+
+
+def unrequested_patches(home: Path, current: str) -> list[dict]:
+    """Backups of an older version whose re-apply request has not gone to infra yet."""
+    out = []
+    for idx in sorted((home / TOWER_DIR / PATCHES_DIR).glob("*/index.json")):
+        data = json.loads(idx.read_text(encoding="utf-8"))
+        if data.get("version") != current and not data.get("requested"):
+            out.append({**data, "dir": idx.parent})
+    return out
+
+
+def mark_requested(patch_dir: Path, memo_id: int) -> None:
+    idx = patch_dir / "index.json"
+    data = json.loads(idx.read_text(encoding="utf-8"))
+    data["requested"] = memo_id
+    idx.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def board_changed(home: Path) -> bool:
+    """True once per change of the built-in board when this workspace replaces it (.tower/board/index.html)."""
+    mark = home / TOWER_DIR / "state" / "board.sha"
+    now = file_hash(BUILTIN_BOARD)
+    before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.write_text(now, encoding="utf-8")
+    return bool(before) and before != now and (home / TOWER_DIR / "board" / "index.html").is_file()

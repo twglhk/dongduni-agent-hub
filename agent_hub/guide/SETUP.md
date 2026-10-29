@@ -26,7 +26,7 @@ agent-hub is the Python package `dongduni-agent-hub` (Python 3.10+, no dependenc
   2. `dah skill install` shows the global `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) it would write; with their yes, `dah skill install --yes`.
   3. If they named a workspace, or you are in one, continue with phase 1 for it. Every workspace set up this way is registered (`dah workspaces`), gets its own board port, and any of their boards switches to the others from its title.
 
-Installing software and writing global agent files are their call: show the command, get a yes. Upgrading later: `uv tool upgrade dongduni-agent-hub`, `pipx upgrade dongduni-agent-hub`, or `pip install -U` in the project venv; then `dah stop && dah start`.
+Installing software and writing global agent files are their call: show the command, get a yes. Upgrading later: `dah update` (it upgrades the package the way it was installed and brings each workspace along). If they plan to change agent-hub's own code rather than extend it, install from a clone instead (`git clone https://github.com/twglhk/dongduni-agent-hub`, then call its `bin/dah`) and update with `git pull`.
 
 ## Phase 1 — Survey how they work
 
@@ -89,7 +89,7 @@ Do not skip this phase silently: a board that only opens on this machine is easy
 1. From the board's Infra tab, send the memo: "Reply with the tower version and the lanes you see." Watch `dah status`: infra opens, replies (`dah memo reply`), wraps, closes. The reply shows under the memo.
 2. From the Hub tab, send a request: "Post a review item asking me to approve the setup." The hub posts it; approve it on the phone; the hub gets the decision.
 3. Check the hub goes idle again after each of these (`dah status` shows `idle` within a few minutes). If it stays `busy`, a hook or plugin keeps its session working (see `hooks`/`plugins` in the survey): give the hub lane another `"agent"` or runtime. The tower also posts a board item when news waits on a busy hub for 15 minutes.
-4. Fix anything that did not work, then tell the person in their language: the board URL, how to sign in, how to set and rank goals, how to reach it from the phone (the path they chose, or the paths from phase 5 that fit them if they stayed local), how to add a lane (the Lanes tab's Add a lane form, a request to infra), how to update (`dah update`, or ask infra on the board), how to stop (`dah stop`), and where the logs are.
+4. Fix anything that did not work, then tell the person in their language: the board URL, how to sign in, how to set and rank goals, how to reach it from the phone (the path they chose, or the paths from phase 5 that fit them if they stayed local), how to add a lane (the Lanes tab's Add a lane form, a request to infra), how to get features agent-hub does not have (a request to infra builds them in `.tower/board/` and `.tower/ext/`, see `dah guide extend`; never by editing the installed package), how to update (`dah update`, or ask infra on the board), how to stop (`dah stop`), and where the logs are.
 
 ## Troubleshooting
 

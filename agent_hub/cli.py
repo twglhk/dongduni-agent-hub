@@ -473,6 +473,7 @@ def say(text: str) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    from .ext import Extensions
     from .runtimes import Runtimes
     from .web import server
 
@@ -484,12 +485,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     config_mod.register(c.home)
     if not args.no_hub:
         s.set_lane(HUB, enabled=1)
-    httpd = server(c, s, say)
+    ext = Extensions(c.home, say)  # one load of .tower/ext for the board and the engine
+    httpd = server(c, s, say, ext)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     say(f"board http://{c.web_host}:{c.web_port}" + (f" · {c.public_url}" if c.public_url else ""))
     cfg_path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
     mtime = cfg_path.stat().st_mtime
-    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say)
+    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say, ext=ext)
     tunnel: subprocess.Popen[bytes] | None = None
     tunnel_at = 0.0
 
@@ -509,7 +511,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                         procs.terminate(tunnel.pid)
                         tunnel = None
                     c = c2
-                    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say)
+                    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say, ext=ext)
                     say("tower.json reloaded")
             except (ConfigError, OSError) as e:
                 say(f"tower.json not reloaded: {e}")
@@ -638,52 +640,98 @@ def cmd_install(args: argparse.Namespace) -> None:
 
 def cmd_update(args: argparse.Namespace) -> None:
     from . import __version__
-    from .install import refresh, upgrade_command
+    from .install import backup_patches, fetch_originals, installed_package, modified_files, upgrade_command
+    homes = list(config_mod.workspaces().values()) if args.all else [cfg().home]
     if not args.no_upgrade:
         try:
             how = upgrade_command()
         except FileNotFoundError as e:
             raise TowerError(f"{e}: upgrade it the way you installed it, then run `dah update --no-upgrade`")
+        pkg = installed_package() if how is not None else None
+        changed = modified_files(pkg[2], pkg[1]) if pkg else []
+        if args.dry_run:
+            print("would upgrade: " + (" ".join(how) if how else "nothing (dah runs from a clone: `git pull` it)"))
+            print("package files changed in place: " + (", ".join(changed) if changed else "none"))
+            return
         if how is None:
             print("dah runs from a clone: `git pull` it yourself. Updating the workspace with this code.")
         else:
-            print("upgrading: " + " ".join(how))
+            if pkg and changed:
+                originals = fetch_originals(pkg[0], changed)
+                for home in homes:
+                    if (home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME).is_file():
+                        where = backup_patches(home, pkg[0], pkg[1], changed, originals)
+                        print(f"{home}: kept {len(changed)} changed package file(s) in {where}"
+                              + ("" if originals else " (no diff: the released files could not be fetched)"))
+            print("upgrading: " + " ".join(how), flush=True)
             if subprocess.run(how).returncode != 0:
-                raise TowerError("the upgrade failed; nothing in the workspace changed")
+                hint = ""
+                if os.name == "nt":
+                    hint = (" On Windows the running dah.exe cannot be replaced: close this terminal, then in a new one run "
+                            f"`{subprocess.list2cmdline(how)}` and `dah update --no-upgrade" + (" --all" if args.all else "") + "`.")
+                raise TowerError("the upgrade failed; nothing in the workspace changed." + hint)
             rest = ["--no-upgrade"] + (["--all"] if args.all else []) + (["--no-restart"] if args.no_restart else [])
             sys.exit(subprocess.run([sys.executable, "-m", "agent_hub", "update", *rest]).returncode)  # the new code
-    homes = list(config_mod.workspaces().values()) if args.all else [cfg().home]
+    elif args.dry_run:
+        raise TowerError("--dry-run checks an upgrade; drop --no-upgrade")
     for home in homes:
         try:
             c = config_mod.load(home)
         except ConfigError as e:
             print(f"{home}: skipped ({e})")
             continue
-        mark = c.state_dir / "version"
-        before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
-        report = refresh(c)
-        c.state_dir.mkdir(parents=True, exist_ok=True)
-        mark.write_text(__version__, encoding="utf-8")
-        print(f"{c.name} ({home}): agent-hub " + (f"{before} → {__version__}" if before and before != __version__
-                                                  else __version__))
-        for key, what in (("created", "created"), ("updated", "updated to the new template, workspace parts kept"),
-                          ("config", "tower.json"), ("shortcuts", "added")):
-            for line in report[key]:
-                print(f"  {what}: {line}")
-        if report["merge"]:
-            files = ", ".join(f"`{f}`" for f in report["merge"])
-            print(f"  edited here, new template beside it as .new: {', '.join(report['merge'])}")
-            if INFRA in c.lanes:
-                mid = store(c).push(INFRA, "dah update", "memo",
-                                    f"agent-hub was updated to {__version__}. These files were edited in this workspace, "
-                                    f"so the new template was put beside each as `<file>.new`: {files}. For each, bring "
-                                    f"what changed in the new template into the file, keep this workspace's own parts, "
-                                    f"delete the .new file, and reply with what changed.")
-                print(f"  asked infra to merge them (request #{mid} on the board)")
-        for line in report["pending"]:
-            print(f"  still to merge: {line}.new")
-        if not args.no_restart and stop_loop(c):
-            start_tower(c)
+        update_workspace(c, __version__, args.no_restart)
+
+
+def update_workspace(c: Config, version: str, no_restart: bool) -> None:
+    from .install import BUILTIN_BOARD, board_changed, mark_requested, refresh, unrequested_patches
+    mark = c.state_dir / "version"
+    before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
+    report = refresh(c)
+    c.state_dir.mkdir(parents=True, exist_ok=True)
+    mark.write_text(version, encoding="utf-8")
+    print(f"{c.name} ({c.home}): agent-hub " + (f"{before} → {version}" if before and before != version else version))
+    for key, what in (("created", "created"), ("updated", "updated to the new template, workspace parts kept"),
+                      ("config", "tower.json"), ("shortcuts", "added")):
+        for line in report[key]:
+            print(f"  {what}: {line}")
+    requests: list[tuple[str, str, Path | None]] = []  # (what infra should do, request text, patch backup)
+    if report["merge"]:
+        files = ", ".join(f"`{f}`" for f in report["merge"])
+        print(f"  edited here, new template beside it as .new: {', '.join(report['merge'])}")
+        requests.append(("merge them", f"agent-hub was updated to {version}. These files were edited in this workspace, so "
+                         f"the new template was put beside each as `<file>.new`: {files}. For each, bring what changed "
+                         f"in the new template into the file, keep this workspace's own parts, delete the .new file, "
+                         f"and reply with what changed.", None))
+    for line in report["pending"]:
+        print(f"  still to merge: {line}.new")
+    patches = unrequested_patches(c.home, version)
+    for p in patches:
+        rel = p["dir"].relative_to(c.home).as_posix()
+        print(f"  package files changed under {p['version']}, kept in {rel}: {', '.join(p['files'])}")
+        requests.append(("re-apply the package changes", f"agent-hub was updated from {p['version']} to {version}, which "
+                         f"replaced package files someone had changed in place: {', '.join(p['files'])}. They are kept "
+                         f"in `{rel}/files/`" + (f", with `{rel}/changes.diff` against the release" if p["diff"] else "")
+                         + ". Bring that behaviour back without editing the installed package again: board changes in "
+                         "`.tower/board/` (extra.js / extra.css, or index.html to replace the board), API routes and "
+                         "engine hooks in `.tower/ext/*.py` (see `dah guide extend`). Reply with what you rebuilt and "
+                         "anything that could not be carried over.", p["dir"]))
+    if board_changed(c.home):
+        print("  the built-in board changed; this workspace replaces it with .tower/board/index.html")
+        requests.append(("carry over the board changes", f"agent-hub was updated to {version} and its built-in board changed. This "
+                         f"workspace replaces the board with `.tower/board/index.html`, so the change does not show. "
+                         f"Compare with the new built-in board (`{BUILTIN_BOARD}`, or open the board with `?builtin`), "
+                         f"carry over what this workspace wants, and reply with what changed.", None))
+    for what, text, patch_dir in requests:
+        if INFRA not in c.lanes:
+            print(f"  no infra lane: {what} yourself")
+            continue
+        mid = store(c).push(INFRA, "dah update", "memo", text)
+        print(f"  asked infra to {what} (request #{mid} on the board)")
+        if patch_dir:
+            mark_requested(patch_dir, mid)
+    if not no_restart and stop_loop(c):
+        start_tower(c)
 
 
 def cmd_skill(args: argparse.Namespace) -> None:
@@ -712,9 +760,10 @@ def cmd_skill(args: argparse.Namespace) -> None:
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    path = GUIDE / ("SETUP.md" if name == "setup" else f"deploy/{name.removeprefix('deploy/')}.md")
+    top = {"setup": "SETUP.md", "extend": "EXTEND.md"}
+    path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
-        names = ["setup", *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
+        names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
         raise TowerError(f"no guide {name!r} (guides: {', '.join(names)})")
     print(f"<!-- {path} -->")
     print(path.read_text(encoding="utf-8"))
@@ -927,6 +976,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("update", help="upgrade dah, bring this workspace's files up to date, restart the tower")
     p.add_argument("--no-upgrade", action="store_true", help="only update the workspace with the installed version")
+    p.add_argument("--dry-run", action="store_true",
+                   help="show the upgrade command and package files changed in place; change nothing")
     p.add_argument("--no-restart", action="store_true", help="leave a running tower on the old code")
     p.add_argument("--all", action="store_true", help="every workspace registered on this machine")
     p = sub.add_parser("skill", help="install the global agent-hub-setup skill/command for your agents")
@@ -934,8 +985,8 @@ def build_parser() -> argparse.ArgumentParser:
     q = ssub.add_parser("install")
     q.add_argument("--runtime", action="append", choices=RUNTIMES, help="only this agent (repeatable)")
     q.add_argument("--yes", action="store_true", help="write the files (without it: show the diff only)")
-    p = sub.add_parser("guide", help="print the setup playbook, or a guide for reaching the board (tailscale, ...)")
-    p.add_argument("name", nargs="?", help="setup (default), lan, tailscale, cloudflare, aws")
+    p = sub.add_parser("guide", help="print the setup playbook, the extension guide, or a guide for reaching the board")
+    p.add_argument("name", nargs="?", help="setup (default), extend, lan, tailscale, cloudflare, aws")
     p = sub.add_parser("workspaces", help="workspaces with a tower on this machine (the board switches between them)")
     wsub = p.add_subparsers(dest="sub")
     wsub.add_parser("list")

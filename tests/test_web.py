@@ -14,10 +14,10 @@ from tests.helpers import make_home
 
 
 class Board:
-    def __init__(self, **cfg_extra: Any):
+    def __init__(self, log: Any = None, **cfg_extra: Any):
         self.cfg = make_home(**cfg_extra)
         self.s = Store(self.cfg.db)
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.cfg, self.s, lambda _: None))
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.cfg, self.s, log or (lambda _: None)))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
 

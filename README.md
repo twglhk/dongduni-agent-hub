@@ -70,6 +70,20 @@ dah update --all      # every workspace on this machine
 
 It upgrades the package the way you installed it (uv tool, pipx, a project venv), then brings each workspace to the new version without losing your setup: protocol and lane files whose template you only added to get the new template with your sections kept, files you edited get the new template beside them as `.new` and a request to infra to merge them, and known `tower.json` fixes are applied. The tower loop restarts on the new code; lane sessions keep running. You can also ask infra on the board to do it. Nothing updates by itself.
 
+Package files someone changed in place (the installed board, its Python) are kept before the upgrade replaces them: copies and a diff against the release go to `.tower/patches/<version>/`, and infra gets a request to rebuild them as extensions. `dah update --dry-run` lists them.
+
+## Extend it
+
+agent-hub is a skeleton: build what your team needs on top of it in the workspace's `.tower/`, which lives in your git and survives updates. Ask infra on the board, or write it yourself (`dah guide extend`):
+
+| | |
+| --- | --- |
+| `.tower/board/extra.js`, `extra.css` | sections, tabs and styles added to the board (`window.dah.addSection`, `addTab`, `get`, `post`, ...) |
+| `.tower/board/index.html` | your own board instead of the built-in one (`?builtin` always opens the built-in board) |
+| `.tower/ext/*.py` | API routes at `/api/x/<name>`, and tower hooks: `on_event` (reports, items, decisions, memos, goals) and `on_tick` |
+
+Built-in routes and the tower's decisions stay the contract; a broken extension is logged and skipped. To change agent-hub itself, run it from a clone (see Development).
+
 ## One board, every project
 
 Each workspace has its own tower, state and board port. `dah init` registers it on this machine (`dah workspaces` lists them), and every board can switch to the others from its title: other workspaces are served under `/w/<name>/`. Expose one board and you reach all your projects from the phone; a workspace that only trusts local visitors stays hidden behind a board that signs people in.

@@ -13,6 +13,8 @@
   usage            each open session's token and cost totals, read when a turn ends and every minute.
   stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
                    session working, a turn that never ends), humans get one board item about it.
+  extensions       `.tower/ext/*.py` on_event(ctx, kind, data) for what changed since the last tick, then on_tick(ctx);
+                   after the built-in work, errors logged (see ext.py).
   goals            when the hub is idle, nothing is queued or running and the goals changed since it was last told,
                    the hub gets the ranked goals and moves the first one forward. Unchanged goals never re-prompt it,
                    so a hub that is waiting on humans is left alone.
@@ -25,6 +27,7 @@ import time
 from typing import Any, Callable
 
 from .config import HUB, INFRA, Config
+from .ext import Extensions
 from .store import HUMAN, MULTI_SEP, TOWER, Store
 
 BATCH_SECONDS = 8
@@ -109,8 +112,11 @@ def ask_answer(it: dict[str, Any]) -> list[str]:
 
 class Engine:
     def __init__(self, cfg: Config, store: Store, rt: Any, notify: Callable[[list[dict[str, Any]]], None],
-                 clock: Callable[[], float] = time.time, log: Callable[[str], None] = print):
+                 clock: Callable[[], float] = time.time, log: Callable[[str], None] = print,
+                 ext: Extensions | None = None):
         self.cfg, self.store, self.rt, self.notify, self.clock, self.log = cfg, store, rt, notify, clock, log
+        self.ext = ext or Extensions(cfg.home, log)
+        self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
         self.team = cfg.team()
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
@@ -209,6 +215,24 @@ class Engine:
                     fn(statuses[name])
                 except Exception as e:
                     self.log(f"{name}: {e}")
+        self._extensions()
+
+    # ---------- extensions ----------
+
+    def _extensions(self) -> None:
+        on_event, on_tick = self.ext.hooks("on_event"), self.ext.hooks("on_tick")
+        if not on_event:
+            self.marks = None
+        if not (on_event or on_tick):
+            return
+        ctx = {"cfg": self.cfg, "store": self.store, "log": self.log, "now": self.clock()}
+        if on_event:
+            events, self.marks = self.store.changes(self.marks)
+            for kind, data in events:
+                for fn in on_event:
+                    self.ext.call(fn, ctx, kind, data)
+        for fn in on_tick:
+            self.ext.call(fn, ctx)
 
     # ---------- usage ----------
 

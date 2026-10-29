@@ -432,6 +432,16 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 .la .bar{display:flex;justify-content:flex-end}
 .la .hint{padding:0 var(--s1)}
 
+/* ---- workspace extensions (window.dah) ---- */
+#nav .in.x{overflow-x:auto;scrollbar-width:none}
+#nav .in.x::-webkit-scrollbar{display:none}
+#nav .in.x button{min-width:56px}
+#nav .in.x button:focus-visible{outline-offset:-4px}
+#nav .in.x button>span:not(.badge){max-width:100%;padding:0 var(--s1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x-err{background:var(--red-weak);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:var(--s1)}
+.x-err .k{display:flex;align-items:center;gap:var(--s2);font-size:var(--t5);font-weight:700;color:var(--red-ink)}
+.x-err .tx{font:var(--t6)/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-2);white-space:pre-wrap}
+
 @media (min-width:760px){
   #sheet{bottom:24px;border-radius:var(--r-l);max-height:calc(100vh - 48px);transform:translateY(calc(100% + 32px))}
   .cta{border-radius:0 0 var(--r-l) var(--r-l);padding-bottom:var(--s4)}
@@ -508,6 +518,7 @@ const UI = {
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
     use: { day: 'Today', io: '{i} / {o}', today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
+    x: { err: 'Extension error' },
   },
   ko: {
     tabs: { hub: '허브', infra: '인프라', lanes: '레인', history: '기록' },
@@ -555,6 +566,7 @@ const UI = {
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
     use: { day: '오늘', io: '{i} / {o}', today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
+    x: { err: '확장 기능 오류' },
   },
   ja: {
     tabs: { hub: 'ハブ', infra: 'インフラ', lanes: 'レーン', history: '履歴' },
@@ -603,6 +615,7 @@ const UI = {
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
     use: { day: '今日', io: '{i} / {o}', today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
+    x: { err: '拡張機能のエラー' },
   },
   zh: {
     tabs: { hub: '中枢', infra: '基础设施', lanes: '通道', history: '记录' },
@@ -649,6 +662,7 @@ const UI = {
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
     use: { day: '今天', io: '{i} / {o}', today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
+    x: { err: '扩展出错' },
   },
   es: {
     tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Carriles', history: 'Historial' },
@@ -697,6 +711,7 @@ const UI = {
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
     use: { day: 'Hoy', io: '{i} / {o}',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
+    x: { err: 'Error de la extensión' },
   },
 };
 const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', es: 'Español' };
@@ -719,6 +734,8 @@ const ICON = {
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 017 0v3',
   down: 'M6 9l6 6 6-6',
   plus: 'M12 5v14M5 12h14', minus: 'M5 12h14', info: 'M12 11v5.5M12 7.5v.01',
+  ext: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
+  warn: 'M12 9v4.5M12 17v.01M10.3 4.2L2.6 17.5A2 2 0 004.3 20.5h15.4a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z',
 };
 
 // ---------- language ----------
@@ -751,6 +768,8 @@ const S = {
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
 };
+// What a workspace's extra.js registered through window.dah (see "extensions" below).
+const X = { started: false, ready: false, queued: false, gen: 0, secs: {}, tabs: new Map(), states: [], fresh: [], wait: null };
 
 // ---------- DOM helpers ----------
 const $ = s => document.querySelector(s);
@@ -866,14 +885,16 @@ async function load() {
   if (S.auth) return;
   if (S.loading) { S.again = true; return; }
   S.loading = true; S.again = false;
+  let fresh = false;
   try {
     const j = normalize(await get(BASE + 'api/state'));
-    S.ok = true;
+    S.ok = true; fresh = true;
     const raw = JSON.stringify(j);
     if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); }
   } catch (e) { if (e.status !== 401) S.ok = false; }
   S.loading = false;
   render();
+  if (fresh) xLoaded();
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
@@ -893,7 +914,7 @@ function route() {
   const hs = location.hash.replace(/^#/, '');
   const m = /^item-(\d+)$/.exec(hs), g = /^goal-(\d+)$/.exec(hs), prev = S.view;
   S.item = m ? Number(m[1]) : null; S.goal = g ? Number(g[1]) : null; S.menu = null; S.confirm = null;
-  if (!m && !g) { S.pushed = false; S.view = TABS.includes(hs) ? hs : 'hub'; }
+  if (!m && !g) { S.pushed = false; S.view = TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
   if (S.view === 'history' && prev !== 'history') resetHist(S.hist.kind);
   render();
   if (!m && !g && prev !== S.view) window.scrollTo(0, 0);
@@ -910,12 +931,22 @@ function closeSheet() {
 
 // ---------- render ----------
 function render() {
+  const xt = xTab(S.view), builtin = TABS.includes(S.view);
+  if (!builtin && !xt && X.ready) S.view = 'hub';  // an extension tab this workspace no longer has
   renderTop(); renderNav();
-  for (const v of TABS) $('#v-' + v).classList.toggle('hidden', v !== S.view);
-  const v = $('#v-' + S.view);
-  if (!S.data) { v._lang = null; paint(v, 'loading' + LANG, () => h('div', { class: 'empty' }, L.empty.loading)); }
-  else ({ hub: viewHub, infra: viewInfra, lanes: viewLanes, history: viewHistory })[S.view]();
+  const v = viewEl(S.view);
+  for (const el of [...TABS.map(t => $('#v-' + t)), ...[...X.tabs.values()].map(t => t.el), X.wait]) if (el) el.classList.toggle('hidden', el !== v);
+  if (!S.data || !TABS.includes(S.view) && !xt) { v._lang = null; paint(v, 'loading' + LANG, () => h('div', { class: 'empty' }, L.empty.loading)); }
+  else if (xt) xPaint(v, xt.id, xt.render);
+  else { ({ hub: viewHub, infra: viewInfra, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
   renderSheet();
+}
+function viewEl(view) {
+  if (TABS.includes(view)) return $('#v-' + view);
+  const t = xTab(view);
+  if (t) return t.el;
+  // A reload on #x-<id> before extra.js has registered that tab.
+  return X.wait || (X.wait = $('main').appendChild(h('section', { class: 'hidden' })));
 }
 function counts() {
   const items = S.data ? S.data.items.filter(forHuman) : [];
@@ -941,10 +972,13 @@ function renderTop() {
 }
 function renderNav() {
   renderUse();
-  const n = counts();
-  paint($('#nav .in'), LANG + S.view + JSON.stringify(n), () => TABS.map(t => h('button', {
-    class: S.view === t ? 'on' : '', 'aria-current': S.view === t ? 'page' : null, onclick: () => go(t) },
-    svg(ICON[t]), h('span', null, L.tabs[t]), n[t] ? h('span', { class: 'badge' }, n[t]) : null)));
+  const n = counts(), nav = $('#nav .in'), xt = [...X.tabs.values()];
+  const btn = (view, icon, label, badge) => h('button', {
+    class: S.view === view ? 'on' : '', 'aria-current': S.view === view ? 'page' : null, onclick: () => go(view) },
+    icon, h('span', null, label), badge ? h('span', { class: 'badge' }, badge) : null);
+  nav.classList.toggle('x', xt.length > 0);
+  paint(nav, LANG + S.view + JSON.stringify(n) + X.gen, () => [TABS.map(t => btn(t, svg(ICON[t]), L.tabs[t], n[t])),
+    xt.map(t => btn('x-' + t.id, xIcon(t.icon), xLabel(t.label, t.id), 0))]);
 }
 
 // ---------- shared blocks ----------
@@ -1690,6 +1724,133 @@ function paintLb() {
       many ? h('button', { class: 'nav n', type: 'button', 'aria-label': L.btn.next, onclick: () => lbStep(1) }, svg(ICON.next)) : null),
     h('div', { class: 'lf' }, h('span', { class: 'nm' }, fname(p)), h('a', { href: fileUrl(p), target: '_blank', rel: 'noopener' }, L.btn.open)));
 }
+
+// ---------- extensions ----------
+// A workspace extends this board from .tower/: the server reports extensions.{css,js} in api/state and serves the
+// files at x/<path>, its routes at api/x/<name>. After the first state load the board adds x/extra.css and
+// x/extra.js (once); extra.js talks to the board only through window.dah:
+//   dah.addSection(tab, id, render)  tab: 'hub' | 'infra' | 'lanes' | 'history'; painted after that tab's own sections
+//   dah.addTab(id, label, icon, render)  a nav tab after the built-in ones, opened at #x-<id>
+//   dah.onState(fn)  fn(state) after every state load (and once right after registering)
+// render(state) returns a Node, a string (shown as text), an array of those, or null. The board calls it on every
+// render of a visible tab and repaints only when its output changed, so an unchanged section keeps its scroll, focus
+// and typed text. Return the same Node again to keep it mounted and update it yourself. A callback that throws gets
+// a small error box there; the rest of the board carries on.
+const X_ID = /^[A-Za-z0-9_-]+$/, X_VIEW = /^x-[A-Za-z0-9_-]+$/;
+function xTab(view) { return X_VIEW.test(view) ? X.tabs.get(view.slice(2)) || null : null; }
+function xBad(msg) { console.error('[dah] ' + msg); return false; }
+function xLabel(label, id) {
+  if (typeof label === 'string' && label) return label;
+  if (label && typeof label === 'object') return label[LANG] || label.en || Object.values(label).find(v => typeof v === 'string') || id;
+  return id;
+}
+function xIcon(icon) {
+  if (icon && icon.nodeType) return icon.cloneNode(true);
+  return svg(typeof icon === 'string' && icon.trim() ? icon : ICON.ext);
+}
+// What a render returned, as text: equal text means equal output, so the painted DOM can stay.
+function xKey(x) {
+  if (x === null || x === undefined || x === false || x === '') return '';
+  if (Array.isArray(x)) return x.map(xKey).join('\u0001');
+  if (x.nodeType === 1) return '<' + x.outerHTML;
+  if (x.nodeType === 11) return xKey([...x.childNodes]);
+  if (x.nodeType) return '#' + x.textContent;
+  return '"' + String(x);
+}
+function xErr(name, msg) {
+  return h('section', { class: 'sec' }, h('div', { class: 'x-err', role: 'alert' },
+    h('div', { class: 'k' }, svg(ICON.warn, 'ico'), L.x.err), h('div', { class: 'tx' }, `${name} · ${msg}`)));
+}
+function xPaint(el, name, fn) {
+  try {
+    const out = fn(S.data);
+    if (out && out.nodeType && el.childNodes.length === 1 && el.firstChild === out) el._k = null;  // kept mounted by the extension
+    else paint(el, '=' + xKey(out), () => out);
+    el._xe = '';
+  } catch (e) {
+    const msg = String((e && e.message) || e || 'Error');
+    if (el._xe !== msg) { el._xe = msg; console.error(`[dah] extension "${name}" failed:`, e); }  // once per new error, not every poll
+    paint(el, '!' + LANG + msg, () => xErr(name, msg));
+  }
+}
+function xSections(tab, v) {
+  const reg = X.secs[tab];
+  if (!reg || !reg.size) return;
+  const slot = v._xs || (v._xs = h('div', { class: 'x-slot' }));
+  if (v.lastChild !== slot) v.append(slot);  // after the tab's own sections, also once its shell was rebuilt
+  let i = 0;
+  for (const r of reg.values()) {
+    if (slot.children[i] !== r.el) slot.insertBefore(r.el, slot.children[i] || null);
+    xPaint(r.el, r.id, r.render);
+    i++;
+  }
+}
+// Registrations re-render once, after the current script turn.
+function xQueue() {
+  if (X.queued) return;
+  X.queued = true;
+  setTimeout(() => {
+    X.queued = false;
+    render();
+    if (S.data) for (const fn of X.fresh.splice(0)) xCall(fn);
+  }, 0);
+}
+function xCall(fn) {
+  try { fn(S.data); } catch (e) { console.error('[dah] onState callback failed:', e); }
+}
+function xReady() { X.ready = true; xQueue(); }
+function xStart(ext) {
+  if (X.started) return;
+  X.started = true;
+  ext = ext || {};
+  if (ext.css) document.head.append(h('link', { rel: 'stylesheet', href: BASE + 'x/extra.css' }));
+  if (!ext.js) { xReady(); return; }
+  document.body.append(h('script', { src: BASE + 'x/extra.js', onload: xReady,
+    onerror: () => { console.error('[dah] could not load ' + BASE + 'x/extra.js'); xReady(); } }));
+}
+function xLoaded() {
+  xStart(S.data && S.data.extensions);
+  for (const fn of X.states) xCall(fn);
+}
+function addSection(tab, id, fn) {
+  if (!TABS.includes(tab)) return xBad(`addSection: unknown tab ${JSON.stringify(tab)}; use one of ${TABS.join(', ')}`);
+  if (typeof id !== 'string' || !id) return xBad('addSection: id must be a non-empty string');
+  if (typeof fn !== 'function') return xBad(`addSection(${JSON.stringify(id)}): render must be a function`);
+  const reg = X.secs[tab] || (X.secs[tab] = new Map()), old = reg.get(id);
+  reg.set(id, { id, render: fn, el: old ? old.el : h('div', { 'data-x': id }) });
+  xQueue();
+  return true;
+}
+function addTab(id, label, icon, fn) {
+  if (typeof icon === 'function' && fn === undefined) { fn = icon; icon = null; }
+  if (typeof id !== 'string' || !X_ID.test(id)) return xBad(`addTab: id ${JSON.stringify(id)} must be letters, numbers, - and _`);
+  if (typeof fn !== 'function') return xBad(`addTab(${JSON.stringify(id)}): render must be a function`);
+  const old = X.tabs.get(id);
+  X.tabs.set(id, { id, label, icon, render: fn, el: old ? old.el : $('main').appendChild(h('section', { class: 'hidden', 'data-x-tab': id })) });
+  X.gen++;
+  xQueue();
+  return true;
+}
+function onState(fn) {
+  if (typeof fn !== 'function') return xBad('onState: fn must be a function');
+  X.states.push(fn); X.fresh.push(fn);
+  xQueue();
+  return true;
+}
+// Paths are relative to this workspace's board: dah.get('api/x/stats') → <BASE>/api/x/stats.
+const xUrl = p => BASE + String(p || '').replace(/^\/+/, '');
+window.dah = {
+  get version() { return (S.data && S.data.version) || ''; },
+  BASE: BASE.replace(/\/$/, ''),
+  get lang() { return LANG; },
+  get L() { return L; },
+  get S() { return S; },
+  h, svg, sec, empty, toast,
+  get: path => get(xUrl(path)),
+  post: (path, body) => post(xUrl(path), body),
+  refresh: () => refresh(),
+  addSection, addTab, onState,
+};
 
 // ---------- events + start ----------
 (() => {
