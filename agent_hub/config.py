@@ -31,7 +31,8 @@ DEFAULT_ARGS = {
     "opencode": [],
 }
 SAFE_ARGS = {
-    "claude": ["--permission-mode", "acceptEdits"],
+    # acceptEdits denies every Bash call not on an allow list, and a lane that cannot run `dah` cannot report.
+    "claude": ["--permission-mode", "acceptEdits", "--allowedTools", "Bash(dah:*)"],
     "codex": ["--sandbox", "workspace-write", "--skip-git-repo-check"],
     "opencode": [],
 }
@@ -83,6 +84,12 @@ class Config:
     @property
     def workdir(self) -> Path:
         return self.project or self.home
+
+    @property
+    def local_only(self) -> bool:
+        """Nothing set up to reach the board from another device (no public URL, tunnel, proxy or network bind)."""
+        return (self.web_host in ("127.0.0.1", "localhost", "::1") and not self.public_url and not self.tunnel
+                and self.auth_mode == "local")
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]

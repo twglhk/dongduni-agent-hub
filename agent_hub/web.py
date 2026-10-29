@@ -11,6 +11,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   POST /api/memo                  {text, to: infra | hub}
   POST /api/goals                 {title, detail}
   POST /api/goals/<id>            {action: top | up | down | pause | resume | drop | done | reopen, note}
+  POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
 
 Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
@@ -31,9 +32,11 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, unquote
 
+from . import __version__
 from . import config as config_mod
-from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, ConfigError, tower_pid
+from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
+from .install import edit_config
 from .store import GOAL_RANKED, HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
@@ -44,6 +47,7 @@ PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
+MAX_LANES_LIMIT = 10
 GOAL_ACTIONS = {"pause": "paused", "resume": "active", "drop": "dropped", "done": "done", "reopen": "active"}
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 
@@ -60,7 +64,7 @@ def safe_file(root: Path, rel: str) -> Path | None:
     return full
 
 
-def lanes_view(cfg: Config, s: Store) -> list[dict[str, Any]]:
+def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for lid, ln in cfg.lanes.items():
         row = s.lane(lid)
@@ -78,24 +82,48 @@ def lanes_view(cfg: Config, s: Store) -> list[dict[str, Any]]:
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "status": row.get("status") or "closed", "doing": doing,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
-                    "ctx_k": None})
+                    "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
     return out
+
+
+def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Today's totals per runtime in use, in lane order."""
+    rows: dict[str, dict[str, Any]] = {}
+    for lid, ln in cfg.lanes.items():
+        r = rows.setdefault(ln.runtime, {"runtime": ln.runtime, "lanes": [], "tokens_in": 0, "tokens_out": 0,
+                                         "cost": None, "sessions": 0})
+        r["lanes"].append(lid)
+        u = used.get(lid)
+        if u:
+            r["tokens_in"] += u["tokens_in"]
+            r["tokens_out"] += u["tokens_out"]
+            r["sessions"] += u["sessions"]
+            if u["cost"] is not None:
+                r["cost"] = (r["cost"] or 0.0) + u["cost"]
+    return {"day": day, "runtimes": list(rows.values())}
 
 
 def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     tasks = s.tasks(("queued", "running", "wrapping"), limit=200)
+    day = s.day()
+    used = s.usage(day)
     return {
         "title": cfg.name,
         "lang": cfg.lang,
         "auth_mode": cfg.auth_mode,
         "me": me,
         "running": tower_pid(cfg) is not None,
+        "version": __version__,
+        "local_only": cfg.local_only,
         "paused": (cfg.state_dir / "paused").exists(),
         "lane_cap": {"used": len({t["lane"] for t in tasks if t["state"] in ("running", "wrapping")}),
-                     "cap": cfg.max_lanes},
+                     "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT},
+        "runtimes": list(RUNTIMES),
+        "default_runtime": cfg.lanes[HUB].runtime,
+        "usage": usage_view(cfg, day, used),
         "goals": s.goals(GOAL_RANKED) + s.history("goals", 0, PREVIEW),
         "goal_tasks": {str(k): v for k, v in s.goal_tasks().items()},
-        "lanes": lanes_view(cfg, s),
+        "lanes": lanes_view(cfg, s, used),
         "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
@@ -126,15 +154,30 @@ class Site:
 def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
     secure = cfg.public_url.startswith("https://")
     own_home = cfg.home.resolve()
-    own = Site("", cfg, s, "")
+    own_cfg_path = own_home / TOWER_DIR / CONFIG_NAME
+    own = Site("", cfg, s, "", own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
     siblings: dict[str, Site] = {}
+
+    def fresh_own() -> Site:
+        """This workspace's config as tower.json has it now (infra adds lanes, the board sets max_lanes)."""
+        try:
+            mtime = own_cfg_path.stat().st_mtime
+        except OSError:
+            return own
+        if mtime != own.mtime:
+            own.mtime = mtime
+            try:
+                own.cfg = config_mod.load(own.cfg.home)
+            except ConfigError as e:
+                log(f"board keeps the last good tower.json: {e}")
+        return own
 
     def sibling(slug: str) -> Site | None:
         home = config_mod.workspaces().get(slug)
         if home is None:
             return None
         if home.resolve() == own_home:
-            return own
+            return fresh_own()
         try:
             mtime = (home / TOWER_DIR / CONFIG_NAME).stat().st_mtime
             hit = siblings.get(slug)
@@ -180,7 +223,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
             path, _, query = self.path.partition("?")
             m = re.fullmatch(r"/w/([a-z0-9-]+)(/.*)?", path)
             if not m:
-                self.site, self.route, self.query = own, path, query
+                self.site, self.route, self.query = fresh_own(), path, query
                 return True
             site = sibling(m.group(1))
             if site is None:
@@ -386,6 +429,18 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None]):
                             + ". Agree a plan with them (a board item or a memo reply), then `dah goal plan`.")
                     log(f"{who} goal #{gid}")
                     return self._json(200, {"ok": True, "id": gid})
+                if path == "/api/settings":
+                    raw = body.get("max_lanes")
+                    if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_LANES_LIMIT:
+                        raise StoreError(f"max_lanes must be a whole number from 1 to {MAX_LANES_LIMIT}")
+                    old = c.max_lanes
+                    edit_config(c.home, lambda d: d.__setitem__("max_lanes", raw))
+                    self.site.mtime = -1.0  # reload on the next request even where mtime is coarse
+                    if raw != old:
+                        st.push(HUB, who, "settings", f"{who} set max_lanes {old} → {raw}: up to {raw} team lanes "
+                                f"may run tasks at once.")
+                        log(f"{who} max_lanes {old} → {raw}")
+                    return self._json(200, {"ok": True, "max_lanes": raw})
                 m = re.fullmatch(r"/api/goals/(\d+)", path)
                 if m:
                     news = goal_action(st, int(m.group(1)), str(body.get("action") or ""),

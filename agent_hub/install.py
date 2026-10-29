@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -139,6 +140,26 @@ def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple
     return plan
 
 
+def upgrade_command() -> list[str] | None:
+    """How to upgrade this install the way it was made (uv tool, pipx, a venv); None for a clone."""
+    root = Path(__file__).resolve().parents[1]
+    if (root / "pyproject.toml").is_file():
+        return None
+    prefix = Path(sys.prefix).resolve()
+    uv, pipx = shutil.which("uv"), shutil.which("pipx")
+    if uv:
+        r = subprocess.run([uv, "tool", "dir"], capture_output=True, text=True, encoding="utf-8")
+        if r.returncode == 0 and r.stdout.strip() and Path(r.stdout.strip()).resolve() in prefix.parents:
+            return [uv, "tool", "upgrade", PACKAGE]
+    if pipx and "pipx" in {p.lower() for p in prefix.parts}:
+        return [pipx, "upgrade", PACKAGE]
+    if subprocess.run([sys.executable, "-m", "pip", "--version"], capture_output=True).returncode == 0:
+        return [sys.executable, "-m", "pip", "install", "--upgrade", PACKAGE]
+    if uv:  # a venv made by `uv venv` has no pip
+        return [uv, "pip", "install", "--python", sys.executable, "--upgrade", PACKAGE]
+    raise FileNotFoundError("cannot tell how dah was installed")
+
+
 def default_runtime() -> str | None:
     return next((r for r in ("opencode", "claude", "codex") if shutil.which(r)), None)
 
@@ -162,3 +183,72 @@ def edit_config(home: Path, fn) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     fn(data)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+SHIPPED = TEMPLATES / "shipped.json"  # every released text of each template, oldest first, the current one last
+
+
+def shipped() -> dict[str, list[str]]:
+    return json.loads(SHIPPED.read_text(encoding="utf-8"))
+
+
+def _template_key(lane: str) -> str:
+    return {HUB: "lanes/hub.md", INFRA: "lanes/infra.md"}.get(lane, "lanes/team.md")
+
+
+def _refresh_file(path: Path, versions: list[str], report: dict[str, list[str]], home: Path) -> None:
+    """Bring one template-based file to the newest template without losing what the workspace added.
+
+    Untouched since some release (the workspace only appended below it): swap that release's text for the new one.
+    Edited inside: leave it, and put the new template beside it as `<name>.new` when it changed since the release
+    the file is closest to."""
+    new, rel = versions[-1], str(path.relative_to(home))
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(new, encoding="utf-8")
+        report["created"].append(rel)
+        return
+    text = path.read_text(encoding="utf-8")
+    side = path.with_name(path.name + ".new")
+    if text.startswith(new):
+        side.unlink(missing_ok=True)
+        return
+    for old in sorted(versions[:-1], key=len, reverse=True):
+        if text.startswith(old):
+            path.write_text(new + text[len(old):], encoding="utf-8")
+            side.unlink(missing_ok=True)
+            report["updated"].append(rel)
+            return
+    import difflib
+    closest = max(range(len(versions)), key=lambda i: difflib.SequenceMatcher(None, versions[i], text).ratio())
+    if closest == len(versions) - 1:
+        return
+    if side.is_file() and side.read_text(encoding="utf-8") == new:
+        report["pending"].append(rel)  # asked for already; infra has not merged it yet
+        return
+    side.write_text(new, encoding="utf-8")
+    report["merge"].append(rel)
+
+
+def _safe_lane_fixes(data: dict, report: dict[str, list[str]]) -> None:
+    for lid, ln in (data.get("lanes") or {}).items():
+        args = (ln or {}).get("args")
+        if (ln or {}).get("runtime") != "claude" or not isinstance(args, list) or "acceptEdits" not in args:
+            continue
+        if not any(str(a).startswith(("--allowedTools", "--allowed-tools")) for a in args):
+            args += ["--allowedTools", "Bash(dah:*)"]
+            report["config"].append(f"{lid}: --allowedTools \"Bash(dah:*)\" so the lane can run dah in --safe mode")
+
+
+def refresh(cfg: Config) -> dict[str, list[str]]:
+    """Make an existing workspace match the installed version: templates, tower.json fixes, missing shortcuts."""
+    report: dict[str, list[str]] = {"created": [], "updated": [], "merge": [], "pending": [], "config": [], "shortcuts": []}
+    home, versions = cfg.home, shipped()
+    _refresh_file(home / TOWER_DIR / "PROTOCOL.md", versions["PROTOCOL.md"], report, home)
+    for lid in cfg.lanes:
+        texts = [t.replace("{lane}", lid) for t in versions[_template_key(lid)]]
+        _refresh_file(cfg.instructions(lid), texts, report, home)
+    edit_config(home, lambda d: _safe_lane_fixes(d, report))
+    write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
+    ignore_state(home, report["shortcuts"])
+    return report

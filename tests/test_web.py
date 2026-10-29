@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import unittest
 import urllib.error
@@ -54,6 +55,7 @@ class LocalModeTest(unittest.TestCase):
         self.assertEqual([ln["lane"] for ln in st["lanes"]], ["hub", "infra", "docs"])
         self.assertEqual(st["items"][0]["options"][1]["label"], "8080")
         self.assertEqual(st["me"]["role"], "owner")
+        self.assertTrue(st["local_only"])  # the board tells people it cannot be reached from a phone yet
 
     def test_post_needs_header(self) -> None:
         code, _, _ = self.b.req("POST", f"/api/items/{self.iid}/decide", {"verdict": "ok", "choice": "80"})
@@ -72,6 +74,42 @@ class LocalModeTest(unittest.TestCase):
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "hub"}, POST)[0], 200)
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "docs"}, POST)[0], 409)
         self.assertEqual(len(self.b.s.pending(INFRA)), 1)
+
+    def test_max_lanes_from_the_board(self) -> None:
+        self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"], {"used": 0, "cap": 2, "max": 10})
+        code, body, _ = self.b.req("POST", "/api/settings", {"max_lanes": 4}, POST)
+        self.assertEqual((code, body["max_lanes"]), (200, 4))
+        self.assertEqual(config_mod.load(self.b.cfg.home).max_lanes, 4)
+        self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"]["cap"], 4)
+        self.assertIn("max_lanes 2 → 4", self.b.s.pending(HUB)[-1]["text"])
+        for bad in (0, 11, "3", True, None):
+            self.assertEqual(self.b.req("POST", "/api/settings", {"max_lanes": bad}, POST)[0], 409)
+
+    def test_usage_per_lane_and_runtime(self) -> None:
+        self.b.s.set_lane("docs", session="t1", status="busy")
+        self.b.s.record_usage("docs", "t1", "codex", 12000, 300, None, 12)
+        self.b.s.record_usage("hub", "h1", "claude", 50000, 900, 0.4, 50)
+        self.b.s.record_usage("infra", "i1", "claude", 10000, 100, 0.1, 10)
+        st = self.b.req("GET", "/api/state")[1]
+        self.assertEqual(st["runtimes"], ["opencode", "claude", "codex"])
+        self.assertEqual(st["default_runtime"], "claude")
+        by = {r["runtime"]: r for r in st["usage"]["runtimes"]}
+        self.assertEqual(list(by), ["claude", "codex"])
+        self.assertEqual((by["claude"]["lanes"], by["claude"]["tokens_in"], by["claude"]["sessions"]),
+                         (["hub", "infra"], 60000, 2))
+        self.assertAlmostEqual(by["claude"]["cost"], 0.5)
+        self.assertIsNone(by["codex"]["cost"])
+        docs = next(ln for ln in st["lanes"] if ln["lane"] == "docs")
+        self.assertEqual((docs["ctx_k"], docs["usage"]["tokens_out"]), (12, 300))
+
+    def test_lanes_added_to_tower_json_show_up_without_a_restart(self) -> None:
+        path = self.b.cfg.home / ".tower" / "tower.json"
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data["lanes"]["qa"] = {"runtime": "claude", "label": "QA"}
+        path.write_text(json.dumps(data), encoding="utf-8")
+        os.utime(path, (path.stat().st_atime, path.stat().st_mtime + 5))
+        lanes = [ln["lane"] for ln in self.b.req("GET", "/api/state")[1]["lanes"]]
+        self.assertEqual(lanes, ["hub", "infra", "docs", "qa"])
 
     def test_files_refuse_secrets_and_dotpaths(self) -> None:
         home = self.b.cfg.home

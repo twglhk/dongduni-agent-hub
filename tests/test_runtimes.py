@@ -11,6 +11,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from agent_hub import config as config_mod
 from agent_hub.config import ConfigError
 from agent_hub.runtimes import Runtimes
 from agent_hub.store import Store
@@ -24,7 +25,9 @@ with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"argv": args, "lane": os.environ.get("TOWER_LANE"), "home": os.environ.get("TOWER_HOME")}) + "\n")
 time.sleep(float(os.environ.get("FAKE_SLEEP", "0.3")))
 print(json.dumps({"type": "result", "session_id": sid, "result": "said: " + args[-1][:20],
-                  "usage": {"input_tokens": 1000, "cache_read_input_tokens": 41000, "cache_creation_input_tokens": 0}}))
+                  "total_cost_usd": 0.25,
+                  "usage": {"input_tokens": 1000, "cache_read_input_tokens": 41000, "cache_creation_input_tokens": 0,
+                            "output_tokens": 300}}))
 '''
 
 FAKE_CODEX = r'''#!PY
@@ -88,6 +91,7 @@ class HeadlessTest(unittest.TestCase):
         first = self.calls()[0]
         self.assertIn("--session-id", first["argv"])
         self.assertIn("bypassPermissions", first["argv"])
+        self.assertIn("Bash(dah:*)", config_mod.SAFE_ARGS["claude"])  # a safe lane must still be able to run dah
         self.assertEqual(first["argv"][first["argv"].index("--model") + 1], "opus")
         self.assertNotIn("--agent", first["argv"])  # no agent set: the runtime's default
         self.assertEqual(first["lane"], "hub")
@@ -98,6 +102,8 @@ class HeadlessTest(unittest.TestCase):
         wait_for(lambda: self.rt.status("hub") == "idle")
         second = self.calls()[1]["argv"]
         self.assertEqual(second[second.index("--resume") + 1], sid)
+        self.assertEqual(self.rt.usage("hub", sid), {"tokens_in": 84000, "tokens_out": 600, "cost": 0.5, "ctx_k": 42})
+        self.assertIsNone(self.rt.usage("hub", "another-session"))
         self.rt.close("hub")
         self.assertEqual(self.rt.status("hub"), "closed")
 
@@ -133,6 +139,7 @@ class HeadlessTest(unittest.TestCase):
         wait_for(lambda: self.rt.status("docs") == "idle")
         argv = self.calls()[1]["argv"]
         self.assertEqual(argv[argv.index("resume") + 1], "thread-123")
+        self.assertEqual(self.rt.usage("docs", sid), {"tokens_in": 24000, "tokens_out": 100, "cost": None, "ctx_k": 12})
         self.assertIn("--json", argv)
 
 
@@ -158,7 +165,8 @@ class FakeOpenCode(BaseHTTPRequestHandler):
         if self.path == "/question":
             return self._send(200, FakeOpenCode.questions)
         if self.path.endswith("/message"):
-            return self._send(200, [{"info": {"role": "assistant", "tokens": {"input": 5000, "cache": {"read": 95000}}},
+            return self._send(200, [{"info": {"role": "assistant", "cost": 0.1,
+                                              "tokens": {"input": 5000, "output": 40, "cache": {"read": 95000}}},
                                      "parts": [{"type": "text", "text": "done here"}]}])
         self._send(404, {})
 
@@ -202,6 +210,7 @@ class OpenCodeTest(unittest.TestCase):
         self.rt.reply_question("hub", "q1", [["x"]])
         self.assertEqual(self.rt.questions("hub"), [])
         self.assertEqual(self.rt.context_k("hub", sid), 100)
+        self.assertEqual(self.rt.usage("hub", sid), {"tokens_in": 100000, "tokens_out": 40, "cost": 0.1, "ctx_k": 100})
         self.assertEqual(self.rt.last_text("hub"), ["done here"])
         FakeOpenCode.busy = {}
         self.rt.close("hub")  # not owned: clears the session, leaves the server up

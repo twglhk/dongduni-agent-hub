@@ -10,6 +10,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class ShippedTemplatesTest(unittest.TestCase):
+    def test_the_newest_shipped_text_of_each_template_is_the_current_file(self) -> None:
+        from agent_hub.install import TEMPLATES, shipped
+        for rel, versions in shipped().items():
+            self.assertEqual(versions[-1], (TEMPLATES / rel).read_text(encoding="utf-8"),
+                             f"templates/{rel} changed: append its new text to templates/shipped.json so "
+                             f"`dah update` can tell untouched workspace copies from edited ones")
+
+
 class CliTest(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
@@ -33,6 +42,36 @@ class CliTest(unittest.TestCase):
                     ".tower/lanes/docs.md", ".opencode/command/dah-hub.md", ".claude/commands/dah-infra.md"):
             self.assertTrue((self.home / rel).is_file(), rel)
         self.assertEqual((self.home / ".gitignore").read_text().split(), [".tower/state/", ".tower/venv/"])
+
+    def test_update_brings_an_old_workspace_up_to_date(self) -> None:
+        import json
+        from agent_hub.install import shipped
+        versions, tower = shipped(), self.home / ".tower"
+        mine = "\n## This workspace\n\n- tests: `npm test`\n"
+        (tower / "lanes/hub.md").write_text(versions["lanes/hub.md"][0] + mine, encoding="utf-8")
+        (tower / "lanes/infra.md").write_text(versions["lanes/infra.md"][0].replace("#", "##", 1), encoding="utf-8")
+        cfg_path = tower / "tower.json"
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        data["lanes"]["infra"]["args"] = ["--permission-mode", "acceptEdits"]
+        cfg_path.write_text(json.dumps(data), encoding="utf-8")
+        (self.home / ".claude/commands/dah-docs.md").unlink()
+
+        out = self.tower("update", "--no-upgrade")
+        hub = (tower / "lanes/hub.md").read_text(encoding="utf-8")
+        self.assertEqual(hub, versions["lanes/hub.md"][-1] + mine)  # template swapped, workspace part kept
+        self.assertEqual((tower / "lanes/infra.md.new").read_text(encoding="utf-8"), versions["lanes/infra.md"][-1])
+        self.assertIn("asked infra to merge", out)
+        self.assertEqual(json.loads(cfg_path.read_text(encoding="utf-8"))["lanes"]["infra"]["args"],
+                         ["--permission-mode", "acceptEdits", "--allowedTools", "Bash(dah:*)"])
+        self.assertTrue((self.home / ".claude/commands/dah-docs.md").is_file())
+        self.assertFalse((tower / "lanes/docs.md.new").exists())  # untouched files stay as they are
+        from agent_hub import __version__
+        self.assertEqual((tower / "state/version").read_text(encoding="utf-8"), __version__)
+
+        again = self.tower("update", "--no-upgrade")  # nothing new: no second request to infra
+        self.assertNotIn("asked infra", again)
+        self.assertIn("still to merge: .tower/lanes/infra.md.new", again)
+        self.assertEqual((tower / "lanes/hub.md").read_text(encoding="utf-8"), hub)
 
     def test_every_lane_gets_a_shortcut_in_every_runtime(self) -> None:
         # docs (codex) was added after init: every lane now has /dah-<lane> in OpenCode, Claude Code and Codex

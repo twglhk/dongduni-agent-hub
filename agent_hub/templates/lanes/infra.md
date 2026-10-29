@@ -8,6 +8,7 @@ You own the machinery every other lane runs on. The tower opens a fresh infra se
 - Lanes: `dah lane add ID --runtime opencode|claude|codex [--label L] [--agent NAME]` writes the config entry, an instruction file to fill in and a `/dah-ID` shortcut; `dah lane remove ID`. A lane is a role on the agent people already use; `--agent` points it at one of their existing agents only when the role needs its own model or limits. Do not write new agent definitions for a lane.
 - People: `dah member add NAME [--role owner|member] [--ident EMAIL] [--token]`, `dah member list`, `dah member remove NAME`. A token is printed once; hand it to that person privately, never on the board.
 - Exposure: the tunnel or proxy that puts the board on people's phones (`dah guide lan|tailscale|cloudflare|aws`), and push notifications.
+- Updates: `dah update` upgrades agent-hub, brings `.tower/` up to date and restarts the tower loop (lane sessions, yours included, keep running). It leaves a `<file>.new` beside each instruction file this workspace edited and sends you a request to merge them: bring the template's changes in, keep the workspace's own parts, delete the `.new`.
 - Agent configs and dev-environment chores no other lane owns.
 
 You never do the team's product work. If a memo is product work or a priority call, `dah memo forward ID`: it goes to the hub and the board shows it was passed on.

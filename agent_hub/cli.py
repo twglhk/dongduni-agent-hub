@@ -392,6 +392,8 @@ def cmd_status(_args: argparse.Namespace) -> None:
     print(f"tower {'running (pid ' + str(pid) + ')' if pid else 'stopped'}"
           + (" · paused" if (c.state_dir / "paused").exists() else "") + f" · board http://{c.web_host}:{c.web_port}"
           + (f" · {c.public_url}" if c.public_url else ""))
+    if c.local_only and not os.environ.get("TOWER_LANE"):  # people, not the hub polling its status
+        print(REACH_HINT)
     for lid, ln in c.lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid)
@@ -529,8 +531,16 @@ def cmd_run(args: argparse.Namespace) -> None:
         (c.state_dir / "tower.pid").unlink(missing_ok=True)
 
 
+REACH_HINT = ("The board only opens on this machine. To open it from a phone: `dah guide lan` (same Wi-Fi), "
+              "`dah guide tailscale`, `dah guide cloudflare` (your domain) or `dah guide aws`; or ask infra on the "
+              "board to set one up.")
+
+
 def cmd_start(_args: argparse.Namespace) -> None:
-    c = cfg()
+    start_tower(cfg())
+
+
+def start_tower(c: Config) -> None:
     if tower_pid(c):
         print(f"already running (pid {tower_pid(c)})")
         return
@@ -548,10 +558,11 @@ def cmd_start(_args: argparse.Namespace) -> None:
     if not tower_pid(c):
         raise TowerError(f"the tower did not start; see {c.state_dir / 'tower.log'}")
     print(f"tower started (pid {tower_pid(c)}) · board http://{c.web_host}:{c.web_port} · log {c.state_dir / 'tower.log'}")
+    if c.local_only:
+        print(REACH_HINT)
 
 
-def cmd_stop(args: argparse.Namespace) -> None:
-    c = cfg()
+def stop_loop(c: Config) -> int | None:
     pid = tower_pid(c)
     if pid:  # stop the loop first, or it reopens the hub the moment its session closes
         procs.terminate(pid, group=False)  # the loop only: lane sessions are its children on Windows
@@ -559,6 +570,13 @@ def cmd_stop(args: argparse.Namespace) -> None:
             if not tower_pid(c):
                 break
             time.sleep(0.25)
+    return pid
+
+
+def cmd_stop(args: argparse.Namespace) -> None:
+    c = cfg()
+    pid = stop_loop(c)
+    if pid:
         print(f"tower stopped (pid {pid})." + ("" if args.close_lanes else
                                                " Lane sessions keep running unless you pass --close-lanes."))
     else:
@@ -616,6 +634,56 @@ def cmd_init(args: argparse.Namespace) -> None:
 def cmd_install(args: argparse.Namespace) -> None:
     for w in install(cfg(), force=args.force) or ["(nothing new)"]:
         print(w)
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    from . import __version__
+    from .install import refresh, upgrade_command
+    if not args.no_upgrade:
+        try:
+            how = upgrade_command()
+        except FileNotFoundError as e:
+            raise TowerError(f"{e}: upgrade it the way you installed it, then run `dah update --no-upgrade`")
+        if how is None:
+            print("dah runs from a clone: `git pull` it yourself. Updating the workspace with this code.")
+        else:
+            print("upgrading: " + " ".join(how))
+            if subprocess.run(how).returncode != 0:
+                raise TowerError("the upgrade failed; nothing in the workspace changed")
+            rest = ["--no-upgrade"] + (["--all"] if args.all else []) + (["--no-restart"] if args.no_restart else [])
+            sys.exit(subprocess.run([sys.executable, "-m", "agent_hub", "update", *rest]).returncode)  # the new code
+    homes = list(config_mod.workspaces().values()) if args.all else [cfg().home]
+    for home in homes:
+        try:
+            c = config_mod.load(home)
+        except ConfigError as e:
+            print(f"{home}: skipped ({e})")
+            continue
+        mark = c.state_dir / "version"
+        before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
+        report = refresh(c)
+        c.state_dir.mkdir(parents=True, exist_ok=True)
+        mark.write_text(__version__, encoding="utf-8")
+        print(f"{c.name} ({home}): agent-hub " + (f"{before} → {__version__}" if before and before != __version__
+                                                  else __version__))
+        for key, what in (("created", "created"), ("updated", "updated to the new template, workspace parts kept"),
+                          ("config", "tower.json"), ("shortcuts", "added")):
+            for line in report[key]:
+                print(f"  {what}: {line}")
+        if report["merge"]:
+            files = ", ".join(f"`{f}`" for f in report["merge"])
+            print(f"  edited here, new template beside it as .new: {', '.join(report['merge'])}")
+            if INFRA in c.lanes:
+                mid = store(c).push(INFRA, "dah update", "memo",
+                                    f"agent-hub was updated to {__version__}. These files were edited in this workspace, "
+                                    f"so the new template was put beside each as `<file>.new`: {files}. For each, bring "
+                                    f"what changed in the new template into the file, keep this workspace's own parts, "
+                                    f"delete the .new file, and reply with what changed.")
+                print(f"  asked infra to merge them (request #{mid} on the board)")
+        for line in report["pending"]:
+            print(f"  still to merge: {line}.new")
+        if not args.no_restart and stop_loop(c):
+            start_tower(c)
 
 
 def cmd_skill(args: argparse.Namespace) -> None:
@@ -857,6 +925,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("install", help="(re)write protocol, lane files and command shims")
     p.add_argument("--force", action="store_true")
+    p = sub.add_parser("update", help="upgrade dah, bring this workspace's files up to date, restart the tower")
+    p.add_argument("--no-upgrade", action="store_true", help="only update the workspace with the installed version")
+    p.add_argument("--no-restart", action="store_true", help="leave a running tower on the old code")
+    p.add_argument("--all", action="store_true", help="every workspace registered on this machine")
     p = sub.add_parser("skill", help="install the global agent-hub-setup skill/command for your agents")
     ssub = p.add_subparsers(dest="sub", required=True)
     q = ssub.add_parser("install")
@@ -899,7 +971,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
     "status": cmd_status, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "skill": cmd_skill, "lane": cmd_lane, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "lane": cmd_lane, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

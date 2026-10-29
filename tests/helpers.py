@@ -41,6 +41,7 @@ class FakeRuntime:
         self.qs: dict[str, list[dict[str, Any]]] = {}
         self.replies: list[tuple[str, str, list[list[str]]]] = []
         self.ctx: dict[str, int] = {}
+        self.use: dict[str, dict[str, Any]] = {}
         self.not_owned: set[str] = set()
 
     def status(self, lane: str) -> str:
@@ -76,6 +77,9 @@ class FakeRuntime:
 
     def context_k(self, lane: str, sid: str | None) -> int:
         return self.ctx.get(lane, 0)
+
+    def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
+        return self.use.get(lane)
 
     def last_text(self, lane: str, n: int = 1) -> list[str]:
         return []

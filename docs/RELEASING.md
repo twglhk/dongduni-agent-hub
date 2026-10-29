@@ -36,7 +36,7 @@ The package is pure Python (`py3-none-any`): one wheel serves Windows, macOS and
    /tmp/dah-check/bin/dah -h && /tmp/dah-check/bin/dah guide | head -3
    ```
 
-   PyPI can take a minute to serve a new version. The release page is `https://github.com/twglhk/dongduni-agent-hub/releases/tag/vX.Y.Z`; edit its generated notes if users need to know something (a renamed command, a manual step after upgrading).
+   PyPI can take a minute to serve a new version. The release page is `https://github.com/twglhk/dongduni-agent-hub/releases/tag/vX.Y.Z`; edit its generated notes if users need to know something (a renamed command, a manual step after upgrading). Users get the release with `dah update`; anything it cannot do by itself (a new setting to choose) belongs in those notes.
 
 ## When something fails
 

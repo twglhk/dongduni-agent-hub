@@ -39,4 +39,4 @@ packages = ["agent_hub"]
 version = { attr = "agent_hub.__version__" }
 
 [tool.setuptools.package-data]
-agent_hub = ["board/*.html", "templates/*.md", "templates/lanes/*.md", "guide/*.md", "guide/deploy/*.md"]
+agent_hub = ["board/*.html", "templates/*.md", "templates/*.json", "templates/lanes/*.md", "guide/*.md", "guide/deploy/*.md"]

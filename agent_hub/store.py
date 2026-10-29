@@ -123,6 +123,18 @@ CREATE TABLE IF NOT EXISTS members(
   token_hash TEXT,                      -- sha256 of the login token (auth.mode=token)
   created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS usage(
+  lane TEXT NOT NULL,
+  session TEXT NOT NULL,
+  runtime TEXT NOT NULL,
+  day TEXT NOT NULL,                    -- local date the session was first seen, YYYY-MM-DD
+  tokens_in INTEGER NOT NULL DEFAULT 0,
+  tokens_out INTEGER NOT NULL DEFAULT 0,
+  cost REAL,                            -- USD; NULL when the runtime does not report it
+  ctx_k INTEGER,
+  updated REAL NOT NULL,
+  PRIMARY KEY(lane, session)
+);
 CREATE INDEX IF NOT EXISTS messages_pending ON messages(target, delivered);
 CREATE INDEX IF NOT EXISTS items_state ON items(state, audience);
 CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
@@ -635,6 +647,44 @@ class Store:
             if fields:
                 con.execute(f"UPDATE lanes SET {', '.join(f'{k}=?' for k in fields)} WHERE lane=?",
                             (*fields.values(), lane))
+
+    # ---------- usage ----------
+
+    def day(self, ts: float | None = None) -> str:
+        return time.strftime("%Y-%m-%d", time.localtime(self.clock() if ts is None else ts))
+
+    def record_usage(self, lane: str, session: str, runtime: str, tokens_in: int, tokens_out: int,
+                     cost: float | None, ctx_k: int | None) -> None:
+        """Session totals as the runtime reports them now; the day stays the one the session was first seen on."""
+        with self.conn() as con:
+            con.execute("INSERT INTO usage(lane, session, runtime, day, tokens_in, tokens_out, cost, ctx_k, updated) "
+                        "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(lane, session) DO UPDATE SET runtime=excluded.runtime, "
+                        "tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out, cost=excluded.cost, "
+                        "ctx_k=excluded.ctx_k, updated=excluded.updated",
+                        (lane, session, runtime, self.day(), tokens_in, tokens_out, cost, ctx_k, self.clock()))
+
+    def usage(self, day: str) -> dict[str, dict[str, Any]]:
+        """Per lane for one day: tokens in/out, cost (None when no session reported one), sessions."""
+        with self.conn() as con:
+            rows = _rows(con.execute("SELECT lane, runtime, SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out, "
+                                     "SUM(cost) AS cost, COUNT(*) AS sessions FROM usage WHERE day=? "
+                                     "GROUP BY lane, runtime", (day,)))
+        out: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            cur = out.setdefault(r["lane"], {"tokens_in": 0, "tokens_out": 0, "cost": None, "sessions": 0})
+            cur["tokens_in"] += r["tokens_in"] or 0
+            cur["tokens_out"] += r["tokens_out"] or 0
+            cur["sessions"] += r["sessions"]
+            if r["cost"] is not None:
+                cur["cost"] = (cur["cost"] or 0.0) + r["cost"]
+        return out
+
+    def session_ctx(self, lane: str, session: str | None) -> int | None:
+        if not session:
+            return None
+        with self.conn() as con:
+            row = con.execute("SELECT ctx_k FROM usage WHERE lane=? AND session=?", (lane, session)).fetchone()
+        return row[0] if row else None
 
     # ---------- members ----------
 

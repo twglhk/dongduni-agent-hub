@@ -166,6 +166,25 @@ class EngineTest(unittest.TestCase):
         self.assertTrue(any(m["kind"] == "stalled" for m in self.s.pending(HUB)))
         self.assertEqual(self.s.task(t)["respawns"], RESPAWN_LIMIT + 1)
 
+    def test_usage_is_recorded_while_working_and_before_a_wrapped_lane_closes(self) -> None:
+        t = self.s.add_task("docs", "A", "b")
+        self.e.tick()
+        sid = self.s.lane("docs")["session"]
+        self.rt.use["docs"] = {"tokens_in": 1000, "tokens_out": 10, "cost": 0.01, "ctx_k": 1}
+        self.e.tick()
+        self.rt.use["docs"] = {"tokens_in": 5000, "tokens_out": 50, "cost": 0.05, "ctx_k": 5}
+        self.clock.tick(5)
+        self.e.tick()  # busy and sampled under a minute ago: not read again
+        self.assertEqual(self.s.usage(self.s.day())["docs"]["tokens_in"], 1000)
+        self.s.update_task(t, state="closed")
+        self.s.set_lane("docs", closing=1)
+        self.rt.st["docs"] = "idle"
+        self.e.tick()  # the turn ended: read once more, then the wrapped lane closes
+        self.assertIn("docs", self.rt.closed)
+        self.assertEqual(self.s.usage(self.s.day())["docs"],
+                         {"tokens_in": 5000, "tokens_out": 50, "cost": 0.05, "sessions": 1})
+        self.assertEqual(self.s.session_ctx("docs", sid), 5)
+
     # ----- decisions -----
 
     def item(self, lane: str, task_id: int | None, audience: str = HUB) -> int:

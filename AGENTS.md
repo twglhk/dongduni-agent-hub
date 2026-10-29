@@ -27,6 +27,7 @@ Instructions for coding agents working in this repository.
 - Every state change goes through `Store`. The engine must stay deterministic given a clock and a runtime; tests inject both (`tests/helpers.py`).
 - A new runtime = one `Adapter` subclass with `status/open/send/close` (+ optional `questions`, `context_k`, `last_text`) and a stand-in CLI test in `tests/test_runtimes.py`. Never call a real model in tests.
 - The board is one HTML file with no build step and no external requests. All UI strings live in its `UI` dict (en, ko, ja, zh, es; a new key goes into every language).
+- Changing a template in `agent_hub/templates/` (PROTOCOL.md, lanes/*.md): append its new text to `templates/shipped.json` (oldest first, newest last). `dah update` uses those texts to tell a workspace's untouched copy from an edited one; a test fails until you do.
 - `discover` reports names, counts and booleans only. A test plants secrets and fails if any leaks; keep it that way.
 - It runs on Linux, macOS and Windows. Start, check and stop processes only through `procs.py`; never `os.kill(pid, 0)` (it kills on Windows), `os.killpg` or `start_new_session` directly. Read and write text files with `encoding="utf-8"`.
 - Releases: follow [docs/RELEASING.md](docs/RELEASING.md) (bump `__version__`, push tag `vX.Y.Z`; CI tests on all three systems and publishes `dongduni-agent-hub` to PyPI).

@@ -125,6 +125,10 @@ class Adapter:
     def context_k(self, sid: str | None) -> int:
         return 0
 
+    def usage(self, sid: str | None) -> dict[str, Any] | None:
+        """Totals for one session: tokens_in (cache included), tokens_out, cost (USD or None), ctx_k."""
+        return None
+
     def last_text(self, n: int = 1) -> list[str]:
         return []
 
@@ -219,6 +223,23 @@ class OpenCode(Adapter):
                 return round(total / 1000)
         return 0
 
+    def usage(self, sid: str | None) -> dict[str, Any] | None:
+        tin = tout = 0
+        cost: float | None = None
+        for m in self._messages(sid) if sid else []:
+            info = m.get("info") or {}
+            if info.get("role") != "assistant":
+                continue
+            t = info.get("tokens") or {}
+            c = t.get("cache") or {}
+            tin += int(t.get("input") or 0) + int(c.get("read") or 0) + int(c.get("write") or 0)
+            tout += int(t.get("output") or 0) + int(t.get("reasoning") or 0)
+            if isinstance(info.get("cost"), (int, float)):
+                cost = (cost or 0.0) + float(info["cost"])
+        if not tin and not tout:
+            return None
+        return {"tokens_in": tin, "tokens_out": tout, "cost": cost, "ctx_k": self.context_k(sid)}
+
     def last_text(self, n: int = 1) -> list[str]:
         sid = self.store.lane(self.lane.id).get("session")
         out: list[str] = []
@@ -297,6 +318,21 @@ class Claude(Headless):
             return round(total / 1000)
         return 0
 
+    def usage(self, sid: str | None) -> dict[str, Any] | None:
+        runs = [e for e in self._results() if sid and e.get("session_id") == sid]
+        if not runs:
+            return None
+        tin = tout = 0
+        cost: float | None = None
+        for e in runs:
+            u = e.get("usage") or {}
+            tin += sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_read_input_tokens",
+                                                     "cache_creation_input_tokens"))
+            tout += int(u.get("output_tokens") or 0)
+            if isinstance(e.get("total_cost_usd"), (int, float)):
+                cost = (cost or 0.0) + float(e["total_cost_usd"])
+        return {"tokens_in": tin, "tokens_out": tout, "cost": cost, "ctx_k": self.context_k(sid)}
+
     def last_text(self, n: int = 1) -> list[str]:
         texts = [str(e.get("result") or "").strip() for e in self._results()]
         return [t for t in texts if t][-n:]
@@ -343,6 +379,19 @@ class Codex(Headless):
                 return round(int(u["input_tokens"]) / 1000)
         return 0
 
+    def usage(self, sid: str | None) -> dict[str, Any] | None:
+        tin = tout = 0
+        thread = None
+        for e in self._events():
+            thread = self._thread_id(e) or thread
+            u = e.get("usage") if isinstance(e.get("usage"), dict) else None
+            if sid and thread == sid and u and e.get("type") == "turn.completed":
+                tin += int(u.get("input_tokens") or 0)
+                tout += int(u.get("output_tokens") or 0)
+        if not tin and not tout:
+            return None
+        return {"tokens_in": tin, "tokens_out": tout, "cost": None, "ctx_k": self.context_k(sid)}
+
     def last_text(self, n: int = 1) -> list[str]:
         out = []
         for e in self._events():
@@ -387,6 +436,9 @@ class Runtimes:
 
     def context_k(self, lane: str, sid: str | None) -> int:
         return self._a(lane).context_k(sid)
+
+    def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
+        return self._a(lane).usage(sid)
 
     def last_text(self, lane: str, n: int = 1) -> list[str]:
         return self._a(lane).last_text(n)

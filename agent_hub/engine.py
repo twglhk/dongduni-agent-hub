@@ -10,6 +10,7 @@
   live asks        hub and infra may ask (opencode only): each question becomes a board item for humans and the
                    answer goes back to the ask. Team lanes' asks are bounced to the board.
   human items      push notification once.
+  usage            each open session's token and cost totals, read when a turn ends and every minute.
   stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
                    session working, a turn that never ends), humans get one board item about it.
   goals            when the hub is idle, nothing is queued or running and the goals changed since it was last told,
@@ -34,6 +35,7 @@ RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
 HUB_STUCK_SECONDS = 900
 GOAL_IDLE_SECONDS = 60
+USAGE_SECONDS = 60
 STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음",
                "ja": "ハブがアイドルに戻らない", "zh": "中枢一直没有回到空闲", "es": "El hub no vuelve a quedar libre"}
 STUCK_BODY = {
@@ -41,26 +43,26 @@ STUCK_BODY = {
            "while it is idle, and it has stayed busy.\n\n## Likely causes\n- A hook or plugin in the hub's agent keeps "
            "the session working (auto-continue, todo loops).\n- One very long turn.\n\n## What to do\n- `dah last hub` "
            "and `.tower/state/logs/hub.err` show what it is doing.\n- Give the hub lane a lighter agent (`\"agent\"` in "
-           "`.tower/tower.json`) or another runtime: a memo to infra can do it.\n- Approve this item once you have seen it."),
+           "`.tower/tower.json`) or another runtime: a request to infra can do it.\n- Approve this item once you have seen it."),
     "ko": ("## 무슨 일\n허브에 보낼 소식 {n}건이 {m}분째 대기 중입니다. tower는 허브가 idle일 때만 소식을 넣는데, 허브가 계속 "
            "busy 상태입니다.\n\n## 흔한 원인\n- 허브 에이전트의 hook이나 플러그인이 세션을 계속 돌림(자동 계속, todo 루프).\n"
            "- 아주 긴 한 턴.\n\n## 할 일\n- `dah last hub`와 `.tower/state/logs/hub.err`로 무엇을 하는지 확인.\n"
-           "- 허브 레인에 더 가벼운 에이전트(`.tower/tower.json`의 `\"agent\"`)나 다른 런타임 지정: infra에 메모하면 됩니다.\n"
+           "- 허브 레인에 더 가벼운 에이전트(`.tower/tower.json`의 `\"agent\"`)나 다른 런타임 지정: 인프라에 요청하면 됩니다.\n"
            "- 확인했으면 이 항목을 승인하세요."),
     "ja": ("## 何が起きたか\nハブ宛ての知らせ {n} 件が {m} 分待っています。tower はハブがアイドルのときだけ知らせを書き込みますが、"
            "ハブがずっと作業中のままです。\n\n## よくある原因\n- ハブのエージェントの hook やプラグインがセッションを動かし続けている"
            "(自動継続、todo ループ)。\n- とても長い 1 ターン。\n\n## すること\n- `dah last hub` と `.tower/state/logs/hub.err` "
            "で何をしているか確認。\n- ハブのレーンに軽いエージェント(`.tower/tower.json` の `\"agent\"`)か別のランタイムを指定: "
-           "infra へのメモで頼めます。\n- 確認したらこの項目を承認してください。"),
+           "infra への依頼で頼めます。\n- 確認したらこの項目を承認してください。"),
     "zh": ("## 发生了什么\n发给中枢的 {n} 条消息已等待 {m} 分钟。tower 只在中枢空闲时写入消息，而中枢一直在忙。\n\n"
            "## 常见原因\n- 中枢代理的 hook 或插件让会话一直运行(自动继续、todo 循环)。\n- 一个非常长的回合。\n\n## 怎么办\n"
            "- 用 `dah last hub` 和 `.tower/state/logs/hub.err` 查看它在做什么。\n- 给中枢通道换一个更轻的代理"
-           "(`.tower/tower.json` 里的 `\"agent\"`)或别的运行时：给 infra 写备忘即可。\n- 看过后请批准此项。"),
+           "(`.tower/tower.json` 里的 `\"agent\"`)或别的运行时：向 infra 提请求即可。\n- 看过后请批准此项。"),
     "es": ("## Qué pasó\n{n} aviso(s) para el hub llevan {m} min esperando: la torre solo escribe al hub cuando está libre, "
            "y sigue ocupado.\n\n## Causas probables\n- Un hook o plugin del agente del hub mantiene la sesión trabajando "
            "(auto-continuar, bucles de tareas).\n- Un turno muy largo.\n\n## Qué hacer\n- `dah last hub` y "
            "`.tower/state/logs/hub.err` muestran qué hace.\n- Asigna al hub un agente más ligero (`\"agent\"` en "
-           "`.tower/tower.json`) u otro runtime: basta una nota a infra.\n- Aprueba este elemento cuando lo hayas visto."),
+           "`.tower/tower.json`) u otro runtime: basta una petición a infra.\n- Aprueba este elemento cuando lo hayas visto."),
 }
 FOLLOW_VERDICTS = ("ok", "no", "answer")
 VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
@@ -115,6 +117,8 @@ class Engine:
         self.idle_since: dict[str, float] = {}
         self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
         self.goals_told = ""  # the goals as the hub last heard them; unchanged goals never re-prompt it
+        self.last_status: dict[str, str] = {}
+        self.usage_at: dict[str, float] = {}
 
     # ---------- prompts ----------
 
@@ -189,6 +193,7 @@ class Engine:
                 statuses[lane] = "unknown"
                 self.log(f"{lane}: status failed: {e}")
             self.store.set_lane(lane, status=statuses[lane], seen=self.clock())
+        self._usage(statuses)
         self._questions(statuses)
         self.route_decisions()
         self._notify_humans()
@@ -204,6 +209,28 @@ class Engine:
                     fn(statuses[name])
                 except Exception as e:
                     self.log(f"{name}: {e}")
+
+    # ---------- usage ----------
+
+    def _usage(self, statuses: dict[str, str]) -> None:
+        """Record each open session's totals when a turn ends (before a wrapped lane is closed) and while it works."""
+        now = self.clock()
+        for lane, st in statuses.items():
+            prev, self.last_status[lane] = self.last_status.get(lane), st
+            sid = self.store.lane(lane).get("session")
+            if not sid or st not in ("idle", "busy", "asking"):
+                continue
+            if not (st == "idle" and prev != "idle") and now - self.usage_at.get(lane, 0.0) < USAGE_SECONDS:
+                continue
+            self.usage_at[lane] = now
+            try:
+                u = self.rt.usage(lane, sid)
+            except Exception as e:
+                self.log(f"{lane}: usage failed: {e}")
+                continue
+            if u:
+                self.store.record_usage(lane, sid, self.cfg.lanes[lane].runtime, int(u.get("tokens_in") or 0),
+                                        int(u.get("tokens_out") or 0), u.get("cost"), u.get("ctx_k"))
 
     # ---------- live asks ----------
 
