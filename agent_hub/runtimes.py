@@ -778,7 +778,7 @@ class ClaudeTerm(TerminalSession, Claude):
         if not sid:
             return ""
         base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cfg.workdir)) / f"{sid}.jsonl")
+        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cfg.workdir.resolve())) / f"{sid}.jsonl")
 
     def _transcript(self) -> list[dict[str, Any]]:
         path = self._transcript_path()

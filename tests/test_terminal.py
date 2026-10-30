@@ -259,7 +259,8 @@ class TerminalTest(unittest.TestCase):
         self.assertNotIn("-p", first["argv"])  # interactive, not headless
         self.assertEqual(first["argv"][first["argv"].index("--model") + 1], "opus")
         self.assertIn("bypassPermissions", first["argv"])
-        self.assertEqual((first["lane"], first["home"], first["cwd"]), ("hub", str(self.cfg.home), str(self.cfg.workdir)))
+        self.assertEqual((first["lane"], first["home"]), ("hub", str(self.cfg.home)))
+        self.assertEqual(Path(first["cwd"]).resolve(), self.cfg.workdir.resolve())  # macOS: /var is /private/var
         win = next(iter(self.windows().values()))
         self.assertEqual((win["title"], win["argv"][0]), ("hub", "new-session"))
         self.assertEqual(self.rt.usage("hub", sid), {"tokens_in": 10000, "tokens_out": 50, "cost": None, "ctx_k": 10})
