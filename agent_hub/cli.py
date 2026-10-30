@@ -716,7 +716,16 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
                          "`.tower/board/` (extra.js / extra.css, or index.html to replace the board), API routes and "
                          "engine hooks in `.tower/ext/*.py` (see `dah guide extend`). Reply with what you rebuilt and "
                          "anything that could not be carried over.", p["dir"]))
-    if board_changed(c.home):
+    board = board_changed(c.home)
+    if board == "extended":
+        print("  the built-in board changed; this workspace adds to it with .tower/board/extra.js / extra.css")
+        requests.append(("check the board extensions", f"agent-hub was updated to {version} and its built-in board "
+                         f"changed. This workspace adds to it with `.tower/board/extra.js` / `extra.css`. Open the "
+                         f"board and check every tab and section they add: a section that broke shows an error box, a "
+                         f"style may no longer match. Fix what uses anything outside the stable part of `window.dah` "
+                         f"(see \"What stays stable\" in `dah guide extend`) and reply with what you checked and fixed.",
+                         None))
+    if board == "replaced":
         print("  the built-in board changed; this workspace replaces it with .tower/board/index.html")
         requests.append(("carry over the board changes", f"agent-hub was updated to {version} and its built-in board changed. This "
                          f"workspace replaces the board with `.tower/board/index.html`, so the change does not show. "

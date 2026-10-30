@@ -357,11 +357,17 @@ def mark_requested(patch_dir: Path, memo_id: int) -> None:
     idx.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def board_changed(home: Path) -> bool:
-    """True once per change of the built-in board when this workspace replaces it (.tower/board/index.html)."""
+def board_changed(home: Path) -> str:
+    """Once per change of the built-in board: "replaced" when this workspace replaces it (.tower/board/index.html),
+    "extended" when it adds to it (extra.js / extra.css), else ""."""
     mark = home / TOWER_DIR / "state" / "board.sha"
     now = file_hash(BUILTIN_BOARD)
     before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
     mark.parent.mkdir(parents=True, exist_ok=True)
     mark.write_text(now, encoding="utf-8")
-    return bool(before) and before != now and (home / TOWER_DIR / "board" / "index.html").is_file()
+    if not before or before == now:
+        return ""
+    board = home / TOWER_DIR / "board"
+    if (board / "index.html").is_file():
+        return "replaced"
+    return "extended" if (board / "extra.js").is_file() or (board / "extra.css").is_file() else ""

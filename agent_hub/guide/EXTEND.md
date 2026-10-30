@@ -80,6 +80,15 @@ def on_tick(ctx):
 - Hooks run in the tower loop: keep them quick, and hand slow work to a thread. Changes made while the tower was stopped are not replayed.
 - Hooks run only in the workspace's own tower.
 
+## What stays stable
+
+An update replaces the package, never `.tower/`; what can change is what an extension leans on.
+
+- Stable (changed only in a major version): the `.tower/` layout; `dah.addSection`, `addTab`, `onState`, `get`, `post`, `refresh`, `L`, `lang`, `BASE`, `version`; the top-level fields of the server state (`dah.S.data`, `GET api/state`) and the board API routes; `/api/x/<name>` with `fn(ctx, body)`; `on_event` / `on_tick` with their kinds and the `ctx` keys listed above. New fields and kinds may be added.
+- Internal (may change in any release): the board's DOM, CSS classes and variables, the builders (`dah.h`, `svg`, `sec`, `empty`, `toast`) and the rest of `dah.S`; `Store` methods beyond reading through `ctx["store"]`; anything in the package not listed above.
+
+Prefer the stable part. When an update changes the built-in board, `dah update` asks infra to check a workspace's `extra.js` / `extra.css` (or to carry the change over to its own `index.html`).
+
 ## Changes made inside the package
 
 Editing the installed package still works until the next update. `dah update` checks the installed files against the release before upgrading, keeps changed ones in `.tower/patches/<version>/` (with `changes.diff` against the release when it can be fetched), upgrades anyway, and asks infra to rebuild them as extensions. `dah update --dry-run` lists them without changing anything. To change agent-hub itself, run it from a clone (`git clone`, then `bin/dah`) and send the change upstream.

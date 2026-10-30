@@ -221,6 +221,15 @@ class UpdateRequestsTest(unittest.TestCase):
         self.assertNotIn("asked infra", again)
         self.assertEqual(len(Store(config_mod.load(self.home).db).memos(INFRA)), len(memos))
 
+    def test_board_additions_are_checked_once_when_the_built_in_board_changes(self) -> None:
+        write(self.home / ".tower/board/extra.js", "dah.addTab('x', 'X', '', () => 'x');")
+        write(self.home / ".tower/state/board.sha", "sha256=older-board")
+        out = self.tower("update", "--no-upgrade", "--no-restart")
+        self.assertIn("asked infra to check the board extensions", out)
+        self.assertNotIn("carry over", out)
+        self.assertIn("What stays stable", Store(config_mod.load(self.home).db).memos(INFRA)[-1]["text"])
+        self.assertNotIn("asked infra", self.tower("update", "--no-upgrade", "--no-restart"))
+
     def test_dry_run_changes_nothing(self) -> None:
         out = self.tower("update", "--dry-run")
         self.assertIn("would upgrade: nothing (dah runs from a clone", out)

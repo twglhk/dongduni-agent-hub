@@ -82,7 +82,7 @@ agent-hub is a skeleton: build what your team needs on top of it in the workspac
 | `.tower/board/index.html` | your own board instead of the built-in one (`?builtin` always opens the built-in board) |
 | `.tower/ext/*.py` | API routes at `/api/x/<name>`, and tower hooks: `on_event` (reports, items, decisions, memos, goals) and `on_tick` |
 
-Built-in routes and the tower's decisions stay the contract; a broken extension is logged and skipped. To change agent-hub itself, run it from a clone (see Development).
+Built-in routes and the tower's decisions stay the contract; a broken extension is logged and skipped. Updates never touch `.tower/`; when the built-in board changes, `dah update` asks infra to check the workspace's board additions (the guide lists which parts stay stable). To change agent-hub itself, run it from a clone (see Development).
 
 ## One board, every project
 
