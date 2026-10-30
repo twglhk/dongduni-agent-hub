@@ -168,7 +168,7 @@ class CliTest(unittest.TestCase):
         ports = [json.loads((h / ".tower/tower.json").read_text())["web"]["port"] for h in (self.home, other)]
         self.assertNotEqual(ports[0], ports[1])
         self.assertIn("--lang takes", self.tower("init", "--home", str(other), "--force", "--lang", "../x", ok=False))
-        slug = other.name.lower().replace("_", "-")
+        slug = next(ln.split()[0] for ln in self.tower("workspaces").splitlines() if ln.endswith(str(other.resolve())))
         self.assertIn("removed", self.tower("workspaces", "remove", slug))
 
 
