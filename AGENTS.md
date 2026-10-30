@@ -10,7 +10,7 @@ Instructions for coding agents working in this repository.
 | path | what |
 | --- | --- |
 | `agent_hub/engine.py` | the tick: hub, infra inbox, team lanes, decision routing, live asks, goal prompts. No LLM. |
-| `agent_hub/runtimes.py` | one adapter per agent runtime (opencode / claude / codex) |
+| `agent_hub/runtimes.py` | one adapter per agent runtime (opencode / claude / codex), in the background or in a terminal window (tmux, Orca) |
 | `agent_hub/store.py` | SQLite schema and all state changes (goals, tasks, items, messages, …) |
 | `agent_hub/config.py` | `tower.json`, the workspace registry (`~/.config/agent-hub/workspaces.json`, `%APPDATA%\agent-hub` on Windows), port picking |
 | `agent_hub/procs.py` | starting, checking and stopping processes on Linux, macOS and Windows; npm shims on Windows |
@@ -26,7 +26,7 @@ Instructions for coding agents working in this repository.
 
 - Standard library only, Python 3.10+. No new dependency without a strong reason.
 - Every state change goes through `Store`. The engine must stay deterministic given a clock and a runtime; tests inject both (`tests/helpers.py`).
-- A new runtime = one `Adapter` subclass with `status/open/send/close` (+ optional `questions`, `context_k`, `last_text`) and a stand-in CLI test in `tests/test_runtimes.py`. Never call a real model in tests.
+- A new runtime = one `Adapter` subclass with `status/open/send/close` (+ optional `questions`, `context_k`, `last_text`) and a stand-in CLI test in `tests/test_runtimes.py` (terminal windows: `tests/test_terminal.py`, against a stand-in terminal app). Never call a real model in tests.
 - The board is one HTML file with no build step and no external requests. All UI strings live in its `UI` dict (en, ko, ja, zh, es; a new key goes into every language).
 - Changing a template in `agent_hub/templates/` (PROTOCOL.md, lanes/*.md): append its new text to `templates/shipped.json` (oldest first, newest last). `dah update` uses those texts to tell a workspace's untouched copy from an edited one; a test fails until you do.
 - Extension points (`ext.py`: `window.dah`, `/x/`, `/api/x/`, `routes`, `on_event` kinds, `on_tick`) are a contract workspaces build on: extend them, do not rename or drop them without a major version. Keep `guide/EXTEND.md` in step.

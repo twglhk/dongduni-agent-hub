@@ -127,6 +127,20 @@ The working rules every lane follows are in [`templates/PROTOCOL.md`](https://gi
 
 Each lane runs your agent as you configured it. When a role needs its own prompt, model or tool limits, point the lane at one of your existing agents (`dah lane add review --runtime claude --agent code-reviewer`, or `"agent"` in `tower.json`: an OpenCode agent name or a Claude `--agent`); `"model"` picks a model, `"args"` passes anything else (Codex: `["--profile", NAME]`). Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox; `dah init --safe` writes sandboxed arguments instead.
 
+### Lanes in terminal windows
+
+By default lane sessions run in the background and you follow them on the board. To watch them work, set `"terminal"` in `tower.json` (for every lane, or per lane) or pass `dah init --terminal`:
+
+| `terminal` | where a lane's session runs |
+| --- | --- |
+| `none` (default) | in the background, as in the table above |
+| `tmux` | a window per lane in the tmux session `dah-<workspace>` (`tmux attach -t dah-<workspace>`; `dah status` prints it). Linux, macOS, WSL. |
+| `orca` | a terminal tab per lane in [Orca](https://github.com/stablyai/orca), opened with its `orca` CLI; Orca shows each lane's state in its sidebar |
+
+The tower opens the window when a lane starts, gives it its briefs (written to a file, the window gets one line pointing at it), and closes it when the lane is done; `dah stop --close-lanes` closes them all. The agent runs interactively with the same configuration and arguments, so you can scroll, read along and type to it. The tower knows when it works or waits from Claude Code hooks and Codex `notify`, both added for that session only; OpenCode runs its TUI, which the tower drives over HTTP as before. With `--safe` arguments an agent in a window stops at its own permission prompts until someone answers there; the lane shows as `asking` and the tower sends one alert.
+
+Good to know: open each agent once by hand in the workspace first, so first-run screens (folder trust, accepting `bypassPermissions`) are out of the way; a lane cannot answer them. Changing a lane's `terminal` or `runtime` closes its live session, which then reopens the new way. Codex reports only finished turns, so the tower does not see a turn a person starts or interrupts in a Codex window; Claude Code reports both.
+
 ## Language
 
 `--lang` takes any language code: agents write everything people read on the board in that language. The board's buttons and labels come in English, Korean, Japanese, Chinese and Spanish; each viewer can switch them from the board's header.

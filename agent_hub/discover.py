@@ -253,5 +253,6 @@ def survey(project_dir: Path | None = None, home: Path | None = None) -> dict[st
         "knowledge_hints": hints,
         "project": proj_info,
         "exposure": exposure(home),
+        "terminals": {name: bool(shutil.which(name)) for name in ("tmux", "orca")},  # lanes can run in their windows
         "runtimes_supported": [r for r in ("opencode", "claude", "codex") if agents.get(r)],
     }

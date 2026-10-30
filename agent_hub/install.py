@@ -167,12 +167,12 @@ def default_runtime() -> str | None:
 
 
 def init(home: Path, name: str, lang: str, hub: str, infra: str, project: str | None, safe: bool,
-         force: bool) -> Path:
+         force: bool, terminal: str = "none") -> Path:
     path = home / TOWER_DIR / CONFIG_NAME
     if path.exists() and not force:
         raise FileExistsError(f"{path} exists (use --force to overwrite)")
     web_port, opencode_port = free_ports(home)
-    data = template(name, lang, hub, infra, safe, web_port, opencode_port)
+    data = template(name, lang, hub, infra, safe, web_port, opencode_port, terminal)
     if project:
         data["project"] = project
     path.parent.mkdir(parents=True, exist_ok=True)

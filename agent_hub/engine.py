@@ -33,6 +33,7 @@ from .store import HUMAN, MULTI_SEP, TOWER, Store
 BATCH_SECONDS = 8
 SETTLE_SECONDS = 3
 NUDGE_AFTER = 120
+HUB_RETRY_WINDOW = 600  # seconds: the hub closing RESPAWN_LIMIT times within this backs off
 NUDGE_LIMIT = 2
 RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
@@ -121,6 +122,9 @@ class Engine:
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
+        self.hub_opens: list[float] = []
+        self.hub_backoff = False  # when the hub was opened lately: a session that keeps dying backs off
+        self.waiting: set[str] = set()  # lanes in a terminal window held by a permission menu, already announced
         self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
         self.goals_told = ""  # the goals as the hub last heard them; unchanged goals never re-prompt it
         self.last_status: dict[str, str] = {}
@@ -260,6 +264,13 @@ class Engine:
 
     def _questions(self, statuses: dict[str, str]) -> None:
         for lane, st in statuses.items():
+            if self.cfg.lanes[lane].terminal == "none" or st != "asking":
+                self.waiting.discard(lane)
+            elif lane not in self.waiting:  # only a person at the window can answer it
+                self.waiting.add(lane)
+                self.notify([{"id": lane, "lane": lane, "alert": True,
+                              "title": f"{lane} waits for an answer in its {self.cfg.lanes[lane].terminal} window"}])
+                self.log(f"{lane}: waiting for an answer in its window")
             if lane in (HUB, INFRA):
                 self._ask_board(lane, st)
             elif st == "asking":
@@ -454,6 +465,21 @@ class Engine:
         info = self.store.lane(HUB)
         if st == "closed":
             if info.get("enabled"):
+                now = self.clock()
+                self.hub_opens = [t for t in self.hub_opens if now - t < HUB_RETRY_WINDOW]
+                if len(self.hub_opens) < RESPAWN_LIMIT:
+                    self.hub_backoff = False
+                else:  # it dies as soon as it starts: say so once, then retry slowly
+                    if not self.hub_backoff:
+                        self.hub_backoff = True
+                        self.notify([{"id": HUB, "lane": HUB, "alert": True, "title": f"hub closed {RESPAWN_LIMIT} "
+                                      f"times in {HUB_RETRY_WINDOW // 60} min; see .tower/state/logs/hub.err or its "
+                                      f"window"}])
+                        self.log(f"hub: closed {RESPAWN_LIMIT} times in a row, retrying slowly")
+                    if now - self.hub_opens[-1] < HUB_RETRY_WINDOW / 2:
+                        return
+                    self.hub_opens = self.hub_opens[1:]
+                self.hub_opens.append(now)
                 self.rt.open(HUB, self.hub_prompt())
                 self.idle_since.pop(HUB, None)
                 self.log("hub: opened")

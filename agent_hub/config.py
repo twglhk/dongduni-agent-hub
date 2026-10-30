@@ -19,6 +19,7 @@ from . import procs
 HUB = "hub"
 INFRA = "infra"
 RUNTIMES = ("opencode", "claude", "codex")
+TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
 FIRST_OPENCODE_PORT = 4301
@@ -54,6 +55,7 @@ class Lane:
     args: list[str] = field(default_factory=list)
     instructions: str = ""       # path relative to home
     env: dict[str, str] = field(default_factory=dict)
+    terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
 
 
 @dataclass
@@ -72,6 +74,7 @@ class Config:
     notify: dict[str, str] = field(default_factory=dict)
     tunnel: str = ""             # a command the tower keeps alive, e.g. `cloudflared tunnel run board`
     lanes: dict[str, Lane] = field(default_factory=dict)
+    terminal: str = "none"       # default for lanes that do not set their own
 
     @property
     def state_dir(self) -> Path:
@@ -111,7 +114,14 @@ def find_home(start: Path | None = None) -> Path:
                       "or set TOWER_HOME.")
 
 
-def _lane(lid: str, raw: dict[str, Any], port: int | None) -> Lane:
+def _terminal(where: str, value: Any) -> str:
+    term = str(value or "none")
+    if term not in TERMINALS:
+        raise ConfigError(f"{where}: terminal must be one of {', '.join(TERMINALS)}")
+    return term
+
+
+def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none") -> Lane:
     runtime = str(raw.get("runtime") or "opencode")
     if runtime not in RUNTIMES:
         raise ConfigError(f"lane {lid}: runtime must be one of {', '.join(RUNTIMES)}")
@@ -127,6 +137,7 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None) -> Lane:
         args=[str(a) for a in raw["args"]] if isinstance(raw.get("args"), list) else list(DEFAULT_ARGS[runtime]),
         instructions=str(raw.get("instructions") or f"{TOWER_DIR}/lanes/{lid}.md"),
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
+        terminal=_terminal(f"lane {lid}", raw["terminal"]) if raw.get("terminal") else terminal,
     )
 
 
@@ -143,12 +154,13 @@ def load(home: Path | None = None) -> Config:
     if HUB not in lanes_raw:
         raise ConfigError("tower.json needs a `hub` lane.")
     lanes: dict[str, Lane] = {}
+    terminal = _terminal("tower.json", raw.get("terminal"))
     first_port = int(raw.get("opencode_port") or FIRST_OPENCODE_PORT)
     next_port = first_port
     for lid, lraw in lanes_raw.items():
         if not lid.replace("-", "").replace("_", "").isalnum():
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
-        lanes[lid] = _lane(lid, lraw or {}, next_port)
+        lanes[lid] = _lane(lid, lraw or {}, next_port, terminal)
         next_port += 1
     ports = [ln.port for ln in lanes.values() if ln.port]
     if len(ports) != len(set(ports)):
@@ -172,13 +184,14 @@ def load(home: Path | None = None) -> Config:
         notify={str(k): str(v) for k, v in (raw.get("notify") or {}).items()},
         tunnel=str(raw.get("tunnel") or ""),
         lanes=lanes,
+        terminal=terminal,
     )
 
 
 def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,
-             opencode_port: int = FIRST_OPENCODE_PORT) -> dict[str, Any]:
+             opencode_port: int = FIRST_OPENCODE_PORT, terminal: str = "none") -> dict[str, Any]:
     args = SAFE_ARGS if safe else DEFAULT_ARGS
-    return {
+    data = {
         "name": name,
         "lang": lang,
         "web": {"host": "127.0.0.1", "port": web_port, "public_url": ""},
@@ -192,6 +205,9 @@ def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web
             INFRA: {"runtime": infra, "label": "Infra", "args": args[infra]},
         },
     }
+    if terminal != "none":
+        data["terminal"] = terminal
+    return data
 
 
 # ---------- the workspaces this person runs a tower in (one board can switch between them) ----------

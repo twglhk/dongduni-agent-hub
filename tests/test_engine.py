@@ -21,6 +21,35 @@ class EngineTest(unittest.TestCase):
             self.e.tick()
             self.clock.tick(step)
 
+    def test_a_hub_that_keeps_closing_backs_off_and_says_so(self) -> None:
+        self.s.set_lane("hub", enabled=1)
+        for _ in range(12):  # the hub's session dies right after every open
+            self.e.tick()
+            self.rt.st["hub"] = "closed"
+            self.clock.tick(5)
+        opens = [o for o in self.rt.opened if o[0] == "hub"]
+        self.assertEqual(len(opens), 3)
+        self.assertTrue(any(n[0].get("alert") and "hub closed 3 times" in n[0]["title"] for n in self.notes))
+        self.clock.tick(300)
+        self.e.tick()
+        self.assertEqual(len([o for o in self.rt.opened if o[0] == "hub"]), 4)  # tries again, slowly
+
+    def test_a_lane_held_by_a_menu_in_its_window_is_announced_once(self) -> None:
+        cfg = make_home({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude"}}, terminal="tmux")
+        s = Store(cfg.db, clock=self.clock)
+        rt = FakeRuntime(s)
+        notes: list[list[dict]] = []
+        e = Engine(cfg, s, rt, notes.append, clock=self.clock, log=lambda _: None)
+        rt.st["docs"] = "asking"
+        for _ in range(3):
+            e.tick()
+        self.assertEqual([n[0]["title"] for n in notes], ["docs waits for an answer in its tmux window"])
+        rt.st["docs"] = "busy"
+        e.tick()
+        rt.st["docs"] = "asking"
+        e.tick()
+        self.assertEqual(len(notes), 2)  # a new menu is news again
+
     # ----- hub -----
 
     def test_hub_opens_only_when_enabled(self) -> None:

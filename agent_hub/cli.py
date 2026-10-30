@@ -20,7 +20,7 @@ from typing import Any
 
 from . import config as config_mod
 from . import procs
-from .config import HUB, INFRA, RUNTIMES, Config, ConfigError, tower_pid
+from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
 from .engine import VERDICT_WORD, Engine, clip
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
 from .notify import notifier
@@ -398,7 +398,8 @@ def cmd_status(_args: argparse.Namespace) -> None:
         row = s.lane(lid)
         task = s.live_task(lid)
         queued = sum(1 for t in s.tasks(("queued",), 500) if t["lane"] == lid)
-        line = f"{lid:<10} {ln.runtime:<8} {row.get('status') or 'closed':<7}"
+        runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}")
+        line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
             line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\""
         if queued:
@@ -407,6 +408,12 @@ def cmd_status(_args: argparse.Namespace) -> None:
         if opened:
             line += f" · {opened} open items"
         print(line)
+    terms = {ln.terminal for ln in c.lanes.values()}
+    if "tmux" in terms:
+        from .runtimes import tmux_session
+        print(f"lane windows: tmux attach -t {tmux_session(c)}")
+    if "orca" in terms:
+        print("lane windows: Orca terminal tabs in this workspace")
     goals = s.goals()
     print("\ngoals (first priority first):" if goals else "\ngoals: none yet")
     for g in goals:
@@ -415,6 +422,25 @@ def cmd_status(_args: argparse.Namespace) -> None:
     print(f"\nopen for the hub: {len(hub_items)} · for humans: {len(s.items(state='open', audience=HUMAN))}")
     for it in hub_items[:20]:
         print(f"  #{it['id']} {it['lane']} \"{it['title']}\"")
+
+
+def cmd_signal(args: argparse.Namespace) -> None:
+    """A Claude hook (JSON on stdin) or a Codex notify (JSON as the last argument) from a lane in a terminal
+    window. It must never fail the agent's turn: problems go to .tower/state/term/signal.err."""
+    from .runtimes import record_signal
+    home, lane = os.environ.get("TOWER_HOME"), os.environ.get("TOWER_LANE")
+    if not home or not lane:
+        return
+    try:
+        raw = args.payload[-1] if args.payload else sys.stdin.buffer.read().decode("utf-8", errors="replace")
+        payload = json.loads(raw) if raw.strip() else {}
+        if isinstance(payload, dict):
+            record_signal(Path(home), lane, payload)
+    except (OSError, ValueError) as e:
+        err = Path(home) / config_mod.TOWER_DIR / "state" / "term" / "signal.err"
+        err.parent.mkdir(parents=True, exist_ok=True)
+        with err.open("a", encoding="utf-8") as f:
+            f.write(f"{datetime.now().isoformat(timespec='seconds')} {lane}: {e}\n")
 
 
 def cmd_show(args: argparse.Namespace) -> None:
@@ -472,6 +498,16 @@ def say(text: str) -> None:
     print(f"{datetime.now():%H:%M:%S} {text}", flush=True)
 
 
+def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
+    """A live session belongs to the adapter that started it: when tower.json changes a lane's runtime or terminal,
+    close it the old way, or the new adapter would start a second agent beside it."""
+    for lid, ln in old.lanes.items():
+        nl = new.lanes.get(lid)
+        if nl and (nl.runtime, nl.terminal) != (ln.runtime, ln.terminal) and rt.status(lid) != "closed":
+            rt.close(lid)
+            say(f"{lid}: runtime or terminal changed, closed its session; it reopens on the new one")
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     from .ext import Extensions
     from .runtimes import Runtimes
@@ -510,6 +546,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     if c2.tunnel != c.tunnel and tunnel:
                         procs.terminate(tunnel.pid)
                         tunnel = None
+                    close_changed(engine.rt, c, c2, say)
                     c = c2
                     engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say, ext=ext)
                     say("tower.json reloaded")
@@ -620,7 +657,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     if not hub:
         raise TowerError("no agent CLI found (opencode, claude or codex); pass --hub/--infra")
     try:
-        path = init(home, args.name, args.lang, hub, infra, args.project, args.safe, args.force)
+        path = init(home, args.name, args.lang, hub, infra, args.project, args.safe, args.force, args.terminal)
     except FileExistsError as e:
         raise TowerError(str(e))
     c = config_mod.load(home)
@@ -630,6 +667,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     for w in wrote:
         print(f"wrote {w}")
     print(f"board port {c.web_port} · workspace \"{slug}\" registered (`dah workspaces`)")
+    if args.terminal != "none" and args.safe:
+        print("note: with --safe, a lane in a window stops at its agent's permission prompts until someone answers "
+              "there (the tower sends an alert); without --safe it never asks")
     print("next: `dah start`, then open the board")
 
 
@@ -858,6 +898,8 @@ def cmd_member(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="dah", description="Control tower and review board for AI agent lanes.")
+    from . import __version__
+    ap.add_argument("--version", action="version", version=f"dah {__version__}")
     ap.add_argument("--as", dest="as_", metavar="LANE", help="act as this lane (default: $TOWER_LANE)")
     sub = ap.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
 
@@ -948,6 +990,8 @@ def build_parser() -> argparse.ArgumentParser:
         q.add_argument("note", nargs="?", default="")
 
     sub.add_parser("status", help="goals, lanes, tasks and open items")
+    p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
+    p.add_argument("payload", nargs="*")
     p = sub.add_parser("show", help="one board item")
     p.add_argument("id", type=int)
     p = sub.add_parser("items", help="list board items")
@@ -980,6 +1024,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--infra", choices=RUNTIMES)
     p.add_argument("--project", help="folder agents work in, relative to the workspace (default: the workspace)")
     p.add_argument("--safe", action="store_true", help="sandboxed agent permissions instead of unattended ones")
+    p.add_argument("--terminal", choices=TERMINALS, default="none",
+                   help="where lane sessions run: none (in the background, the default), tmux or orca (windows the "
+                        "tower opens and closes, which people can watch)")
     p.add_argument("--force", action="store_true")
     p = sub.add_parser("install", help="(re)write protocol, lane files and command shims")
     p.add_argument("--force", action="store_true")
@@ -1029,7 +1076,7 @@ def build_parser() -> argparse.ArgumentParser:
 HANDLERS = {
     "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
-    "status": cmd_status, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
+    "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
     "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "lane": cmd_lane, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
