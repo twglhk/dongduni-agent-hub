@@ -152,7 +152,8 @@ class HeadlessTest(unittest.TestCase):
             self.assertEqual(Path(call["cwd"]).resolve(), tree)
             self.assertIn("branch `dah/wt`", call["argv"][-1])
             self.assertIn("git merge main", call["argv"][-1])
-            self.assertTrue(call["argv"][-1].endswith(prompt))
+            if os.name != "nt":  # the .cmd stand-in on Windows cuts an argument at its first newline
+                self.assertTrue(call["argv"][-1].endswith(prompt))
             self.assertEqual(call["argv"][call["argv"].index("--add-dir") + 1], str(home / ".tower"))
             rt.close("wt")
         self.assertTrue((tree / "app.txt").is_file())
