@@ -6,6 +6,7 @@ in Codex). A lane is a role put on top of the agent the person already uses, not
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -470,8 +471,35 @@ def detach(cfg: Config, purge: bool) -> list[str]:
                     f"it, then run `dah uninstall --yes --purge` again")
     elif purge:
         try:
-            shutil.rmtree(cfg.home / TOWER_DIR)
+            remove_tree(cfg.home / TOWER_DIR)
             done.append(f"deleted {cfg.home / TOWER_DIR}")
         except OSError as e:  # Windows: dah.exe of a project install is still running
             done.append(f"could not delete all of {cfg.home / TOWER_DIR}: {e}")
     return done
+
+
+def remove_tree(path: Path, tries: int = 10) -> None:
+    """shutil.rmtree that also takes read-only files (git objects on Windows) and retries a file that a virus
+    scanner or a closing process holds for a moment (Windows)."""
+    import gc
+    import stat
+    import time
+
+    def writable(fn, p, _exc):  # read-only on Windows: make it writable and try that one again
+        os.chmod(p, stat.S_IWRITE)
+        fn(p)
+
+    for i in range(tries):
+        gc.collect()  # SQLite connections nobody references any more
+        try:
+            if sys.version_info >= (3, 12):
+                shutil.rmtree(path, onexc=writable)
+            else:
+                shutil.rmtree(path, onerror=writable)
+            return
+        except FileNotFoundError:
+            return
+        except OSError:
+            if i == tries - 1:
+                raise
+            time.sleep(0.5)

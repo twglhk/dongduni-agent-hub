@@ -170,8 +170,8 @@ class CliTest(unittest.TestCase):
         self.assertIn("AGENTS.md:2", out)  # a line to remove by hand
         self.assertTrue((self.home / ".tower/tower.json").exists())  # kept without --purge
         self.assertNotIn(str(self.home), self.tower("workspaces"))
-        self.tower("uninstall", "--yes", "--purge")
-        self.assertFalse((self.home / ".tower").exists())
+        out = self.tower("uninstall", "--yes", "--purge")
+        self.assertFalse((self.home / ".tower").exists(), out)
 
     def test_goals_by_humans_and_the_hub(self) -> None:
         self.assertIn("goal #1 added at priority 1", self.tower("goal", "add", "Ship v2", "--detail", "public beta"))

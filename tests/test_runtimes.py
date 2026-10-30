@@ -165,8 +165,8 @@ class HeadlessTest(unittest.TestCase):
         self.assertTrue((home / ".tower/tower.json").exists(), out)  # uncommitted work: .tower/ is kept
         self.assertTrue((tree / "draft.txt").exists())
         (tree / "draft.txt").unlink()
-        detach(cfg, purge=True)
-        self.assertFalse((home / ".tower").exists())
+        out = detach(cfg, purge=True)
+        self.assertFalse((home / ".tower").exists(), out)
         self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))  # the lane's branch stays
         with self.assertRaises(ConfigError):
             make_home({"hub": {"runtime": "claude", "worktree": True}})
