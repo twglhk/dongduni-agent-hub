@@ -9,7 +9,11 @@
           fn(ctx, body) -> dict | (status, dict); ctx: cfg, store, me, query, log. Signed-in people only;
           POST needs the board's `x-tower: 1` header like every built-in POST.
       on_tick(ctx)                    after every tower tick; ctx: cfg, store, log, now
-      on_event(ctx, kind, data)       kind: report | item | decided | memo | goal (data: that row)
+      on_event(ctx, kind, data)       kind: report | item | decided | memo | goal | task (data: that row)
+                                      | lane (data: lane, status, was, runtime, terminal)
+      on_notify(ctx, notes)           each push the tower sends people (title, lane, alert, the item's fields)
+      runtimes = {"name": cls}        an agent runtime: a subclass of runtimes.Adapter, used as "runtime": "name"
+      terminals = {"name": cls}       a terminal app for lane windows: a subclass of runtimes.Host
 
 Built-in routes and engine decisions are the contract and cannot be overridden. A failing extension is logged and
 skipped; it never stops the board or the tower. Files are reloaded when they change.
@@ -30,7 +34,7 @@ BOARD_DIR = "board"
 EXT_DIR = "ext"
 STATIC_SUFFIXES = {".js", ".mjs", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
                    ".woff", ".woff2", ".txt", ".md"}
-EVENT_KINDS = ("report", "item", "decided", "memo", "goal")
+EVENT_KINDS = ("report", "item", "decided", "memo", "goal", "task", "lane")
 
 
 def board_dir(home: Path) -> Path:
@@ -99,6 +103,15 @@ class Extensions:
                     out[(str(key[0]).upper(), str(key[1]).strip("/"))] = fn
         return out
 
+    def table(self, name: str) -> dict[str, Any]:
+        """A name -> value table the modules declare (`runtimes`, `terminals`), merged in file order."""
+        out: dict[str, Any] = {}
+        for mod in self.modules():
+            value = getattr(mod, name, None)
+            if isinstance(value, dict):
+                out.update({str(k): v for k, v in value.items()})
+        return out
+
     def hooks(self, name: str) -> list[Callable[..., Any]]:
         return [fn for fn in (getattr(m, name, None) for m in self.modules()) if callable(fn)]
 
@@ -110,3 +123,15 @@ class Extensions:
             self.log(f"extension {getattr(fn, '__module__', '?')}.{getattr(fn, '__name__', '?')} failed: "
                      f"{type(e).__name__}: {e} ({Path(where.filename).name}:{where.lineno})")
             return None
+
+
+_REGISTRY: dict[Path, Extensions] = {}
+
+
+def registry(home: Path, log: Callable[[str], None] | None = None) -> Extensions:
+    """One Extensions per workspace in this process, for code that needs what extensions register (runtimes,
+    terminals) without the tower's own instance. Load errors are logged by the tower; here they stay quiet."""
+    key = Path(home).resolve()
+    if key not in _REGISTRY:
+        _REGISTRY[key] = Extensions(key, log or (lambda _msg: None))
+    return _REGISTRY[key]

@@ -1,6 +1,7 @@
 """Workspace config: `<home>/.tower/tower.json`.
 
-The home is the folder whose `.tower/` holds the config. Agents run in `project` (default: the home itself).
+The home is the folder whose `.tower/` holds the config. Agents run in `project` (default: the home itself),
+or a team lane with "worktree": true in its own git worktree under `.tower/state/worktrees/<lane>`.
 State (SQLite DB, logs, members) lives in `<home>/.tower/state/`, which must stay out of git.
 """
 
@@ -56,6 +57,7 @@ class Lane:
     instructions: str = ""       # path relative to home
     env: dict[str, str] = field(default_factory=dict)
     terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
+    worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
 
 
 @dataclass
@@ -75,6 +77,7 @@ class Config:
     tunnel: str = ""             # a command the tower keeps alive, e.g. `cloudflared tunnel run board`
     lanes: dict[str, Lane] = field(default_factory=dict)
     terminal: str = "none"       # default for lanes that do not set their own
+    worktree: bool = False       # default for team lanes that do not set their own
 
     @property
     def state_dir(self) -> Path:
@@ -93,6 +96,10 @@ class Config:
         """Nothing set up to reach the board from another device (no public URL, tunnel, proxy or network bind)."""
         return (self.web_host in ("127.0.0.1", "localhost", "::1") and not self.public_url and not self.tunnel
                 and self.auth_mode == "local")
+
+    def lane_dir(self, lane: str) -> Path:
+        """Where a lane's agent works: the workspace, or the lane's own git worktree."""
+        return self.state_dir / "worktrees" / lane if self.lanes[lane].worktree else self.workdir
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]
@@ -114,30 +121,43 @@ def find_home(start: Path | None = None) -> Path:
                       "or set TOWER_HOME.")
 
 
-def _terminal(where: str, value: Any) -> str:
+def ext_names(home: Path, table: str) -> list[str]:
+    """Runtimes or terminals the workspace's `.tower/ext/*.py` register. Loaded only when tower.json names one
+    that is not built in."""
+    from .ext import registry
+    return sorted(registry(home).table(table))
+
+
+def _terminal(where: str, value: Any, home: Path) -> str:
     term = str(value or "none")
-    if term not in TERMINALS:
-        raise ConfigError(f"{where}: terminal must be one of {', '.join(TERMINALS)}")
+    if term not in TERMINALS and term not in ext_names(home, "terminals"):
+        raise ConfigError(f"{where}: terminal must be one of {', '.join(TERMINALS)}, or one an extension in "
+                          f".tower/ext/ registers")
     return term
 
 
-def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none") -> Lane:
+def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none", home: Path = Path("."),
+          worktree: bool = False) -> Lane:
     runtime = str(raw.get("runtime") or "opencode")
-    if runtime not in RUNTIMES:
-        raise ConfigError(f"lane {lid}: runtime must be one of {', '.join(RUNTIMES)}")
+    if runtime not in RUNTIMES and runtime not in ext_names(home, "runtimes"):
+        raise ConfigError(f"lane {lid}: runtime must be one of {', '.join(RUNTIMES)}, or one an extension in "
+                          f".tower/ext/ registers")
     agent = str(raw.get("agent") or "")
     if agent and runtime == "codex":
         raise ConfigError(f"lane {lid}: codex has no agents; pick a profile with \"args\": [\"--profile\", NAME]")
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
+    if raw.get("worktree") and kind != "team":
+        raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
     return Lane(
         id=lid, kind=kind, runtime=runtime, label=str(raw.get("label") or lid),
         port=int(raw["port"]) if raw.get("port") else (port if runtime == "opencode" else None),
         model=str(raw.get("model") or ""),
         agent=agent,
-        args=[str(a) for a in raw["args"]] if isinstance(raw.get("args"), list) else list(DEFAULT_ARGS[runtime]),
+        args=[str(a) for a in raw["args"]] if isinstance(raw.get("args"), list) else list(DEFAULT_ARGS.get(runtime, [])),
         instructions=str(raw.get("instructions") or f"{TOWER_DIR}/lanes/{lid}.md"),
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
-        terminal=_terminal(f"lane {lid}", raw["terminal"]) if raw.get("terminal") else terminal,
+        terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
+        worktree=bool(raw["worktree"]) if "worktree" in raw else (worktree and kind == "team"),
     )
 
 
@@ -154,13 +174,14 @@ def load(home: Path | None = None) -> Config:
     if HUB not in lanes_raw:
         raise ConfigError("tower.json needs a `hub` lane.")
     lanes: dict[str, Lane] = {}
-    terminal = _terminal("tower.json", raw.get("terminal"))
+    terminal = _terminal("tower.json", raw.get("terminal"), home)
+    worktree = bool(raw.get("worktree"))
     first_port = int(raw.get("opencode_port") or FIRST_OPENCODE_PORT)
     next_port = first_port
     for lid, lraw in lanes_raw.items():
         if not lid.replace("-", "").replace("_", "").isalnum():
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
-        lanes[lid] = _lane(lid, lraw or {}, next_port, terminal)
+        lanes[lid] = _lane(lid, lraw or {}, next_port, terminal, home, worktree)
         next_port += 1
     ports = [ln.port for ln in lanes.values() if ln.port]
     if len(ports) != len(set(ports)):
@@ -185,6 +206,7 @@ def load(home: Path | None = None) -> Config:
         tunnel=str(raw.get("tunnel") or ""),
         lanes=lanes,
         terminal=terminal,
+        worktree=worktree,
     )
 
 

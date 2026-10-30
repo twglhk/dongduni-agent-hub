@@ -13,8 +13,9 @@
   usage            each open session's token and cost totals, read when a turn ends and every minute.
   stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
                    session working, a turn that never ends), humans get one board item about it.
-  extensions       `.tower/ext/*.py` on_event(ctx, kind, data) for what changed since the last tick, then on_tick(ctx);
-                   after the built-in work, errors logged (see ext.py).
+  extensions       `.tower/ext/*.py` on_event(ctx, kind, data) for what changed since the last tick (lane statuses
+                   included), then on_tick(ctx); after the built-in work, errors logged (see ext.py). Every push to
+                   people also goes to on_notify(ctx, notes).
   goals            when the hub is idle, nothing is queued or running and the goals changed since it was last told,
                    the hub gets the ranked goals and moves the first one forward. Unchanged goals never re-prompt it,
                    so a hub that is waiting on humans is left alone.
@@ -115,9 +116,10 @@ class Engine:
     def __init__(self, cfg: Config, store: Store, rt: Any, notify: Callable[[list[dict[str, Any]]], None],
                  clock: Callable[[], float] = time.time, log: Callable[[str], None] = print,
                  ext: Extensions | None = None):
-        self.cfg, self.store, self.rt, self.notify, self.clock, self.log = cfg, store, rt, notify, clock, log
+        self.cfg, self.store, self.rt, self.push, self.clock, self.log = cfg, store, rt, notify, clock, log
         self.ext = ext or Extensions(cfg.home, log)
         self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
+        self.ext_lanes: dict[str, str] | None = None  # lane statuses as extensions last heard them
         self.team = cfg.team()
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
@@ -156,6 +158,15 @@ class Engine:
         return f"[tower] You are the infra lane.\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
 
     # ---------- helpers ----------
+
+    def notify(self, notes: list[dict[str, Any]]) -> None:
+        """Push to people, then hand the same notes to extensions' on_notify (another chat, a pager, ...)."""
+        self.push(notes)
+        hooks = self.ext.hooks("on_notify")
+        if hooks and notes:
+            ctx = {"cfg": self.cfg, "store": self.store, "log": self.log, "now": self.clock()}
+            for fn in hooks:
+                self.ext.call(fn, ctx, [dict(n) for n in notes])
 
     def _idle_for(self, lane: str, st: str) -> float:
         now = self.clock()
@@ -219,19 +230,25 @@ class Engine:
                     fn(statuses[name])
                 except Exception as e:
                     self.log(f"{name}: {e}")
-        self._extensions()
+        self._extensions(statuses)
 
     # ---------- extensions ----------
 
-    def _extensions(self) -> None:
+    def _extensions(self, statuses: dict[str, str]) -> None:
         on_event, on_tick = self.ext.hooks("on_event"), self.ext.hooks("on_tick")
         if not on_event:
-            self.marks = None
+            self.marks = self.ext_lanes = None
         if not (on_event or on_tick):
             return
         ctx = {"cfg": self.cfg, "store": self.store, "log": self.log, "now": self.clock()}
         if on_event:
             events, self.marks = self.store.changes(self.marks)
+            seen, self.ext_lanes = self.ext_lanes, dict(statuses)
+            for lane, st in statuses.items():
+                if seen is not None and seen.get(lane) != st:
+                    ln = self.cfg.lanes[lane]
+                    events.append(("lane", {"lane": lane, "status": st, "was": seen.get(lane),
+                                            "runtime": ln.runtime, "terminal": ln.terminal}))
             for kind, data in events:
                 for fn in on_event:
                     self.ext.call(fn, ctx, kind, data)
@@ -374,8 +391,8 @@ class Engine:
         task = self.store.live_task(lane)
         info = self.store.lane(lane)
         if task is None:
-            if info.get("closing") and st in ("idle", "closed"):
-                if st == "idle" and self.rt.owned(lane):
+            if info.get("closing") and st in ("idle", "closed", "asking"):  # asking: a prompt the cancelled or
+                if st != "closed" and self.rt.owned(lane):                   # wrapped task no longer needs
                     self.rt.close(lane)
                     self.log(f"{lane}: wrapped, closed")
                 self.store.set_lane(lane, closing=None)

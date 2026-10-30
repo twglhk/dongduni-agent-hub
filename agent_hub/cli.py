@@ -398,7 +398,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
         row = s.lane(lid)
         task = s.live_task(lid)
         queued = sum(1 for t in s.tasks(("queued",), 500) if t["lane"] == lid)
-        runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}")
+        runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}") + ("·wt" if ln.worktree else "")
         line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
             line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\""
@@ -436,6 +436,10 @@ def cmd_signal(args: argparse.Namespace) -> None:
         payload = json.loads(raw) if raw.strip() else {}
         if isinstance(payload, dict):
             record_signal(Path(home), lane, payload)
+        chained = os.environ.get("TOWER_CODEX_NOTIFY")
+        if args.payload and chained:  # Codex: the person's own notify program still gets every notification
+            subprocess.Popen([*json.loads(chained), raw], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, **procs.detached())
     except (OSError, ValueError) as e:
         err = Path(home) / config_mod.TOWER_DIR / "state" / "term" / "signal.err"
         err.parent.mkdir(parents=True, exist_ok=True)
@@ -503,9 +507,10 @@ def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
     close it the old way, or the new adapter would start a second agent beside it."""
     for lid, ln in old.lanes.items():
         nl = new.lanes.get(lid)
-        if nl and (nl.runtime, nl.terminal) != (ln.runtime, ln.terminal) and rt.status(lid) != "closed":
+        if nl and (nl.runtime, nl.terminal, nl.worktree) != (ln.runtime, ln.terminal, ln.worktree) \
+                and rt.status(lid) != "closed":
             rt.close(lid)
-            say(f"{lid}: runtime or terminal changed, closed its session; it reopens on the new one")
+            say(f"{lid}: runtime, terminal or worktree changed, closed its session; it reopens the new way")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -527,7 +532,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     say(f"board http://{c.web_host}:{c.web_port}" + (f" · {c.public_url}" if c.public_url else ""))
     cfg_path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
     mtime = cfg_path.stat().st_mtime
-    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say, ext=ext)
+    engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
     tunnel: subprocess.Popen[bytes] | None = None
     tunnel_at = 0.0
 
@@ -548,7 +553,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                         tunnel = None
                     close_changed(engine.rt, c, c2, say)
                     c = c2
-                    engine = Engine(c, s, Runtimes(c, s), notifier(c, say), log=say, ext=ext)
+                    engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
                     say("tower.json reloaded")
             except (ConfigError, OSError) as e:
                 say(f"tower.json not reloaded: {e}")
@@ -786,7 +791,18 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
 def cmd_skill(args: argparse.Namespace) -> None:
     """Global setup entry for each agent, so "set up agent-hub here" works from any workspace."""
     import difflib
-    from .install import skill_plan
+    from .install import remove_file, skill_files, skill_plan
+    if args.sub == "uninstall":
+        found = skill_files(Path.home(), args.runtime)
+        if not found:
+            print("no agent-hub-setup skill or command found")
+        for runtime, path in found:
+            if args.yes:
+                remove_file(path)
+            print(f"{runtime}: {'removed' if args.yes else 'would remove'} {path}")
+        if found and not args.yes:
+            print("\nNothing removed. These are global agent files: run again with --yes to remove them.")
+        return
     plan = skill_plan(Path.home(), args.runtime)
     if not plan:
         raise TowerError("no agent config found (~/.claude, ~/.config/opencode, ~/.codex); pass --runtime")
@@ -795,15 +811,59 @@ def cmd_skill(args: argparse.Namespace) -> None:
             print(f"{runtime}: {path} is up to date")
             continue
         if not args.yes:
-            print(f"{runtime}: {'update' if old else 'create'} {path}")
+            print(f"{runtime}: {'remove (the agent no longer reads it)' if not new else 'update' if old else 'create'} {path}")
             sys.stdout.writelines(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
-                                                       str(path) if old else "/dev/null", str(path)))
+                                                       str(path) if old else "/dev/null", str(path) if new else "/dev/null"))
+            continue
+        if not new:
+            remove_file(path)
+            print(f"{runtime}: removed {path}")
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(new, encoding="utf-8")
         print(f"{runtime}: wrote {path}")
     if not args.yes and any(old != new for _, _, old, new in plan):
         print("\nNothing written. These are global agent files: run again with --yes to write them.")
+
+
+def cmd_uninstall(args: argparse.Namespace) -> None:
+    """Take agent-hub out of this workspace. Shows the plan first; --yes does it."""
+    from .install import detach, detach_plan
+    c = cfg()
+    plan = detach_plan(c)
+    print(f"{c.name} ({c.home})")
+    print(f"  stop the tower{' and close its lane sessions' if not args.keep_lanes else ''}")
+    for key, what in (("worktrees", "remove the lane worktree (if clean; its branch stays)"),
+                      ("shortcuts", "remove"), ("gitignore", "remove from .gitignore")):
+        for line in plan[key]:
+            print(f"  {what}: {line}")
+    print("  remove it from this machine's workspace list")
+    print(f"  {'delete' if args.purge else 'keep'} {c.home / config_mod.TOWER_DIR}"
+          + ("" if args.purge else " (config, lane files, extensions, board history; --purge deletes it)"))
+    for line in plan["edited_shortcuts"]:
+        print(f"  keep (edited here): {line}")
+    if not args.yes:
+        print("\nNothing changed. Run again with --yes to do it.")
+        return
+    stop_loop(c)
+    if not args.keep_lanes:
+        from .runtimes import Runtimes
+        rt = Runtimes(c, store(c))
+        for lid in c.lanes:
+            try:
+                if rt.owned(lid) and rt.status(lid) != "closed":
+                    rt.close(lid)
+                    print(f"closed {lid}")
+            except Exception as e:  # a lane that cannot be checked is left running; say so
+                print(f"{lid}: not closed ({e})")
+    for line in detach(c, args.purge):
+        print(line)
+    if plan["mentions"]:
+        print("\nThese lines still point at .tower/; remove them by hand if you added them for agent-hub:")
+        for line in plan["mentions"]:
+            print(f"  {line}")
+    print("\nGlobal parts, if you installed them: `dah skill uninstall --yes` (the setup skill/command), then the "
+          "command itself: `uv tool uninstall dongduni-agent-hub` or `pipx uninstall dongduni-agent-hub`.")
 
 
 def cmd_guide(args: argparse.Namespace) -> None:
@@ -850,7 +910,11 @@ def cmd_lane(args: argparse.Namespace) -> None:
     if args.sub == "add":
         if args.id in c.lanes:
             raise TowerError(f"lane {args.id} exists")
+        if args.runtime not in RUNTIMES and args.runtime not in config_mod.ext_names(c.home, "runtimes"):
+            raise TowerError(f"--runtime: one of {', '.join(RUNTIMES)}, or one an extension in .tower/ext/ registers")
         entry: dict[str, Any] = {"runtime": args.runtime, "label": args.label or args.id}
+        if args.worktree:
+            entry["worktree"] = True
         if args.model:
             entry["model"] = args.model
         if args.agent:
@@ -865,7 +929,8 @@ def cmd_lane(args: argparse.Namespace) -> None:
             path.write_text(lane_template(args.id), encoding="utf-8")
         wrote: list[str] = []
         write_shims(c, list(c.lanes), False, wrote)  # a new runtime gets every lane's shortcut, too
-        print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "") + "). "
+        print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "")
+              + (", in its own git worktree" if args.worktree else "") + "). "
               f"Fill in {path.relative_to(c.home)}: what it owns and its done criteria. "
               f"Open it by hand with /{SHIM_PREFIX}{args.id}.")
         return
@@ -1038,9 +1103,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", help="every workspace registered on this machine")
     p = sub.add_parser("skill", help="install the global agent-hub-setup skill/command for your agents")
     ssub = p.add_subparsers(dest="sub", required=True)
-    q = ssub.add_parser("install")
-    q.add_argument("--runtime", action="append", choices=RUNTIMES, help="only this agent (repeatable)")
-    q.add_argument("--yes", action="store_true", help="write the files (without it: show the diff only)")
+    for name in ("install", "uninstall"):
+        q = ssub.add_parser(name)
+        q.add_argument("--runtime", action="append", choices=RUNTIMES, help="only this agent (repeatable)")
+        q.add_argument("--yes", action="store_true", help="change the files (without it: show what would change)")
+    p = sub.add_parser("uninstall", help="take agent-hub out of this workspace (shows the plan; --yes does it)")
+    p.add_argument("--yes", action="store_true")
+    p.add_argument("--purge", action="store_true", help="also delete .tower/ (config, lane files, extensions, history)")
+    p.add_argument("--keep-lanes", action="store_true", help="leave running lane sessions open")
     p = sub.add_parser("guide", help="print the setup playbook, the extension guide, or a guide for reaching the board")
     p.add_argument("name", nargs="?", help="setup (default), extend, lan, tailscale, cloudflare, aws")
     p = sub.add_parser("workspaces", help="workspaces with a tower on this machine (the board switches between them)")
@@ -1053,7 +1123,8 @@ def build_parser() -> argparse.ArgumentParser:
     lsub.add_parser("list")
     q = lsub.add_parser("add")
     q.add_argument("id")
-    q.add_argument("--runtime", choices=RUNTIMES, required=True)
+    q.add_argument("--runtime", required=True, help=f"{', '.join(RUNTIMES)}, or one an extension registers")
+    q.add_argument("--worktree", action="store_true", help="work in a git worktree of its own (branch dah/ID)")
     q.add_argument("--label")
     q.add_argument("--model")
     q.add_argument("--agent", help="run the role on one of your own agents (an OpenCode agent or a Claude --agent "
@@ -1078,7 +1149,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
     "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "lane": cmd_lane, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

@@ -639,14 +639,16 @@ class Store:
 
     def changes(self, marks: dict[str, float] | None) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, float]]:
         """What happened since `marks` as (kind, row), grouped by kind in this order, oldest first within each:
-        report, item (created), decided, memo, goal (any change). Pass the returned marks next time; None only takes
-        the marks (nothing before now is news)."""
+        report, item (created), decided, memo, goal (any change), task (queued, started, closed or cancelled).
+        Pass the returned marks next time; None only takes the marks (nothing before now is news)."""
+        task_at = "max(created, coalesce(started, 0), coalesce(closed, 0))"
         with self.conn() as con:
             now = {"report": con.execute("SELECT coalesce(max(id), 0) FROM reports").fetchone()[0],
                    "item": con.execute("SELECT coalesce(max(id), 0) FROM items").fetchone()[0],
                    "decided": con.execute("SELECT coalesce(max(decided), 0) FROM items").fetchone()[0],
                    "memo": con.execute("SELECT coalesce(max(id), 0) FROM messages").fetchone()[0],
-                   "goal": con.execute("SELECT coalesce(max(updated), 0) FROM goals").fetchone()[0]}
+                   "goal": con.execute("SELECT coalesce(max(updated), 0) FROM goals").fetchone()[0],
+                   "task": con.execute(f"SELECT coalesce(max({task_at}), 0) FROM tasks").fetchone()[0]}
             if marks is None:
                 return [], now
             out: list[tuple[str, dict[str, Any]]] = []
@@ -665,6 +667,9 @@ class Store:
             out += [("goal", goal_view(r)) for r in _rows(con.execute(
                 "SELECT * FROM goals WHERE updated>? AND updated<=? ORDER BY updated, id",
                 (marks.get("goal", 0), now["goal"])))]
+            out += [("task", r) for r in _rows(con.execute(
+                f"SELECT * FROM tasks WHERE {task_at}>? AND {task_at}<=? ORDER BY {task_at}, id",
+                (marks.get("task", now["task"]), now["task"])))]
         return out, now
 
     # ---------- lanes ----------

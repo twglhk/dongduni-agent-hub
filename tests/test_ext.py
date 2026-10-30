@@ -140,10 +140,90 @@ def on_tick(ctx):
         clock.tick(5)
         s.decide(iid, "ok", "ana", "80")
         e.tick()
-        self.assertEqual(mod.seen, [("report", rid), ("item", iid), ("goal", gid), ("decided", iid)])
+        self.assertEqual([x for x in mod.seen if x[0] != "lane"], [("report", rid), ("item", iid), ("goal", gid),
+                                                                   ("decided", iid)])
         self.assertEqual(len(mod.ticks), 3)
         self.assertTrue(any("hook bug" in line for line in logs))  # logged, and the tick went on
         self.assertNotIn(("memo", mid), mod.seen)
+
+
+    def test_lane_and_task_events_and_every_push_reach_extensions(self) -> None:
+        cfg = make_home()
+        write(cfg.home / ".tower/ext/watch.py", '''
+seen, notes = [], []
+def on_event(ctx, kind, data):
+    if kind == "lane":
+        seen.append((kind, data["lane"], data["was"], data["status"]))
+    if kind == "task":
+        seen.append((kind, data["lane"], data["id"]))
+def on_notify(ctx, batch):
+    notes.extend(n["title"] for n in batch)
+    batch[0]["title"] = "changed by a hook"  # a copy: the tower's own push is untouched
+''')
+        clock, pushed = Clock(), []
+        s = Store(cfg.db, clock=clock)
+        rt = FakeRuntime(s)
+        e = Engine(cfg, s, rt, pushed.extend, clock=clock, log=lambda _: None)
+        e.tick()  # the first tick only takes the marks
+        mod = e.ext.modules()[0]
+        self.assertEqual(mod.seen, [])
+        clock.tick(5)
+        tid = s.add_task("docs", "Write the docs", "brief")
+        rt.st["infra"] = "busy"
+        e.tick()
+        self.assertIn(("task", "docs", tid), mod.seen)
+        self.assertIn(("lane", "infra", "closed", "busy"), mod.seen)
+        e.notify([{"id": 7, "lane": "hub", "title": "hub closed 3 times", "alert": True}])
+        self.assertEqual(mod.notes, ["hub closed 3 times"])
+        self.assertEqual(pushed[-1]["title"], "hub closed 3 times")
+
+
+class ExtRuntimeTest(unittest.TestCase):
+    ECHO = '''
+from agent_hub.runtimes import Adapter, Tmux
+
+class Echo(Adapter):
+    def status(self):
+        return "idle" if self.store.lane(self.lane.id).get("session") else "closed"
+    def open(self, prompt):
+        self.store.set_lane(self.lane.id, session="echo-1", doing=prompt[:40])
+        return "echo-1"
+    def send(self, sid, text):
+        pass
+    def close(self):
+        self.store.set_lane(self.lane.id, session=None)
+
+class MyTerm(Tmux):
+    pass
+
+runtimes = {"echo": Echo}
+terminals = {"myterm": MyTerm}
+'''
+
+    def home(self, lanes: dict) -> Path:
+        home = Path(tempfile.mkdtemp(prefix="tower-test-"))
+        write(home / ".tower/ext/echo.py", self.ECHO)
+        write(home / ".tower/tower.json", json.dumps({"name": "T", "lanes": lanes}))
+        return home
+
+    def test_an_extension_adds_a_runtime_and_a_terminal(self) -> None:
+        from agent_hub.runtimes import RuntimeFailure, Runtimes, host_class
+        home = self.home({"hub": {"runtime": "claude"}, "bot": {"runtime": "echo", "terminal": "myterm"}})
+        cfg = config_mod.load(home)
+        self.assertEqual((cfg.lanes["bot"].runtime, cfg.lanes["bot"].terminal), ("echo", "myterm"))
+        self.assertEqual(host_class(cfg, "myterm").__name__, "MyTerm")
+        s = Store(cfg.db)
+        rt = Runtimes(cfg, s)
+        self.assertEqual(rt.open("bot", "hello"), "echo-1")
+        self.assertEqual(rt.status("bot"), "idle")
+        (home / ".tower/ext/echo.py").unlink()  # the extension is gone: the lane is unknown, never opened
+        rt = Runtimes(cfg, s)
+        with self.assertRaises(RuntimeFailure):
+            rt.status("bot")
+        with self.assertRaises(config_mod.ConfigError):
+            config_mod.load(home)
+        with self.assertRaises(config_mod.ConfigError):
+            config_mod.load(self.home({"hub": {"runtime": "claude"}, "bot": {"runtime": "nope"}}))
 
 
 class PackageEditsTest(unittest.TestCase):

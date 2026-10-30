@@ -47,7 +47,7 @@ Setup is agent-driven, because every team keeps its agents, docs and servers som
 
 **In this project**: the agent follows the setup playbook (`dah guide`): it surveys how you work (`dah discover`: agent CLIs, their configs, MCP servers, skills, where your knowledge lives, hosting tools), asks you a handful of questions (which agents run the hub and infra, board language, where your team's memory lives, how your phone should reach the board), writes `.tower/` with lane instructions tailored to your workspace, starts the tower, adds your first goals, and checks the whole loop end to end.
 
-**Globally**: the agent installs the `dah` command for your user and runs `dah skill install`, which adds an `agent-hub-setup` skill (Claude Code) and command (OpenCode, Codex) to your agents after showing you the diff. From then on, "set up agent-hub here" works in any workspace.
+**Globally**: the agent installs the `dah` command for your user and runs `dah skill install`, which adds an `agent-hub-setup` skill (Claude Code, Codex) and command (OpenCode) to your agents after showing you the diff. From then on, "set up agent-hub here" works in any workspace.
 
 If your agent cannot find the playbook, point it at [agent_hub/guide/SETUP.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/guide/SETUP.md).
 
@@ -72,6 +72,20 @@ It upgrades the package the way you installed it (uv tool, pipx, a project venv)
 
 Package files someone changed in place (the installed board, its Python) are kept before the upgrade replaces them: copies and a diff against the release go to `.tower/patches/<version>/`, and infra gets a request to rebuild them as extensions. `dah update --dry-run` lists them.
 
+To go back to a release: `uv tool install --force dongduni-agent-hub==X.Y.Z` (or `pipx install --force ...`), then `dah update --no-upgrade`.
+
+## Uninstall
+
+```sh
+dah uninstall                 # shows what it would remove; changes nothing
+dah uninstall --yes           # stop the tower, close lane sessions, take agent-hub out of the workspace
+dah uninstall --yes --purge   # ... and delete .tower/ too
+dah skill uninstall --yes     # the global agent-hub-setup skill/command, if you installed it
+uv tool uninstall dongduni-agent-hub   # or: pipx uninstall dongduni-agent-hub
+```
+
+`dah uninstall` removes only what agent-hub wrote: the `/dah-<lane>` shortcuts still as written (edited ones stay), its `.gitignore` lines, lane worktrees without uncommitted work (their `dah/<lane>` branches stay), and the workspace's entry in this machine's list. `.tower/` (config, lane files, extensions, board history) stays unless you pass `--purge`. It lists lines in your `AGENTS.md` / `CLAUDE.md` that still point at `.tower/` for you to remove.
+
 ## Extend it
 
 agent-hub is a skeleton: build what your team needs on top of it in the workspace's `.tower/`, which lives in your git and survives updates. Ask infra on the board, or write it yourself (`dah guide extend`):
@@ -80,7 +94,7 @@ agent-hub is a skeleton: build what your team needs on top of it in the workspac
 | --- | --- |
 | `.tower/board/extra.js`, `extra.css` | sections, tabs and styles added to the board (`window.dah.addSection`, `addTab`, `get`, `post`, ...) |
 | `.tower/board/index.html` | your own board instead of the built-in one (`?builtin` always opens the built-in board) |
-| `.tower/ext/*.py` | API routes at `/api/x/<name>`, and tower hooks: `on_event` (reports, items, decisions, memos, goals) and `on_tick` |
+| `.tower/ext/*.py` | API routes at `/api/x/<name>`; tower hooks: `on_event` (reports, items, decisions, memos, goals, tasks, lane status), `on_notify` (every push to people, e.g. to another chat) and `on_tick`; new agent runtimes and terminal apps (`runtimes`, `terminals`) |
 
 Built-in routes and the tower's decisions stay the contract; a broken extension is logged and skipped. Updates never touch `.tower/`; when the built-in board changes, `dah update` asks infra to check the workspace's board additions (the guide lists which parts stay stable). To change agent-hub itself, run it from a clone (see Development).
 
@@ -125,6 +139,8 @@ The working rules every lane follows are in [`templates/PROTOCOL.md`](https://gi
 | `claude` | `claude -p --session-id` to start, `claude -p --resume` for each prompt | no (lanes post items instead) |
 | `codex` | `codex exec --json` to start, `codex exec resume` for each prompt | no |
 
+Another agent CLI can be added as an extension: a `runtimes` entry in `.tower/ext/*.py` (`dah guide extend`), then `"runtime": "<its name>"`.
+
 Each lane runs your agent as you configured it. When a role needs its own prompt, model or tool limits, point the lane at one of your existing agents (`dah lane add review --runtime claude --agent code-reviewer`, or `"agent"` in `tower.json`: an OpenCode agent name or a Claude `--agent`); `"model"` picks a model, `"args"` passes anything else (Codex: `["--profile", NAME]`). Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox; `dah init --safe` writes sandboxed arguments instead.
 
 ### Lanes in terminal windows
@@ -136,10 +152,25 @@ By default lane sessions run in the background and you follow them on the board.
 | `none` (default) | in the background, as in the table above |
 | `tmux` | a window per lane in the tmux session `dah-<workspace>` (`tmux attach -t dah-<workspace>`; `dah status` prints it). Linux, macOS, WSL. |
 | `orca` | a terminal tab per lane in [Orca](https://github.com/stablyai/orca), opened with its `orca` CLI; Orca shows each lane's state in its sidebar |
+| any other name | a terminal app an extension registers (`terminals` in `.tower/ext/*.py`) |
 
-The tower opens the window when a lane starts, gives it its briefs (written to a file, the window gets one line pointing at it), and closes it when the lane is done; `dah stop --close-lanes` closes them all. The agent runs interactively with the same configuration and arguments, so you can scroll, read along and type to it. The tower knows when it works or waits from Claude Code hooks and Codex `notify`, both added for that session only; OpenCode runs its TUI, which the tower drives over HTTP as before. With `--safe` arguments an agent in a window stops at its own permission prompts until someone answers there; the lane shows as `asking` and the tower sends one alert.
+The tower opens the window when a lane starts, gives it its briefs (written to a file, the window gets one line pointing at it), and closes it when the lane is done; `dah stop --close-lanes` closes them all. The agent runs interactively with the same configuration and arguments, so you can scroll, read along and type to it. The tower knows when it works or waits from Claude Code hooks and Codex `notify`, both added for that session only (your own Claude hooks still run, and your own Codex `notify` program still gets every notification); OpenCode runs its TUI, which the tower drives over HTTP as before. With `--safe` arguments an agent in a window stops at its own permission prompts until someone answers there; the lane shows as `asking` and the tower sends one alert.
 
 Good to know: open each agent once by hand in the workspace first, so first-run screens (folder trust, accepting `bypassPermissions`) are out of the way; a lane cannot answer them. Changing a lane's `terminal` or `runtime` closes its live session, which then reopens the new way. Codex reports only finished turns, so the tower does not see a turn a person starts or interrupts in a Codex window; Claude Code reports both.
+
+### Lanes in their own git worktree
+
+Team lanes share one checkout with each other and with you by default. Set `"worktree": true` on a team lane (or at the top level for every team lane; `dah lane add ID --worktree`) and its sessions run in a git worktree of their own, `.tower/state/worktrees/<lane>` on branch `dah/<lane>`, created from your current commit the first time the lane opens. The lane commits there and reports the branch; the hub reviews it (`git diff HEAD...dah/<lane>`) and merges it, or asks you on the board. Nothing lands in your checkout by itself. With `terminal: orca` the lane's tab opens in that worktree. The hub and infra always work in the workspace itself.
+
+## Requirements and limits
+
+- Python 3.10+ for `dah`, and at least one agent CLI (OpenCode, Claude Code or Codex) installed and signed in. Lanes use your agent accounts: every lane session counts against your subscription or API usage.
+- By default lanes run unattended with your user's rights: Claude with `bypassPermissions`, Codex without its sandbox. `dah init --safe` writes sandboxed arguments; then a lane stops at anything not allowed (`--allowedTools` in its `args`), and a lane in a window waits at the prompt until someone answers.
+- Lanes without `"worktree"` edit the same checkout as each other and as you.
+- Claude lane sessions are ordinary Claude Code sessions: they show up in `claude --resume` for the workspace. The `/dah-<lane>` shortcuts live in the workspace (`.claude/commands/`, `.opencode/command/`, `.agents/skills/`), so they go into its git unless you ignore them.
+- Live `ask` to the board works with OpenCode only; Claude and Codex lanes post board items instead.
+- Lane windows: tmux on Linux, macOS and WSL; Orca anywhere it runs, and the only choice on Windows. Orca support is tested against a stand-in of its CLI, not a real Orca yet. Codex in a window reports finished turns only.
+- The board reaches your phone only through a path you set up (`dah guide`); by default it listens on this machine.
 
 ## Language
 

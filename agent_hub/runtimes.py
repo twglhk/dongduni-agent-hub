@@ -13,6 +13,12 @@ People watch it and may type into it. Claude reports busy/idle through hooks the
 HTTP API the tower drives as before. Prompts for Claude and Codex are written to a file and the window
 gets one line asking the agent to read it, so long multi-line briefs never go through the keyboard.
 
+A team lane with "worktree": true works in a git worktree of its own (`.tower/state/worktrees/<lane>`, branch
+`dah/<lane>`), created the first time the lane opens; the hub or a person merges the branch.
+
+A workspace adds runtimes and terminal apps from `.tower/ext/*.py`: `runtimes = {"name": AdapterSubclass}` and
+`terminals = {"name": HostSubclass}` (see guide/EXTEND.md).
+
 Every adapter answers status(): closed (no session) | idle | busy | asking | unknown.
 Binaries can be overridden with TOWER_OPENCODE_BIN / TOWER_CLAUDE_BIN / TOWER_CODEX_BIN /
 TOWER_TMUX_BIN / TOWER_ORCA_BIN.
@@ -37,6 +43,7 @@ from typing import Any
 
 from . import procs
 from .config import TOWER_DIR, Config, Lane
+from .ext import Extensions, registry
 from .store import Store
 
 BIN_DIR = Path(__file__).resolve().parents[1] / "bin"
@@ -83,8 +90,49 @@ def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     return env
 
 
+def _git(cfg: Config, *args: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(["git", "-C", str(cfg.workdir), *args], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=60)
+    except FileNotFoundError:
+        raise RuntimeFailure("git not found: a lane with \"worktree\": true needs git")
+
+
+def worktree_branch(lane: Lane) -> str:
+    return f"dah/{lane.id}"
+
+
+def lane_cwd(cfg: Config, lane: Lane) -> Path:
+    """Where the lane's agent runs, ready to use: the workspace, or the lane's own git worktree (created on first
+    use on branch dah/<lane>, from the workspace's current commit; an existing branch is checked out as it is)."""
+    path = cfg.lane_dir(lane.id)
+    if not lane.worktree or (path / ".git").exists():
+        return path
+    if _git(cfg, "rev-parse", "--is-inside-work-tree").returncode != 0:
+        raise RuntimeFailure(f"{lane.id}: \"worktree\": true needs {cfg.workdir} to be a git repository")
+    _git(cfg, "worktree", "prune")
+    branch = worktree_branch(lane)
+    have = _git(cfg, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}").returncode == 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    p = _git(cfg, "worktree", "add", str(path), branch) if have else _git(cfg, "worktree", "add", "-b", branch, str(path))
+    if p.returncode != 0:
+        raise RuntimeFailure(f"{lane.id}: git worktree add failed: {(p.stderr or p.stdout).strip()[:300]}")
+    return path
+
+
+def worktree_note(cfg: Config, lane: Lane) -> str:
+    """What a lane in its own worktree is told before its first message."""
+    p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
+    base = p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
+    sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
+    return (f"(You work in a git worktree of your own, `{cfg.lane_dir(lane.id)}`, on branch `{worktree_branch(lane)}`. "
+            f"{sync} your work there and name the branch and commits in your report. It reaches the main checkout "
+            f"only when the hub or a person merges it.)\n\n")
+
+
 class Adapter:
-    """Shared plumbing: one lane, its child processes, its log file."""
+    """Shared plumbing: one lane, its child processes, its log file. Extensions subclass it (or Headless) to add a
+    runtime: status() -> closed|idle|busy|asking|unknown, open(prompt) -> session id, send(sid, text), close()."""
 
     def __init__(self, cfg: Config, store: Store, lane: Lane):
         self.cfg, self.store, self.lane = cfg, store, lane
@@ -96,9 +144,21 @@ class Adapter:
     def log_path(self) -> Path:
         return self.logs / f"{self.lane.id}.jsonl"
 
+    @property
+    def cwd(self) -> Path:
+        """Where the agent runs (its worktree when the lane has one); lane_cwd() creates the worktree."""
+        return self.cfg.lane_dir(self.lane.id)
+
+    def _tower_outside(self) -> list[str]:
+        """`.tower/` when the agent works outside it (a worktree, a `project` subfolder): lane files, the protocol
+        and briefs live there, and an agent that guards reads outside its folder must be allowed to read them."""
+        tower = self.cfg.home / TOWER_DIR
+        return [] if tower.resolve().is_relative_to(self.cwd.resolve()) else [str(tower)]
+
     def _spawn(self, argv: list[str]) -> int:
+        cwd = lane_cwd(self.cfg, self.lane)
         with self.log_path.open("ab") as out, (self.logs / f"{self.lane.id}.err").open("ab") as err:
-            proc = subprocess.Popen(argv, cwd=self.cfg.workdir, env=lane_env(self.cfg, self.lane), stdout=out,
+            proc = subprocess.Popen(argv, cwd=cwd, env=lane_env(self.cfg, self.lane), stdout=out,
                                     stderr=err, stdin=subprocess.DEVNULL, **procs.detached())
         self.procs[proc.pid] = proc
         self.store.set_lane(self.lane.id, pid=proc.pid)
@@ -308,6 +368,7 @@ class Headless(Adapter):
 class Claude(Headless):
     def _base(self) -> list[str]:
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), "-p", "--output-format", "json", *self.lane.args]
+        argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]  # an option follows: --add-dir takes many
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
         return argv + (["--model", self.lane.model] if self.lane.model else [])
 
@@ -432,12 +493,13 @@ def tmux_session(cfg: Config) -> str:
 
 
 class Host:
-    """A terminal app the tower opens lane windows in. A handle names one window."""
+    """A terminal app the tower opens lane windows in. A handle names one window. Extensions subclass it to add
+    one: open() runs the launcher script in a new window in `cwd` and returns its handle."""
 
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
-    def open(self, title: str, launcher: Path) -> str:
+    def open(self, title: str, launcher: Path, cwd: Path) -> str:
         raise NotImplementedError
 
     def alive(self, handle: str) -> bool:
@@ -454,9 +516,9 @@ class Tmux(Host):
     def _tmux(self, *args: str) -> subprocess.CompletedProcess[str]:
         return _run([*procs.command(os.environ.get("TOWER_TMUX_BIN", "tmux")), *args], "tmux")
 
-    def open(self, title: str, launcher: Path) -> str:
+    def open(self, title: str, launcher: Path, cwd: Path) -> str:
         session, cmd = tmux_session(self.cfg), shlex.quote(str(launcher))
-        where = ["-c", str(self.cfg.workdir), "-n", title, "-P", "-F", "#{window_id}"]
+        where = ["-c", str(cwd), "-n", title, "-P", "-F", "#{window_id}"]
         if self._tmux("has-session", "-t", f"={session}").returncode == 0:
             p = self._tmux("new-window", "-d", "-t", f"={session}:", *where, cmd)
         else:
@@ -526,9 +588,9 @@ class Orca(Host):
                     return found
         return None
 
-    def open(self, title: str, launcher: Path) -> str:
+    def open(self, title: str, launcher: Path, cwd: Path) -> str:
         cmd = f'"{launcher}"' if procs.WINDOWS else "exec " + shlex.quote(str(launcher))  # the tab ends with the agent
-        p, data = self._orca("terminal", "create", "--worktree", f"path:{self.cfg.workdir}", "--title", title,
+        p, data = self._orca("terminal", "create", "--worktree", f"path:{cwd}", "--title", title,
                              "--command", cmd)
         term = self._find_obj(data, "terminal")
         handle = self._find(term, "handle") if term is not None else None
@@ -557,6 +619,13 @@ class Orca(Host):
 
 
 HOSTS: dict[str, type[Host]] = {"tmux": Tmux, "orca": Orca}
+
+
+def host_class(cfg: Config, name: str) -> type[Host]:
+    cls = HOSTS.get(name) or registry(cfg.home).table("terminals").get(name)
+    if not isinstance(cls, type):
+        raise RuntimeFailure(f"no terminal {name!r}: neither built in nor registered in .tower/ext/")
+    return cls
 
 
 def signal_path(home: Path, lane: str) -> Path:
@@ -608,7 +677,7 @@ class Terminal:
     lane: Lane
 
     def _host(self) -> Host:
-        return HOSTS[self.lane.terminal](self.cfg)
+        return host_class(self.cfg, self.lane.terminal)(self.cfg)
 
     @property
     def term_dir(self) -> Path:
@@ -632,32 +701,34 @@ class Terminal:
         except (OSError, json.JSONDecodeError):
             return {}
 
-    def _launch(self, argv: list[str]) -> None:
+    def _launch(self, argv: list[str], extra_env: dict[str, str] | None = None) -> None:
         """Write a launcher script (so the window gets the lane's environment whatever the terminal app's own
         is) and open a window running it."""
-        env = lane_env(self.cfg, self.lane)
-        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *self.lane.env]
+        cwd = lane_cwd(self.cfg, self.lane)
+        env = {**lane_env(self.cfg, self.lane), **(extra_env or {})}
+        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *self.lane.env, *(extra_env or {})]
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(PACKAGE_PARENT), os.environ.get("PYTHONPATH", "")) if p)
         keys.append("PYTHONPATH")
         if procs.WINDOWS:
             path = self.term_dir / f"{self.lane.id}.cmd"
-            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{self.cfg.workdir}"', *(f'set "{k}={env[k]}"' for k in keys),
+            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{cwd}"', *(f'set "{k}={env[k]}"' for k in keys),
                      subprocess.list2cmdline(argv)]
             path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
         else:
             path = self.term_dir / f"{self.lane.id}.sh"
-            lines = ["#!/bin/sh", f"cd {shlex.quote(str(self.cfg.workdir))} || exit 1",
+            lines = ["#!/bin/sh", f"cd {shlex.quote(str(cwd))} || exit 1",
                      *(f"export {k}={shlex.quote(env[k])}" for k in keys), "exec " + shlex.join(argv)]
             path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             path.chmod(0o755)
-        handle = self._host().open(self.lane.id, path)
+        handle = self._host().open(self.lane.id, path, cwd)
         (self.term_dir / f"{self.lane.id}.handle").write_text(handle, encoding="utf-8")
 
     def _note(self, text: str) -> str:
         """Put a prompt in a file and return the one line the agent gets in its window."""
         path = self.term_dir / f"{self.lane.id}-{time.time_ns()}.md"
         path.write_text(text, encoding="utf-8")
-        where = path.relative_to(self.cfg.workdir).as_posix() if path.is_relative_to(self.cfg.workdir) else str(path)
+        cwd = self.cfg.lane_dir(self.lane.id)
+        where = path.relative_to(cwd).as_posix() if path.is_relative_to(cwd) else str(path)
         return f"Message from the tower in {where}: read that file and act on it."
 
     def _close_window(self) -> None:
@@ -755,6 +826,7 @@ class ClaudeTerm(TerminalSession, Claude):
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), *self.lane.args]
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
         argv += ["--model", self.lane.model] if self.lane.model else []
+        argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]
         hook = [{"hooks": [{"type": "command", "command": self._hook_command()}]}]
         settings = self.term_dir / f"{self.lane.id}.settings.json"
         settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
@@ -778,7 +850,7 @@ class ClaudeTerm(TerminalSession, Claude):
         if not sid:
             return ""
         base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cfg.workdir.resolve())) / f"{sid}.jsonl")
+        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
 
     def _transcript(self) -> list[dict[str, Any]]:
         path = self._transcript_path()
@@ -832,6 +904,75 @@ class ClaudeTerm(TerminalSession, Claude):
         return texts[-n:]
 
 
+def _toml_strings(value: str) -> list[str]:
+    """The strings of a TOML array such as ["notify-send", 'Codex'] (basic and literal strings)."""
+    out = []
+    for basic, literal in re.findall(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'', value):
+        if literal or not basic:
+            out.append(literal)
+        else:
+            try:
+                out.append(json.loads(f'"{basic}"'))
+            except json.JSONDecodeError:
+                out.append(basic)
+    return out
+
+
+def _toml_notify(text: str, profile: str) -> list[str]:
+    """`notify` from a Codex config.toml: the profile's when it sets one, else the top-level one."""
+    try:
+        import tomllib  # Python 3.11+
+        data = tomllib.loads(text)
+        prof = (data.get("profiles") or {}).get(profile) or {} if profile else {}
+        value = prof.get("notify") or data.get("notify")
+        return [str(v) for v in value] if isinstance(value, list) else []
+    except ImportError:
+        pass
+    except ValueError:  # tomllib.TOMLDecodeError: Codex would not start either
+        return []
+    sections: dict[str, str] = {}
+    name, start = "", 0
+    for m in re.finditer(r"^\s*\[([^\]\n]+)\]\s*$", text, re.M):
+        sections[name] = text[start:m.start()]
+        name, start = m.group(1).strip().replace('"', ""), m.end()
+    sections[name] = text[start:]
+    for key in ([f"profiles.{profile}"] if profile else []) + [""]:
+        m = re.search(r"^\s*notify\s*=\s*(\[[^\]]*\])", sections.get(key, ""), re.M)
+        if m:
+            return _toml_strings(m.group(1))
+    return []
+
+
+def codex_notify(args: list[str]) -> tuple[list[str], list[str]]:
+    """The lane's args without a `-c notify=...`, and the notify program the person set (that one, their profile's,
+    or their config.toml's), which `dah signal` passes each notification on to."""
+    rest, own, profile = [], [], ""
+    i = 0
+    while i < len(args):
+        a, nxt = args[i], args[i + 1] if i + 1 < len(args) else ""
+        if a in ("-c", "--config") and nxt.replace(" ", "").startswith("notify="):
+            own = _toml_strings(nxt.split("=", 1)[1])
+            i += 2
+            continue
+        if a.startswith("--config=") and a[len("--config="):].replace(" ", "").startswith("notify="):
+            own = _toml_strings(a.split("=", 2)[2])
+            i += 1
+            continue
+        if a in ("--profile", "-p"):
+            profile = nxt
+        rest.append(a)
+        i += 1
+    if not own:
+        home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        try:
+            own = _toml_notify((home / "config.toml").read_text(encoding="utf-8"), profile)
+        except OSError:
+            own = []
+    if any("agent_hub" in a for a in own) and "signal" in own:
+        own = []  # already ours
+    return rest, own
+
+
 class CodexTerm(TerminalSession, Codex):
     EXEC_ONLY = ("--json", "--skip-git-repo-check")
 
@@ -839,12 +980,12 @@ class CodexTerm(TerminalSession, Codex):
         sid = f"term-{uuid.uuid4()}"
         self._close_window()
         write_signal(self.cfg.home, self.lane.id, state="busy")
-        argv = [*procs.command(os.environ.get("TOWER_CODEX_BIN", "codex")),
-                *(a for a in self.lane.args if a not in self.EXEC_ONLY)]
+        args, chained = codex_notify([a for a in self.lane.args if a not in self.EXEC_ONLY])
+        argv = [*procs.command(os.environ.get("TOWER_CODEX_BIN", "codex")), *args]
         argv += ["--model", self.lane.model] if self.lane.model else []
         notify = [sys.executable, "-m", "agent_hub", "signal"]
         argv += ["-c", f"notify={json.dumps(notify)}", self._note(prompt)]
-        self._launch(argv)
+        self._launch(argv, {"TOWER_CODEX_NOTIFY": json.dumps(chained)} if chained else None)
         self.store.set_lane(self.lane.id, session=sid, pid=None)
         return sid
 
@@ -886,13 +1027,41 @@ ADAPTERS = {"opencode": OpenCode, "claude": Claude, "codex": Codex}
 TERMINAL_ADAPTERS = {"opencode": OpenCodeTerm, "claude": ClaudeTerm, "codex": CodexTerm}
 
 
+class Unavailable(Adapter):
+    """A lane whose runtime an extension registered, but no extension registers now (the file was removed or
+    fails to load): reported as unknown, never opened."""
+
+    def _why(self) -> RuntimeFailure:
+        return RuntimeFailure(f"{self.lane.id}: no runtime {self.lane.runtime!r} (an extension in .tower/ext/ must "
+                              f"register it; see .tower/state/tower.log)")
+
+    def status(self) -> str:
+        raise self._why()
+
+    def open(self, prompt: str) -> str:
+        raise self._why()
+
+    def send(self, sid: str, text: str) -> None:
+        raise self._why()
+
+    def close(self) -> None:
+        self.store.set_lane(self.lane.id, session=None, pid=None)
+
+
+def adapter_class(lane: Lane, ext: Extensions) -> type[Adapter]:
+    if lane.runtime in ADAPTERS:
+        return (ADAPTERS if lane.terminal == "none" else TERMINAL_ADAPTERS)[lane.runtime]
+    cls = ext.table("runtimes").get(lane.runtime)
+    return cls if isinstance(cls, type) and issubclass(cls, Adapter) else Unavailable
+
+
 class Runtimes:
     """What the engine talks to: one adapter per configured lane."""
 
-    def __init__(self, cfg: Config, store: Store):
-        self.adapters: dict[str, Adapter] = {
-            lid: (ADAPTERS if ln.terminal == "none" else TERMINAL_ADAPTERS)[ln.runtime](cfg, store, ln)
-            for lid, ln in cfg.lanes.items()}
+    def __init__(self, cfg: Config, store: Store, ext: Extensions | None = None):
+        self.cfg = cfg
+        ext = ext or registry(cfg.home)
+        self.adapters: dict[str, Adapter] = {lid: adapter_class(ln, ext)(cfg, store, ln) for lid, ln in cfg.lanes.items()}
 
     def _a(self, lane: str) -> Any:
         return self.adapters[lane]
@@ -910,6 +1079,10 @@ class Runtimes:
         self._a(lane).reply_question(qid, answers)
 
     def open(self, lane: str, prompt: str) -> str:
+        ln = self.cfg.lanes[lane]
+        if ln.worktree:
+            lane_cwd(self.cfg, ln)
+            prompt = worktree_note(self.cfg, ln) + prompt
         return self._a(lane).open(prompt)
 
     def send(self, lane: str, sid: str, text: str) -> None:

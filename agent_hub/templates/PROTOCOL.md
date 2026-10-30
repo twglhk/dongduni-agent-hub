@@ -11,6 +11,7 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 - Never end a turn silently. When you stop you have either posted an item you are waiting on, reported (`done`, `blocked`, `note`, `handoff`, `wrapped`), or you still have work you will continue.
 - Do not wait for decisions. Finish the unblocked, approved part, then `dah report done` with the open item ids. Each decision comes back later as its own follow-up task in a fresh session.
 - Don't stretch one approval into the next step. Approving an idea is not approving a build; approving a build is not approving a release.
+- Run each `dah` command on its own: not in a pipe, after `;` or `&&`, inside `$(...)` or behind a variable. A sandboxed lane may run `dah ...` and little else, and a combined command stops at a permission prompt nobody answers.
 
 ## Commands
 
@@ -49,6 +50,11 @@ One image shows one thing. Keep sizes and framing equal when images are compared
 - Goals are ranked: the first active goal is what the team works on now. Humans rank them on the board or ask the hub to.
 - A task that serves a goal says so (`dah mine` shows the goal). Stay inside the goal and the task; report what moved it.
 - Only the hub (and humans) change goals. A lane that thinks a goal is wrong, done or blocked says it in its report.
+
+## Lanes in their own worktree
+
+- A team lane with `"worktree": true` works in a git worktree of its own (`.tower/state/worktrees/<lane>`, branch `dah/<lane>`); its brief says so. It commits there and names the branch and commits in its report.
+- Nothing it does reaches the main checkout by itself. The hub reviews the branch from the workspace (`git diff HEAD...dah/<lane>`) and merges it when the task is done and inside the approved scope, or posts a review item when people should decide.
 
 ## agent-hub itself
 

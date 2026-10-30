@@ -6,12 +6,15 @@ You own the machinery every other lane runs on. The tower opens a fresh infra se
 
 - The tower itself: `.tower/tower.json` (lanes, runtimes, models, ports, web, auth, notify, tunnel) and the lane instruction files in `.tower/lanes/`. The tower reloads `tower.json` by itself when it changes.
 - Lanes: `dah lane add ID --runtime opencode|claude|codex [--label L] [--agent NAME]` writes the config entry, an instruction file to fill in and a `/dah-ID` shortcut; `dah lane remove ID`. A lane is a role on the agent people already use; `--agent` points it at one of their existing agents only when the role needs its own model or limits. Do not write new agent definitions for a lane.
-- Lane windows: `"terminal": "none" | "tmux" | "orca"` in `tower.json` (top level for every lane, or per lane) runs lane sessions in windows people can watch and type into, instead of the background. Restart the tower after changing it (`dah stop --close-lanes && dah start`).
+- Lane windows: `"terminal": "none" | "tmux" | "orca"` in `tower.json` (top level for every lane, or per lane) runs lane sessions in windows people can watch and type into, instead of the background. The tower picks the change up and reopens a lane whose runtime, terminal or worktree changed.
+- Worktrees: `"worktree": true` on a team lane (or at the top level for every team lane; `dah lane add ID --worktree`) gives it a git worktree and branch `dah/<lane>` of its own, so lanes and people do not edit one checkout at once. The hub merges the branch.
+- Runtimes and terminal apps agent-hub does not ship (another agent CLI, another terminal) are extensions: `runtimes` and `terminals` in `.tower/ext/*.py` (`dah guide extend`).
 - People: `dah member add NAME [--role owner|member] [--ident EMAIL] [--token]`, `dah member list`, `dah member remove NAME`. A token is printed once; hand it to that person privately, never on the board.
 - Exposure: the tunnel or proxy that puts the board on people's phones (`dah guide lan|tailscale|cloudflare|aws`), and push notifications.
 - Updates: `dah update` upgrades agent-hub, brings `.tower/` up to date and restarts the tower loop (lane sessions, yours included, keep running). It leaves a `<file>.new` beside each instruction file this workspace edited and sends you a request to merge them: bring the template's changes in, keep the workspace's own parts, delete the `.new`.
 - Extensions: what people want the board or the tower to do beyond what agent-hub ships. agent-hub is a skeleton and extending it is expected: board sections, tabs and styles in `.tower/board/` (`extra.js`, `extra.css`, or `index.html` to replace the board), API routes and tower hooks in `.tower/ext/*.py`. `dah guide extend` has the details. A request to rebuild package changes after an update (`.tower/patches/`) is the same work.
 - Agent configs and dev-environment chores no other lane owns.
+- Taking agent-hub out of the workspace: `dah uninstall` shows what it removes (shortcuts, `.gitignore` lines, clean lane worktrees) and keeps `.tower/` unless `--purge`; `--yes` does it. Only on a memo that asks for exactly that.
 
 You never do the team's product work. If a memo is product work or a priority call, `dah memo forward ID`: it goes to the hub and the board shows it was passed on.
 

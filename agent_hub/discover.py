@@ -164,7 +164,7 @@ def codex(home: Path) -> dict[str, Any]:
     d = home / ".codex"
     mcp, profiles = codex_toml(d / "config.toml")
     return {"present": d.is_dir(), "memory_file": (d / "AGENTS.md").is_file(), "prompts": count(d / "prompts", "*.md"),
-            "skills": skills(d / "skills"), "profiles": profiles, "mcp_servers": mcp}
+            "skills": skills(d / "skills", home / ".agents" / "skills"), "profiles": profiles, "mcp_servers": mcp}
 
 
 def claude_unapproved(path: Path, home: Path, servers: list[str]) -> list[str]:

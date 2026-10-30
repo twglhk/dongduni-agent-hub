@@ -159,6 +159,15 @@ class EngineTest(unittest.TestCase):
         self.assertIn("docs", self.rt.closed)
         self.assertEqual(self.rt.opened[-1][0], "web")
 
+    def test_a_cancelled_task_held_at_a_prompt_still_closes(self) -> None:
+        t = self.s.add_task("docs", "A", "brief")
+        self.e.tick()
+        self.rt.st["docs"] = "asking"  # its window waits at a permission prompt
+        self.s.update_task(t, state="cancelled")
+        self.s.set_lane("docs", closing=1)
+        self.e.tick()
+        self.assertIn("docs", self.rt.closed)
+
     def test_tell_waits_for_idle_and_settle(self) -> None:
         t = self.s.add_task("docs", "A", "b")
         self.e.tick()

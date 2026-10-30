@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 import threading
@@ -22,7 +23,8 @@ import json, os, sys, time
 args = sys.argv[1:]
 sid = args[args.index("--session-id") + 1] if "--session-id" in args else args[args.index("--resume") + 1]
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
-    f.write(json.dumps({"argv": args, "lane": os.environ.get("TOWER_LANE"), "home": os.environ.get("TOWER_HOME")}) + "\n")
+    f.write(json.dumps({"argv": args, "lane": os.environ.get("TOWER_LANE"), "home": os.environ.get("TOWER_HOME"),
+                        "cwd": os.getcwd()}) + "\n")
 time.sleep(float(os.environ.get("FAKE_SLEEP", "0.3")))
 print(json.dumps({"type": "result", "session_id": sid, "result": "said: " + args[-1][:20],
                   "total_cost_usd": 0.25,
@@ -96,6 +98,7 @@ class HeadlessTest(unittest.TestCase):
         self.assertNotIn("--agent", first["argv"])  # no agent set: the runtime's default
         self.assertEqual(first["lane"], "hub")
         self.assertEqual(first["home"], str(self.cfg.home))
+        self.assertNotIn("--add-dir", first["argv"])  # .tower/ is inside the folder it works in
         self.assertEqual(self.rt.last_text("hub"), ["said: hello there"])
         self.assertEqual(self.rt.context_k("hub", sid), 42)
         self.rt.send("hub", sid, "second")
@@ -124,6 +127,49 @@ class HeadlessTest(unittest.TestCase):
         wait_for(lambda: self.rt.status("review") == "idle")
         for call in self.calls():
             self.assertEqual(call["argv"][call["argv"].index("--agent") + 1], "code-reviewer")
+
+    def test_a_worktree_lane_works_in_a_checkout_of_its_own(self) -> None:
+        home = self.cfg.home
+
+        def git(*a: str) -> str:
+            return subprocess.run(["git", "-C", str(home), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                  check=True, capture_output=True, text=True).stdout
+        git("init", "-q")
+        git("checkout", "-q", "-b", "main")
+        (home / "app.txt").write_text("v1")
+        git("add", "app.txt")
+        git("commit", "-qm", "init")
+        data = json.loads((home / ".tower/tower.json").read_text())
+        data["lanes"]["wt"] = {"runtime": "claude", "worktree": True}
+        (home / ".tower/tower.json").write_text(json.dumps(data))
+        cfg = config_mod.load(home)
+        rt = Runtimes(cfg, self.s)
+        tree = (home / ".tower/state/worktrees/wt").resolve()
+        for prompt in ("build it", "again"):  # the second session reuses the worktree and its branch
+            rt.open("wt", prompt)
+            wait_for(lambda: rt.status("wt") == "idle")
+            call = self.calls()[-1]
+            self.assertEqual(Path(call["cwd"]).resolve(), tree)
+            self.assertIn("branch `dah/wt`", call["argv"][-1])
+            self.assertIn("git merge main", call["argv"][-1])
+            self.assertTrue(call["argv"][-1].endswith(prompt))
+            self.assertEqual(call["argv"][call["argv"].index("--add-dir") + 1], str(home / ".tower"))
+            rt.close("wt")
+        self.assertTrue((tree / "app.txt").is_file())
+        self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))
+        self.assertEqual(cfg.lane_dir("hub"), home)  # other lanes stay in the workspace
+        from agent_hub.install import detach
+        (tree / "draft.txt").write_text("not committed")
+        out = detach(cfg, purge=True)
+        self.assertTrue((home / ".tower/tower.json").exists(), out)  # uncommitted work: .tower/ is kept
+        self.assertTrue((tree / "draft.txt").exists())
+        (tree / "draft.txt").unlink()
+        detach(cfg, purge=True)
+        self.assertFalse((home / ".tower").exists())
+        self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))  # the lane's branch stays
+        with self.assertRaises(ConfigError):
+            make_home({"hub": {"runtime": "claude", "worktree": True}})
+        self.assertTrue(make_home({"hub": {"runtime": "claude"}, "a": {"runtime": "claude"}}, worktree=True).lanes["a"].worktree)
 
     def test_codex_rejects_an_agent(self) -> None:
         with self.assertRaises(ConfigError):

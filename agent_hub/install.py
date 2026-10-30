@@ -82,11 +82,14 @@ def install(cfg: Config, force: bool = False) -> list[str]:
     return wrote
 
 
+IGNORED = (f"{TOWER_DIR}/state/", f"{TOWER_DIR}/venv/")
+
+
 def ignore_state(home: Path, wrote: list[str]) -> None:
     """Runtime state and a project install's venv never belong in the workspace's git."""
     gi = home / ".gitignore"
     text = gi.read_text(encoding="utf-8") if gi.exists() else ""
-    missing = [ln for ln in (f"{TOWER_DIR}/state/", f"{TOWER_DIR}/venv/") if ln not in text.splitlines()]
+    missing = [ln for ln in IGNORED if ln not in text.splitlines()]
     if missing:
         gi.write_text(text + ("" if text.endswith("\n") or not text else "\n") + "\n".join(missing) + "\n",
                       encoding="utf-8")
@@ -124,14 +127,16 @@ SKILL_FILES = {
                f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
     "opencode": (Path(".config/opencode/command") / f"{SKILL_NAME}.md",
                  f"---\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY + "\n$ARGUMENTS\n"),
-    "codex": (Path(".codex/prompts") / f"{SKILL_NAME}.md",
-              f"---\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY + "\n$ARGUMENTS\n"),
+    "codex": (Path(".agents/skills") / SKILL_NAME / "SKILL.md",  # Codex reads user skills from ~/.agents/skills
+              f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
 }
+LEGACY_SKILL_FILES = {"codex": Path(".codex/prompts") / f"{SKILL_NAME}.md"}  # custom prompts, gone since Codex 0.117
 SKILL_HOMES = {"claude": Path(".claude"), "opencode": Path(".config/opencode"), "codex": Path(".codex")}
 
 
 def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple[str, Path, str, str]]:
-    """(runtime, path, current text, new text) for each agent this person has. Writes nothing."""
+    """(runtime, path, current text, new text) for each agent this person has; new text "" removes a file an older
+    version wrote where the agent no longer reads it. Writes nothing."""
     chosen = runtimes or [r for r in SKILL_FILES if (user_home / SKILL_HOMES[r]).is_dir() or shutil.which(r)]
     plan = []
     for runtime in chosen:
@@ -139,7 +144,27 @@ def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple
         path = user_home / rel
         old = path.read_text(encoding="utf-8") if path.is_file() else ""
         plan.append((runtime, path, old, text.format(tower=tower_command(), hint=INSTALL_HINT)))
+        legacy = user_home / LEGACY_SKILL_FILES[runtime] if runtime in LEGACY_SKILL_FILES else None
+        if legacy and legacy.is_file():
+            plan.append((runtime, legacy, legacy.read_text(encoding="utf-8"), ""))
     return plan
+
+
+def skill_files(user_home: Path, runtimes: list[str] | None = None) -> list[tuple[str, Path]]:
+    """The global agent-hub-setup files that exist, current and older locations, for `dah skill uninstall`."""
+    out = []
+    for runtime in runtimes or list(SKILL_FILES):
+        for rel in (SKILL_FILES[runtime][0], LEGACY_SKILL_FILES.get(runtime)):
+            if rel and (user_home / rel).is_file():
+                out.append((runtime, user_home / rel))
+    return out
+
+
+def remove_file(path: Path) -> None:
+    """Delete a file this package wrote, and its folder when that was the file's own (a skill folder)."""
+    path.unlink()
+    if path.name == "SKILL.md" and not any(path.parent.iterdir()):
+        path.parent.rmdir()
 
 
 def upgrade_command() -> list[str] | None:
@@ -371,3 +396,82 @@ def board_changed(home: Path) -> str:
     if (board / "index.html").is_file():
         return "replaced"
     return "extended" if (board / "extra.js").is_file() or (board / "extra.css").is_file() else ""
+
+
+# ---------- taking agent-hub out of a workspace (`dah uninstall`) ----------
+
+def shim_state(cfg: Config) -> tuple[list[Path], list[Path]]:
+    """Every lane's `/dah-<lane>` shortcuts that exist: (still as written, edited since)."""
+    ours, edited = [], []
+    for lane in cfg.lanes:
+        for runtime in ("opencode", "claude", "codex"):
+            f = shim_files(lane, runtime)
+            path = cfg.workdir / f[0] if f else None
+            if f and path and path.is_file():
+                (ours if path.read_text(encoding="utf-8") == f[1] else edited).append(path)
+    return ours, edited
+
+
+def mentions(cfg: Config) -> list[str]:
+    """Lines in the workspace's own agent instruction files that point at .tower/ (setup may have added one)."""
+    out = []
+    for d in dict.fromkeys((cfg.workdir, cfg.home)):
+        for name in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
+            path = d / name
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                continue
+            out += [f"{path}:{i}: {ln.strip()[:120]}" for i, ln in enumerate(lines, 1) if f"{TOWER_DIR}/" in ln]
+    return out
+
+
+def detach_plan(cfg: Config) -> dict[str, list[str]]:
+    """What `dah uninstall` removes and what it leaves. Changes nothing."""
+    ours, edited = shim_state(cfg)
+    gi = cfg.home / ".gitignore"
+    text = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
+    trees = [str(cfg.lane_dir(lid)) for lid, ln in cfg.lanes.items() if ln.worktree and cfg.lane_dir(lid).exists()]
+    return {"shortcuts": [str(p) for p in ours], "edited_shortcuts": [str(p) for p in edited],
+            "gitignore": [ln for ln in IGNORED if ln in text], "worktrees": trees, "mentions": mentions(cfg)}
+
+
+def detach(cfg: Config, purge: bool) -> list[str]:
+    """Take agent-hub out of the workspace: worktrees the lanes worked in (only clean ones; their branches stay),
+    the shortcuts as written, the .gitignore lines, the registry entry, and with purge the whole .tower/."""
+    done, dirty = [], False
+    for lid, ln in cfg.lanes.items():
+        path = cfg.lane_dir(lid)
+        if ln.worktree and path.exists():
+            p = subprocess.run(["git", "-C", str(cfg.workdir), "worktree", "remove", str(path)], capture_output=True,
+                               text=True, encoding="utf-8", errors="replace")
+            dirty = dirty or p.returncode != 0
+            done.append(f"removed worktree {path} (branch dah/{lid} kept)" if p.returncode == 0 else
+                        f"kept worktree {path}: {(p.stderr or p.stdout).strip()[:200]}")
+    for lid in cfg.lanes:
+        done += [f"removed {f}" for f in remove_shims(cfg, lid)]
+    gi = cfg.home / ".gitignore"
+    if gi.is_file():
+        lines = gi.read_text(encoding="utf-8").splitlines()
+        keep = [ln for ln in lines if ln not in IGNORED]
+        if keep != lines:
+            if any(ln.strip() for ln in keep):
+                gi.write_text("\n".join(keep).rstrip("\n") + "\n", encoding="utf-8")
+            else:
+                gi.unlink()
+            done.append(f"removed {', '.join(ln for ln in IGNORED if ln in lines)} from .gitignore")
+    from .config import unregister, workspaces
+    for slug, home in workspaces().items():
+        if home.resolve() == cfg.home.resolve():
+            unregister(slug)
+            done.append(f"removed workspace \"{slug}\" from this machine's list")
+    if purge and dirty:  # never delete work nobody committed
+        done.append(f"kept {cfg.home / TOWER_DIR}: a lane worktree inside it has uncommitted work; commit or discard "
+                    f"it, then run `dah uninstall --yes --purge` again")
+    elif purge:
+        try:
+            shutil.rmtree(cfg.home / TOWER_DIR)
+            done.append(f"deleted {cfg.home / TOWER_DIR}")
+        except OSError as e:  # Windows: dah.exe of a project install is still running
+            done.append(f"could not delete all of {cfg.home / TOWER_DIR}: {e}")
+    return done

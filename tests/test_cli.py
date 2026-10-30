@@ -136,6 +136,43 @@ class CliTest(unittest.TestCase):
         self.assertIn("$ARGUMENTS", command.read_text())
         self.assertIn("up to date", self.tower("skill", "install", "--runtime", "claude", env=env))
 
+        legacy = user / ".codex/prompts/agent-hub-setup.md"  # where 0.5 and older put it; Codex 0.117 dropped prompts
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("---\ndescription: old\n---\nold\n")
+        self.assertIn("remove (the agent no longer reads it)", self.tower("skill", "install", "--runtime", "codex", env=env))
+        self.tower("skill", "install", "--runtime", "codex", "--yes", env=env)
+        codex = user / ".agents/skills/agent-hub-setup/SKILL.md"
+        self.assertIn("name: agent-hub-setup", codex.read_text())
+        self.assertFalse(legacy.exists())
+
+        self.assertIn("Nothing removed", self.tower("skill", "uninstall", env=env))
+        self.assertTrue(codex.exists())
+        self.tower("skill", "uninstall", "--yes", env=env)
+        for path in (skill, command, codex):
+            self.assertFalse(path.exists(), path)
+        self.assertFalse((user / ".agents/skills/agent-hub-setup").exists())
+        self.assertIn("no agent-hub-setup", self.tower("skill", "uninstall", env=env))
+
+    def test_uninstall_shows_the_plan_then_takes_agent_hub_out(self) -> None:
+        (self.home / ".gitignore").write_text("node_modules/\n.tower/state/\n.tower/venv/\n")
+        (self.home / "AGENTS.md").write_text("# Rules\nTower lanes: see .tower/PROTOCOL.md\n")
+        mine = self.home / ".claude/commands/dah-docs.md"
+        mine.write_text("my own edit")
+        out = self.tower("uninstall")
+        self.assertIn("Nothing changed", out)
+        self.assertIn("keep (edited here)", out)
+        self.assertTrue((self.home / ".opencode/command/dah-hub.md").exists())
+        out = self.tower("uninstall", "--yes")
+        self.assertFalse((self.home / ".opencode/command/dah-hub.md").exists())
+        self.assertFalse((self.home / ".agents/skills/dah-docs").exists())
+        self.assertEqual(mine.read_text(), "my own edit")  # edited by someone: theirs
+        self.assertEqual((self.home / ".gitignore").read_text(), "node_modules/\n")
+        self.assertIn("AGENTS.md:2", out)  # a line to remove by hand
+        self.assertTrue((self.home / ".tower/tower.json").exists())  # kept without --purge
+        self.assertNotIn(str(self.home), self.tower("workspaces"))
+        self.tower("uninstall", "--yes", "--purge")
+        self.assertFalse((self.home / ".tower").exists())
+
     def test_goals_by_humans_and_the_hub(self) -> None:
         self.assertIn("goal #1 added at priority 1", self.tower("goal", "add", "Ship v2", "--detail", "public beta"))
         self.tower("goal", "add", "Fix login", "--priority", "1")

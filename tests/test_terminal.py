@@ -17,7 +17,8 @@ from pathlib import Path
 from agent_hub import config as config_mod
 from agent_hub.config import ConfigError
 from agent_hub.cli import close_changed
-from agent_hub.runtimes import Orca, RuntimeFailure, Runtimes, record_signal, signal_path, tmux_session
+from agent_hub.runtimes import (Orca, RuntimeFailure, Runtimes, codex_notify, record_signal, signal_path,
+                                tmux_session)
 from agent_hub.store import Store
 from tests.helpers import make_home
 from tests.test_runtimes import script, wait_for
@@ -316,6 +317,37 @@ class TerminalTest(unittest.TestCase):
         record_signal(self.cfg.home, "hub", {"hook_event_name": "Notification", "notification_type": "idle_prompt"})
         self.assertEqual(self.rt.status("hub"), "idle")  # a turn a person interrupted ends without a Stop hook
 
+    def test_the_persons_own_codex_notify_still_runs(self) -> None:
+        mine = self.tmp / "mine.jsonl"
+        hook = script(self.tmp, "my-notify", "#!PY\nimport sys\nopen(%r, 'a').write(sys.argv[-1] + '\\n')\n" % str(mine))
+        codex_home = self.tmp / "codex-home"
+        codex_home.mkdir()
+        (codex_home / "config.toml").write_text(f'model = "gpt"\nnotify = ["{hook}"]\n\n[profiles.fast]\nmodel = "mini"\n')
+        os.environ["CODEX_HOME"] = str(codex_home)
+        try:
+            self.rt.open("docs", "write the docs")
+            wait_for(lambda: self.rt.status("docs") == "idle")
+            wait_for(lambda: mine.exists())
+        finally:
+            os.environ.pop("CODEX_HOME")
+        self.assertEqual(json.loads(mine.read_text().splitlines()[0])["type"], "agent-turn-complete")
+        argv = self.calls()[0]["argv"]
+        self.assertEqual(len([a for a in argv if a.startswith("notify=")]), 1)  # the tower's, which passes it on
+
+    def test_reading_codex_notify(self) -> None:
+        cfg = self.tmp / "ch"
+        cfg.mkdir()
+        (cfg / "config.toml").write_text('notify = ["top", \'x y\']\n[profiles.p]\nnotify = ["prof"]\n[mcp_servers.m]\n'
+                                         'command = "z"\n')
+        os.environ["CODEX_HOME"] = str(cfg)
+        try:
+            self.assertEqual(codex_notify(["--sandbox", "workspace-write"]), (["--sandbox", "workspace-write"], ["top", "x y"]))
+            self.assertEqual(codex_notify(["--profile", "p"])[1], ["prof"])
+            self.assertEqual(codex_notify(["-c", 'notify=["own"]', "--x"]), (["--x"], ["own"]))
+            self.assertEqual(codex_notify(["-c", 'notify=["python3","-m","agent_hub","signal"]'])[1], [])
+        finally:
+            os.environ.pop("CODEX_HOME")
+
     def test_changing_a_lanes_terminal_closes_its_live_session_first(self) -> None:
         self.rt.open("hub", "hi")
         self.settle()
@@ -326,7 +358,7 @@ class TerminalTest(unittest.TestCase):
         close_changed(self.rt, self.cfg, config_mod.load(self.cfg.home), said.append)
         self.assertEqual(self.rt.status("hub"), "closed")
         self.assertEqual([k for k in self.windows() if self._alive(k)], [])
-        self.assertIn("hub: runtime or terminal changed", said[0])
+        self.assertIn("hub: runtime, terminal or worktree changed", said[0])
         close_changed(self.rt, self.cfg, config_mod.load(self.cfg.home), said.append)
         self.assertEqual(len(said), 1)  # closed lanes are left alone
 
