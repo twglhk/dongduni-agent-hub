@@ -23,7 +23,7 @@ TABLE = """| # | Kind | Model · effort |
 class StageModelTest(unittest.TestCase):
     def setUp(self) -> None:
         self.table = Path(tempfile.mkdtemp()) / "lib.md"
-        self.table.write_text(TABLE)
+        self.table.write_text(TABLE, encoding="utf-8")
 
     def test_explicit_lines_win(self) -> None:
         self.assertEqual(stagemodel.resolve(self.table, "x\nmodel: opus\neffort: max\nLine: row 2 stage 1"), ("opus", "max"))
@@ -70,7 +70,7 @@ class ClaudeArgvTest(unittest.TestCase):
         wait_for(lambda: rt.status("hub") == "idle")
         rt.send("hub", sid, "again")
         wait_for(lambda: rt.status("hub") == "idle")
-        calls = [json.loads(x) for x in log.read_text().splitlines()]
+        calls = [json.loads(x) for x in log.read_text(encoding="utf-8").splitlines()]
         self.assertEqual(len(calls), 2)
         for call in calls:
             a = call["argv"]
@@ -78,7 +78,7 @@ class ClaudeArgvTest(unittest.TestCase):
             self.assertEqual(a[a.index("--effort") + 1], "high")
         rt.open("hub", "plain")  # a task without the lines goes back to the lane's own model
         wait_for(lambda: rt.status("hub") == "idle")
-        a = json.loads(log.read_text().splitlines()[-1])["argv"]
+        a = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])["argv"]
         self.assertEqual(a[a.index("--model") + 1], "sonnet")
         self.assertNotIn("--effort", a)
 
