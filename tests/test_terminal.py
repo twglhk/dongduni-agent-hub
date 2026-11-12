@@ -51,6 +51,8 @@ def spawn(cmd, cwd, title, argv):
 def kill(wid):
     w = wins.get(wid)
     if w and alive(w):
+        w["closed"] = True
+        save()
         os.killpg(w["pid"], signal.SIGTERM)
 def opt(args, name, default=None):
     return args[args.index(name) + 1] if name in args else default
@@ -79,11 +81,20 @@ if sub == "create":
     wid = spawn(opt(args, "--command"), opt(args, "--worktree").split(":", 1)[1], opt(args, "--title"), args)
     print(json.dumps({"result": {"terminal": {"handle": wid}}}))
 elif sub == "show":
-    w = wins.get(opt(args, "--terminal"))
-    if not w or not alive(w):
+    wid = opt(args, "--terminal")
+    w = wins.get(wid)
+    if not w:
         print(json.dumps({"error": "terminal_handle_stale"}))
         sys.exit(1)
-    print(json.dumps({"result": {"terminal": {"exited": False}}}))
+    # Shape measured on Orca 1.4.257 (Linux): a finished tab is still shown, ok and exit code 0, and says so
+    # in exitCause; a running tab has no exitCause.
+    if alive(w):
+        term = {"handle": wid, "connected": True, "writable": True, "title": w["title"], "orphaned": False}
+    else:
+        cause = {"kind": "operator_close"} if w.get("closed") else {"kind": "exited", "exitCode": 0}
+        term = {"handle": wid, "connected": False, "writable": False, "exitCause": cause, "orphaned": False,
+                "paneRuntimeId": -1}
+    print(json.dumps({"id": "x", "ok": True, "result": {"terminal": term}, "_meta": {}}))
 elif sub == "send":
     with open(wins[opt(args, "--terminal")]["in"], "a") as f:
         f.write(opt(args, "--text") + ("\n" if "--enter" in args else ""))
@@ -387,6 +398,35 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(self.rt.status("docs"), "idle")
         nested = {"result": {"worktree": {"handle": "wt-9"}, "terminal": {"handle": "term-7"}}}
         self.assertEqual(Orca._find(Orca._find_obj(nested, "terminal"), "handle"), "term-7")
+
+    def test_orca_tab_that_ended_is_dead_by_exit_cause(self) -> None:
+        orca = Orca(self.cfg)
+        done = script(self.tmp, "orca-done", "#!PY\nimport json\nprint(json.dumps({'ok': True, 'result': {'terminal': "
+                      "{'handle': 'term-1', 'connected': False, 'writable': False, 'exitCause': {'kind': 'exited', "
+                      "'exitCode': 0}}}}))\n")
+        closed = script(self.tmp, "orca-closed", "#!PY\nimport json\nprint(json.dumps({'ok': True, 'result': "
+                        "{'terminal': {'handle': 'term-1', 'connected': False, 'writable': False, "
+                        "'exitCause': {'kind': 'operator_close'}}}}))\n")
+        gone = script(self.tmp, "orca-gone", "#!PY\nimport json\nprint(json.dumps({'ok': True, 'result': "
+                      "{'terminal': {'handle': 'term-1', 'connected': False, 'writable': False}}}))\n")
+        live = script(self.tmp, "orca-live", "#!PY\nimport json\nprint(json.dumps({'ok': True, 'result': "
+                      "{'terminal': {'handle': 'term-1', 'connected': True, 'writable': True}}}))\n")
+        saved = os.environ["TOWER_ORCA_BIN"]
+        try:
+            for bin_, expect in ((done, False), (closed, False), (gone, False), (live, True)):
+                os.environ["TOWER_ORCA_BIN"] = str(bin_)
+                self.assertIs(orca.alive("term-1"), expect, bin_.name)
+        finally:
+            os.environ["TOWER_ORCA_BIN"] = saved
+
+    def test_orca_tab_closed_or_finished_is_seen_as_gone(self) -> None:
+        self.rt.open("docs", "x")
+        wait_for(lambda: self.rt.status("docs") == "idle")
+        orca = Orca(self.cfg)
+        handle = next(iter(json.loads(Path(self.env["FAKE_TERM_DIR"], "windows.json").read_text())))
+        self.assertTrue(orca.alive(handle))
+        orca.close(handle)
+        wait_for(lambda: not orca.alive(handle))
 
     def test_codex_in_an_orca_tab(self) -> None:
         sid = self.rt.open("docs", "write the docs")

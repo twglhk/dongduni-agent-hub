@@ -612,7 +612,9 @@ class Orca(Host):
         handle = self._find(term, "handle") if term is not None else None
         handle = handle or self._find(data, "handle")
         if p.returncode != 0 or not handle:
-            raise RuntimeFailure(f"orca could not open a terminal: {(p.stderr or p.stdout).strip()[:300]}")
+            said = (p.stderr or p.stdout).strip()[:300]
+            hint = f" (register the folder first: orca repo add --path {cwd} --kind git)" if "selector_not_found" in said else ""
+            raise RuntimeFailure(f"orca could not open a terminal: {said}{hint}")
         return str(handle)
 
     def alive(self, handle: str) -> bool:
@@ -622,6 +624,9 @@ class Orca(Host):
             if "stale" in said or "not found" in said or "no terminal" in said or "unknown terminal" in said:
                 return False
             raise RuntimeFailure(f"orca did not answer for {handle}: {said.strip()[:300]}")  # unknown, not closed
+        term = self._find_obj(data, "terminal") or {}
+        if term.get("exitCause") or (term.get("connected") is False and term.get("writable") is False):
+            return False  # Orca keeps showing a finished or closed tab (ok, code 0) and says so here
         return not (self._find(data, "exited") is True or self._find(data, "state") == "exited"
                     or self._find(data, "status") == "exited")
 

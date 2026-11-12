@@ -187,7 +187,7 @@ Team lanes share one checkout with each other and with you by default. Set `"wor
 - Lanes without `"worktree"` edit the same checkout as each other and as you.
 - Claude lane sessions are ordinary Claude Code sessions: they show up in `claude --resume` for the workspace. The `/dah-<lane>` shortcuts live in the workspace (`.claude/commands/`, `.opencode/command/`, `.agents/skills/`), so they go into its git unless you ignore them.
 - Live `ask` to the board works with OpenCode only; Claude and Codex lanes post board items instead.
-- Lane windows: tmux on Linux, macOS and WSL; Orca anywhere it runs, and the only choice on Windows. Orca support is tested against a stand-in of its CLI, not a real Orca yet. Codex in a window reports finished turns only.
+- Lane windows: tmux on Linux, macOS and WSL; Orca anywhere it runs, and the only choice on Windows. Orca support is tested against a stand-in of its CLI, which mirrors the responses measured on Orca 1.4.257 (Linux, `orca serve`). Codex in a window reports finished turns only.
 - The board reaches your phone only through a path you set up (`dah guide`); by default it listens on this machine.
 
 ## Language
