@@ -215,6 +215,10 @@ def cmd_task(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
     need_team(c, args.lane)
+    if c.require_model_lines:
+        from .stagemodel import missing_lines
+        if gap := missing_lines(args.brief):
+            raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
     s = store(c)
     if args.goal is not None and s.goal(args.goal)["state"] != "active":
         raise TowerError(f"goal #{args.goal} is not active")

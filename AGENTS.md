@@ -20,7 +20,9 @@ Instructions for coding agents working in this repository.
 | `agent_hub/discover.py` · `install.py` | setup survey and workspace installer |
 | `agent_hub/templates/` | protocol and lane instruction templates copied into workspaces |
 | `agent_hub/guide/` | the setup playbook, the extension guide and the guides for reaching the board (`dah guide`); shipped in the package |
-| `docs/images/` | README illustrations |
+| `agent_hub/stagemodel.py` | per-task model and effort from brief lines and an optional table |
+| `docs/` | README illustrations, the engine playbook, a Claude lane harness section, releasing |
+| `tools/skill_lint.py` | lint for OpenCode skills |
 
 ## Rules
 

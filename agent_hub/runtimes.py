@@ -144,6 +144,20 @@ class Adapter:
     def log_path(self) -> Path:
         return self.logs / f"{self.lane.id}.jsonl"
 
+    def set_opts(self, model: str | None, effort: str | None) -> None:
+        """A task's own model and effort (stagemodel.py), kept so every resume of the session runs with them."""
+        (self.logs / f"{self.lane.id}.opts.json").write_text(json.dumps({"model": model, "effort": effort}), encoding="utf-8")
+
+    def opts(self) -> dict[str, str | None]:
+        try:
+            return json.loads((self.logs / f"{self.lane.id}.opts.json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def model_arg(self) -> list[str]:
+        model = self.opts().get("model") or self.lane.model
+        return ["--model", model] if model else []
+
     @property
     def cwd(self) -> Path:
         """Where the agent runs (its worktree when the lane has one); lane_cwd() creates the worktree."""
@@ -370,7 +384,8 @@ class Claude(Headless):
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), "-p", "--output-format", "json", *self.lane.args]
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]  # an option follows: --add-dir takes many
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
-        return argv + (["--model", self.lane.model] if self.lane.model else [])
+        effort = self.opts().get("effort")
+        return argv + self.model_arg() + (["--effort", effort] if effort else [])
 
     def open(self, prompt: str) -> str:
         sid = str(uuid.uuid4())
@@ -419,7 +434,8 @@ class Codex(Headless):
 
     def _base(self) -> list[str]:
         argv = [*procs.command(os.environ.get("TOWER_CODEX_BIN", "codex")), "exec", "--json", *self.lane.args]
-        return argv + (["--model", self.lane.model] if self.lane.model else [])
+        effort = self.opts().get("effort")
+        return argv + self.model_arg() + (["-c", f"model_reasoning_effort={effort}"] if effort else [])
 
     @staticmethod
     def _thread_id(e: dict[str, Any]) -> str | None:
@@ -825,7 +841,8 @@ class ClaudeTerm(TerminalSession, Claude):
     def _argv(self, *extra: str) -> list[str]:
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), *self.lane.args]
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
-        argv += ["--model", self.lane.model] if self.lane.model else []
+        argv += self.model_arg()
+        argv += ["--effort", self.opts()["effort"]] if self.opts().get("effort") else []
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]
         hook = [{"hooks": [{"type": "command", "command": self._hook_command()}]}]
         settings = self.term_dir / f"{self.lane.id}.settings.json"
@@ -982,7 +999,8 @@ class CodexTerm(TerminalSession, Codex):
         write_signal(self.cfg.home, self.lane.id, state="busy")
         args, chained = codex_notify([a for a in self.lane.args if a not in self.EXEC_ONLY])
         argv = [*procs.command(os.environ.get("TOWER_CODEX_BIN", "codex")), *args]
-        argv += ["--model", self.lane.model] if self.lane.model else []
+        argv += self.model_arg()
+        argv += ["-c", f"model_reasoning_effort={self.opts()['effort']}"] if self.opts().get("effort") else []
         notify = [sys.executable, "-m", "agent_hub", "signal"]
         argv += ["-c", f"notify={json.dumps(notify)}", self._note(prompt)]
         self._launch(argv, {"TOWER_CODEX_NOTIFY": json.dumps(chained)} if chained else None)
@@ -1078,8 +1096,9 @@ class Runtimes:
     def reply_question(self, lane: str, qid: str, answers: list[list[str]]) -> None:
         self._a(lane).reply_question(qid, answers)
 
-    def open(self, lane: str, prompt: str) -> str:
+    def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
         ln = self.cfg.lanes[lane]
+        self._a(lane).set_opts(model, effort)  # OpenCode lanes keep their configured model; claude and codex honour these
         if ln.worktree:
             lane_cwd(self.cfg, ln)
             prompt = worktree_note(self.cfg, ln) + prompt

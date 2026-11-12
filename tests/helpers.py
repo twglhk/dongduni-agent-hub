@@ -36,6 +36,7 @@ class FakeRuntime:
         self.store = store
         self.st: dict[str, str] = {}
         self.opened: list[tuple[str, str]] = []
+        self.opts: list[tuple[str | None, str | None]] = []
         self.sent: list[tuple[str, str, str]] = []
         self.closed: list[str] = []
         self.qs: dict[str, list[dict[str, Any]]] = {}
@@ -59,8 +60,9 @@ class FakeRuntime:
         self.replies.append((lane, qid, answers))
         self.qs[lane] = [q for q in self.qs.get(lane, []) if q["id"] != qid]
 
-    def open(self, lane: str, prompt: str) -> str:
+    def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
         self.opened.append((lane, prompt))
+        self.opts.append((model, effort))
         self.st[lane] = "busy"
         sid = f"s-{lane}-{len(self.opened)}"
         self.store.set_lane(lane, session=sid)

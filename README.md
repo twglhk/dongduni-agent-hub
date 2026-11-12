@@ -143,6 +143,24 @@ Another agent CLI can be added as an extension: a `runtimes` entry in `.tower/ex
 
 Each lane runs your agent as you configured it. When a role needs its own prompt, model or tool limits, point the lane at one of your existing agents (`dah lane add review --runtime claude --agent code-reviewer`, or `"agent"` in `tower.json`: an OpenCode agent name or a Claude `--agent`); `"model"` picks a model, `"args"` passes anything else (Codex: `["--profile", NAME]`). Lanes run unattended, so by default Claude runs with `bypassPermissions` and Codex without its sandbox; `dah init --safe` writes sandboxed arguments instead.
 
+### Model and effort per task
+
+A brief can pick its own model and effort with two lines of their own:
+
+```
+model: opus
+effort: high
+```
+
+Claude and Codex lanes start (and resume) that task's session with them (`--model` and `--effort`, or `-c model_reasoning_effort=`); OpenCode lanes keep the lane's configured model. A brief with neither line uses the lane's `model`.
+
+Two optional keys in `tower.json` (top level):
+
+- `"require_model_lines": true`: `dah task` refuses a brief without both lines, so the hub decides small-before-strong for every task.
+- `"stage_table": "docs/pattern-library.md"`: a markdown table (first column `#`, one column whose header contains "model", cells like `1-2 sonnet/medium; 3 opus/high`). A brief that says `Line: row 3 stage 2` takes its model and effort from that row; lines in the brief win over the table, the table over the lane's `model`. See `agent_hub/stagemodel.py`.
+
+For a Claude lane with its own harness, set `"agent": "<name>"` and put `.claude/agents/<name>.md` in the workspace; [`docs/lane-harness-claude.md`](docs/lane-harness-claude.md) is a ready harness section for unattended lanes. The working methods behind the lane instructions are in [`docs/engine-playbook.md`](docs/engine-playbook.md). `tools/skill_lint.py [repo]` lints OpenCode skills (frontmatter, names, dead links, size budgets).
+
 ### Lanes in terminal windows
 
 By default lane sessions run in the background and you follow them on the board. To watch them work, set `"terminal"` in `tower.json` (for every lane, or per lane) or pass `dah init --terminal`:

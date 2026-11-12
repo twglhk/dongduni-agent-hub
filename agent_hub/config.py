@@ -78,6 +78,8 @@ class Config:
     lanes: dict[str, Lane] = field(default_factory=dict)
     terminal: str = "none"       # default for lanes that do not set their own
     worktree: bool = False       # default for team lanes that do not set their own
+    stage_table: str = ""        # markdown table with a `model · effort` column (stagemodel.py), path from home
+    require_model_lines: bool = False  # `dah task` refuses a brief without `model:` and `effort:` lines
 
     @property
     def state_dir(self) -> Path:
@@ -207,6 +209,8 @@ def load(home: Path | None = None) -> Config:
         lanes=lanes,
         terminal=terminal,
         worktree=worktree,
+        stage_table=str(raw.get("stage_table") or ""),
+        require_model_lines=bool(raw.get("require_model_lines")),
     )
 
 

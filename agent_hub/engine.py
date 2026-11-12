@@ -27,6 +27,7 @@ import json
 import time
 from typing import Any, Callable
 
+from . import stagemodel
 from .config import HUB, INFRA, Config
 from .ext import Extensions
 from .store import HUMAN, MULTI_SEP, TOWER, Store
@@ -138,6 +139,12 @@ class Engine:
         protocol = self.cfg.home / ".tower" / "PROTOCOL.md"
         return (f"First read `{self.cfg.instructions(lane)}` and `{protocol}` and follow them. "
                 f"Humans read the board in `{self.cfg.lang}`; write everything they read in that language.")
+
+    def _opts(self, task: dict[str, Any]) -> dict[str, str]:
+        """Per-task model and effort from the brief (and the stage table), passed to the runtime only when set."""
+        table = self.cfg.home / self.cfg.stage_table if self.cfg.stage_table else None
+        model, effort = stagemodel.resolve(table, task["brief"])
+        return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
     def start_prompt(self, task: dict[str, Any]) -> str:
         return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\"\n\n{self._read_first(task['lane'])}"
@@ -447,7 +454,7 @@ class Engine:
                 if task is None:
                     continue
                 try:
-                    sid = self.rt.open(lane, self.start_prompt(task))
+                    sid = self.rt.open(lane, self.start_prompt(task), **self._opts(task))
                 except Exception:
                     self.store.update_task(nxt["id"], state="queued", started=None, last_prompt=None)
                     raise
@@ -471,7 +478,7 @@ class Engine:
         self.store.update_task(task["id"], respawns=task["respawns"] + (0 if handed else 1), rotate_ready=None)
 
     def _open_resume(self, lane: str, task: dict[str, Any], why: str) -> None:
-        sid = self.rt.open(lane, self.resume_prompt(task, why))
+        sid = self.rt.open(lane, self.resume_prompt(task, why), **self._opts(task))
         self.store.update_task(task["id"], session=sid, last_prompt=self.clock(), nudges=0)
         self.idle_since.pop(lane, None)
         self.log(f"{lane}: task #{task['id']} new session ({why})")
