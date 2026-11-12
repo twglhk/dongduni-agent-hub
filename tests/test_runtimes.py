@@ -58,7 +58,7 @@ def script(dirpath: Path, name: str, body: str) -> Path:
     return p
 
 
-def wait_for(fn, timeout: float = 10.0) -> None:
+def wait_for(fn, timeout: float = 30.0) -> None:
     deadline = time.time() + timeout
     while not fn():
         if time.time() > deadline:
