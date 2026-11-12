@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Static lint for opencode skills and OMO path rules.
+"""Static lint for OpenCode skills and oh-my-opencode path rules.
 
 Idea from Claude Code Game Studios `skill-test static` (MIT, commit 05ad7c8);
 the checks are opencode's: https://opencode.ai/docs/skills/
 
-    python3 tools/dev/skill_lint.py [repo_root]
+    python3 tools/skill_lint.py [repo_root]
 
 Skills are found by globbing `.opencode/skills/*/` (never a list, so a new
 skill can't slip past). Per skill:
@@ -14,8 +14,8 @@ skill can't slip past). Per skill:
         an unquoted ` #` (YAML reads the rest as a comment); a relative
         markdown link in SKILL.md or references/*.md that points nowhere.
   WARN  frontmatter keys opencode ignores; SKILL.md body over 150 lines or a
-        reference over 300 lines (skill-refresh budget).
-Rules in `.claude/rules/*.md` (OMO rules engine): FAIL without `paths`/`globs`,
+        reference over 300 lines (size budget).
+Rules in `.claude/rules/*.md` (oh-my-opencode rules): FAIL without `paths`/`globs`,
 WARN when a pattern matches no file in the repo.
 
 A file that can't be read is NOT ASSESSED, never OK. Exit 0 only when every

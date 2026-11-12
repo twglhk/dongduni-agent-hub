@@ -157,7 +157,7 @@ Claude and Codex lanes start (and resume) that task's session with them (`--mode
 Two optional keys in `tower.json` (top level):
 
 - `"require_model_lines": true`: `dah task` refuses a brief without both lines, so the hub decides small-before-strong for every task.
-- `"stage_table": "docs/pattern-library.md"`: a markdown table (first column `#`, one column whose header contains "model", cells like `1-2 sonnet/medium; 3 opus/high`). A brief that says `Line: row 3 stage 2` takes its model and effort from that row; lines in the brief win over the table, the table over the lane's `model`. See `agent_hub/stagemodel.py`.
+- `"stage_table": "docs/process-table.md"`: a markdown table (first column `#`, one column whose header contains "model", cells like `1-2 sonnet/medium; 3 opus/high`). A brief that says `Line: row 3 stage 2` takes its model and effort from that row; lines in the brief win over the table, the table over the lane's `model`. See `agent_hub/stagemodel.py`.
 
 For a Claude lane with its own harness, set `"agent": "<name>"` and put `.claude/agents/<name>.md` in the workspace; [`docs/lane-harness-claude.md`](docs/lane-harness-claude.md) is a ready harness section for unattended lanes. The working methods behind the lane instructions are in [`docs/engine-playbook.md`](docs/engine-playbook.md). `tools/skill_lint.py [repo]` lints OpenCode skills (frontmatter, names, dead links, size budgets).
 

@@ -15,7 +15,7 @@ from tests.test_runtimes import FAKE_CLAUDE, script, wait_for
 
 TABLE = """| # | Kind | Model · effort |
 |---|---|---|
-| 1 | Concept | 1 sonnet/medium; 2-3 opus/high |
+| 1 | Draft | 1 sonnet/medium; 2-3 opus/high |
 | 2 | Plain | sonnet/low |
 """
 
