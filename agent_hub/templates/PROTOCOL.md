@@ -15,7 +15,8 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 - Run each `dah` command on its own: not in a pipe, after `;` or `&&`, inside `$(...)` or behind a variable. A sandboxed lane may run `dah ...` and little else, and a combined command stops at a permission prompt nobody answers.
 
 - A tool call that comes back denied stays denied: do not retry it. Use another way, or `dah report blocked`. A hook that refuses a call gives a reason: read it, fix the call, send it again.
-- Subagents or helpers you start for side work begin without your context: brief them fully (the rules that decide the work, in full, not a summary). Check what comes back file by file yourself; memory and board writes stay with you. Do not wait on one while you hold a decision.
+- Subagents or helpers you start for side work begin without your context: brief them fully (the rules that decide the work, in full, not a summary). Check what comes back file by file yourself; memory and board writes stay with you. Do not wait on one while you hold a decision. While the agent subscription is over its usage limit, subagent calls fail: do that piece yourself.
+- Look at images, screenshots and PDFs by opening the file with your agent's file-reading tool (Read in Claude Code), not by describing it from its name.
 
 - Permissions: paid calls, deploys and publishes, force-pushes, and anything touching secrets go to the board as an item and wait for a human's approval. Never put a secret in the repo, the board or a report.
 
@@ -34,9 +35,11 @@ When a task's work type has a row in an engine's `pattern-library.md`, check tha
 
 Lanes share one working tree unless a lane has its own worktree.
 
-- Reread a file right before you write to it and change only your part. `git diff` a shared file before you commit and stage only your own hunks.
+- Reread a file right before you write to it and change only your part. `git diff` a shared file before you commit and stage only your own hunks. Commit your task's files right after each green test run.
+- Never `git stash`, `git reset --hard` or `git clean` in the shared tree: they sweep away other lanes' unsaved work. To check a clean tree, use `git worktree add <temp dir> HEAD`, test there, then remove it.
+- Another lane has uncommitted edits in a file you need (`git status` shows it): don't edit or commit that file; put your change in a patch file and hand it on with `dah report note`.
 - Stop only the processes you started, by PID; never `pkill -f` or `killall` on a name.
-- Heavy local jobs (video, audio, image, simulation batches) run one at a time, streamed instead of loaded whole; check memory before starting the next.
+- Heavy local jobs (video, audio, image, simulation batches) run one at a time, streamed instead of loaded whole; check memory before starting the next (`media-reading` skill).
 
 ## Commands
 
@@ -48,7 +51,7 @@ Lanes share one working tree unless a lane has its own worktree.
 | team lane | `dah report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
 | team lane | `dah stage N` | name the stage of your process card you are on (the brief's `Line:` header names the card) |
 | hub | `dah status` · `dah doing "one line"` | see everything · show what you are doing on the board |
-| hub | `dah task LANE --title T "brief"` · `dah tell LANE "text"` · `dah wrap LANE` · `dah cancel TASK` | run the team |
+| hub | `dah task LANE --title T "brief"` · `dah tell LANE "text"` · `dah tell --urgent LANE "stop"` (a busy Claude Code lane reads it at its next tool call) · `dah wrap LANE` · `dah cancel TASK` | run the team |
 | hub | `dah decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
 | hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
 | hub | `dah memo reply ID "text"` · `dah infra "text" --approved "request #N"` | answer a human request · hand tower work to infra (humans reach infra only through you) |
@@ -64,7 +67,7 @@ A defect inside a deliverable goes back to the lane that made it, in the same ta
 
 ## When to post an item
 
-Post when a human must choose or approve before part of your work can go on: alternatives, an artifact to approve, anything the Permissions line names. Do not post for a choice inside your approved scope, a progress update (`dah report note`), or something the repo or the memory already answers. Keep these approvals apart: keeping an idea, allowing a trial, final adoption. Anything a human judges by eye goes on the item itself (image or video attached), not as a path or a number alone. Open item: revise it in place; a closed one gets a new item that names its number.
+Post when a human must choose or approve before part of your work can go on: alternatives, an artifact to approve, anything the Permissions line names. Do not post for a choice inside your approved scope, a progress update (`dah report note`), or something the repo or the memory already answers. Keep these approvals apart: keeping an idea, allowing a trial, final adoption. Anything a human judges by eye goes on the item itself (image or video attached), not as a path or a number alone. Open item: revise it in place; a closed one gets a new item that names its number. The `review-board` skill has the full rules.
 
 ## Writing a board item
 
@@ -76,7 +79,7 @@ A human reads it on a phone with none of your context. Write in the board langua
 - `## Recommendation` — your pick and why, in two lines.
 - `## Evidence` — when you attach a long document, quote the few lines that matter instead of asking them to read it.
 
-One image shows one thing. Keep sizes and framing equal when images are compared. Numbers say what was measured.
+One image shows one thing. Keep sizes and framing equal when images are compared. Numbers say what was measured. English text people read goes through the `humanizer` skill first.
 
 ## Lanes in their own worktree
 

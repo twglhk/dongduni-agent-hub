@@ -115,7 +115,7 @@ class ScaffoldTest(unittest.TestCase):
             self.tower("engine", "add", f"{kind}-two", "--from", kind, "--label", f"{kind.title()} two")
         p = subprocess.run([sys.executable, str(ROOT / "tools" / "skill_lint.py"), str(self.home)], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("scanned 12 skills", p.stdout)  # blank 1, animation 2, marketing 1, research and audit in each of the 3 engines and in the init workspace
+        self.assertIn("scanned 16 skills", p.stdout)  # blank 1, animation 2, marketing 1, research and audit in each of the 3 engines and in the init workspace, 4 starter skills
         self.assertIn("FAIL 0", p.stdout)
 
     def test_two_engines_do_not_collide_and_an_existing_one_is_refused(self) -> None:

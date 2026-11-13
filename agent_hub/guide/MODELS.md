@@ -28,6 +28,8 @@ Effort levels: `low`, `medium`, `high`, `xhigh`, `max`. A model name can also be
 - **The stage table**: a pattern library's `model · effort` column (`stage_table`, or an engine's `library`). A brief that says `Line: #3 … stage 2` takes the cell's value for that stage. A cell is `opus/high` for the whole row or per stage: `1-2 sonnet/high; 3 opus/high`. Across several stages the strongest model and the highest effort win, so split a brief at the boundary if you do not want that.
 - **The lane**: `"model"` in `tower.json` is the fallback when neither the brief nor the table names one. Effort has no lane setting; it comes only from the brief or the table.
 
+The starter subagents in `.claude/agents/` follow the same table: `explore` and `librarian` on Haiku `medium` (bulk reading), `looker` and `general` on Sonnet `high`. `dah init` asks the claude CLI once per model; a model it refuses becomes `model: inherit` (the calling session's model). Edit the `model:` and `effort:` lines freely; `dah update` keeps them.
+
 The engine templates ship their libraries with these defaults (`sonnet/high`, `opus/high` where a stage is a design call). The `research` lane defaults to Opus `medium`; the engine auditor to Fable `high` (Opus `high` where Fable is not configured).
 
 Only the Claude and Codex runtimes honour a per-task model and effort; an OpenCode lane keeps its configured model.

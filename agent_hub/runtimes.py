@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from . import procs
+from . import hooks as hooks_mod
 from .config import TOWER_DIR, Config, Lane
 from .ext import Extensions, registry
 from .store import Store
@@ -392,6 +393,7 @@ class Claude(Headless):
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), "-p", "--output-format", "json", *self.lane.args]
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]  # an option follows: --add-dir takes many
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
+        argv += ["--settings", str(hooks_mod.settings_file(self.cfg.home, self.lane.id))]  # gates, urgent tells, API errors
         effort = self.opts().get("effort")
         return argv + self.model_arg() + (["--effort", effort] if effort else [])
 
@@ -871,7 +873,7 @@ class ClaudeTerm(TerminalSession, Claude):
         hook = [{"hooks": [{"type": "command", "command": self._hook_command()}]}]
         settings = self.term_dir / f"{self.lane.id}.settings.json"
         settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
-                                                  "Notification": hook}}), encoding="utf-8")
+                                                  "Notification": hook, **hooks_mod.claude_hooks()}}), encoding="utf-8")
         return [*argv, "--settings", str(settings), *extra]
 
     def open(self, prompt: str) -> str:

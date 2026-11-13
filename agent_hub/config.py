@@ -115,6 +115,10 @@ class Config:
     heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
     memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
     instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
+    done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
+    scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
+    scratch_grace: int = 600     # seconds after a task closes before its scratch is swept
+    usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
     def all_lanes(self) -> dict[str, Lane]:
@@ -317,7 +321,31 @@ def load(home: Path | None = None) -> Config:
         heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
         memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
         instances=instances,
+        **_extras(raw, home, project),
     )
+
+
+def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
+    """done_gate, scratch_root, scratch_grace, usage_percent (donegate.py, scratch.py, claudeusage.py)."""
+    from .claudeusage import PROVIDERS
+    from .donegate import parse
+    from .scratch import check_root
+    try:
+        gate = parse(raw.get("done_gate"))
+    except ValueError as e:
+        raise ConfigError(str(e))
+    root = str(raw.get("scratch_root") or "")
+    if root:
+        p = Path(root).expanduser()
+        try:
+            check_root(p if p.is_absolute() else home / p, (home / project).resolve() if project else home)
+        except ValueError as e:
+            raise ConfigError(str(e))
+    usage = str(raw.get("usage_percent") or "")
+    if usage and usage not in PROVIDERS:
+        raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
+    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
+            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600}
 
 
 def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,

@@ -54,6 +54,22 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
+### 0.9.3
+
+A patch release: the six candidates from `docs/audit/0.9.3-candidates.md`, ported as neutral code with tests.
+
+**New**
+
+- **Gates.** A PreToolUse hook for Claude lanes (`agent_hub/hooks.py`, `gates.py`): kill gate, git sweep gate (no `stash`, `reset --hard`, `clean`), `.env` read gate; denials are logged as `GateDeny`. `DAH_GATES=off` turns them off for one lane. OpenCode: `python agent_hub/hooks.py opencode-plugin` prints a plugin for its binary-patch guard (untested under OpenCode). The gates read POSIX shell syntax.
+- **Subagents and skills.** `explore`, `librarian`, `looker`, `general` in `.claude/agents/`; skills `humanizer`, `media-reading`, `review-board`, `project-audit`; concurrent-session rules in PROTOCOL.md.
+- **Done gate** (`done_gate` in `tower.json`): `dah report done` returns at once; the gate runs on one persistent worktree outside the project, one at a time, and the tick delivers pass or refusal. Plus `dah scratch` and a sweep of worktrees and temp dirs dah made.
+- **Machine card and footer strip** on the board: load, CPU, memory, swap graded against this machine, wait reasons for queued tasks, and an optional Claude usage percent (`"usage_percent": "claude"`, off by default, undocumented endpoint, "unknown" on failure).
+- **Urgent tell** `dah tell --urgent LANE "..."`, injected at the lane's next tool call, and a push for Claude API errors (login expired, billing, server) once per kind per 30 minutes.
+
+**Upgrade**
+
+`dah update` refreshes PROTOCOL.md (untouched copies) and adds the starter files. Hooks are merged into Claude lane settings when the tower opens a lane.
+
 ### 0.9.2
 
 A patch release: PROTOCOL takes the project-neutral working rules from Auto Arkham's own tower (docs/audit/0.9.1-starter.md, "Compared with Auto Arkham").

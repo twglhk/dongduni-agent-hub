@@ -136,6 +136,8 @@ def install(cfg: Config, force: bool = False) -> list[str]:
             for path, text in required_skill_files(home, role, role, "this project", required_skills_dir(cfg, role)).items():
                 _write(path, text, force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
+    from . import starter
+    starter.install(cfg, force, wrote)  # neutral subagents and skills (starter.py)
     write_agents_block(home, wrote)
     ignore_state(home, wrote)
     if not (home / TOWER_DIR / "state" / "board.sha").is_file():
@@ -366,6 +368,8 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
+    from . import starter
+    starter.refresh(cfg, versions, report, _refresh_file)  # neutral subagents and skills, kept like PROTOCOL.md
     for role in REQUIRED_LANES:
         if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE) and cfg.lanes[role].runtime == "claude":
             for path, text in required_skill_files(home, role, role, "this project", ".claude/skills").items():

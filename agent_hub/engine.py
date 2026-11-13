@@ -191,6 +191,9 @@ class Engine:
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
         self.snap_at: float = -SNAPSHOT_EVERY  # last check for the weekly engine snapshot
+        self.api_watch: Any = None  # apierrors.EventWatch, made on the first tick
+        self.sweep: Any = None  # scratch.ScratchSweep, made on the first tick
+        self.waits: dict[int, str] | None = None  # why each queued task is not starting (machine.write_waits)
 
     # ---------- prompts ----------
 
@@ -307,6 +310,15 @@ class Engine:
         self._questions(statuses)
         self.route_decisions()
         self._notify_humans()
+        try:
+            self._api_errors()
+        except Exception as e:
+            self.log(f"api errors: {e}")
+        for name, fn in (("done gate", self._done_gates), ("scratch", self._scratch)):
+            try:
+                fn()
+            except Exception as e:
+                self.log(f"{name}: {e}")
         for lane in self.team:
             try:
                 self._lane(lane, statuses[lane])
@@ -503,6 +515,47 @@ class Engine:
             for it in new:
                 self.store.update_item(it["id"], notified=self.clock())
 
+    def _api_errors(self) -> None:
+        """Model API errors that stopped a Claude lane (login expired, billing, limits): one push per kind."""
+        from . import apierrors, hooks
+        if self.api_watch is None:
+            self.api_watch = apierrors.EventWatch(hooks.root(self.cfg.home), self.clock)
+        for kind, lane, message in self.api_watch.poll():
+            self.log(f"{lane}: api {kind}: {message}")
+            self.notify([{"id": lane, "lane": lane, "alert": True, "title": f"{lane}: {message}"}])
+
+    def _done_gates(self) -> None:
+        """Finished done gates (donegate.py): pass -> the held `done` goes to the hub; fail -> a tell to the lane."""
+        from . import donegate
+        for info, r in donegate.poll(self.cfg):
+            lane, tid = info["lane"], info["task"]
+            try:
+                task = self.store.task(tid)
+            except StoreError:
+                continue
+            if task["state"] not in ("running", "wrapping"):
+                self.log(f"{lane}: done gate {r.get('state')} for task #{tid}, which is no longer live")
+                continue
+            if r.get("state") == "pass":
+                atts = info.get("atts") or []
+                self.store.add_report(tid, lane, "done", info["text"], atts)
+                self.store.signal(tid)
+                att = f" (files: {', '.join(atts)})" if atts else ""
+                self.store.push(HUB, lane, "done", f"Done: {lane} task #{tid} \"{task['title']}\" (done gate passed "
+                                f"at {str(info.get('sha'))[:8]}): {clip(info['text'], 700)}{att}", tid)
+                self.store.push(lane, TOWER, "tell", "The done gate passed; your done went to the hub. Review comes "
+                                "back to this session.", tid)
+            else:
+                self.store.push(lane, TOWER, "tell", donegate.refusal(info, r), tid)
+            self.log(f"{lane}: done gate {r.get('state')} (task #{tid})")
+
+    def _scratch(self) -> None:
+        """Remove scratch and leftover lane worktrees the tower made, once nobody needs them (scratch.py)."""
+        from .scratch import ScratchSweep
+        if self.sweep is None:
+            self.sweep = ScratchSweep(self.cfg, self.store, self.log, self.clock)
+        self.sweep.poll()
+
     # ---------- team lanes ----------
 
     def _lane(self, lane: str, st: str) -> None:
@@ -548,6 +601,11 @@ class Engine:
                             f"session continues the task.", task["id"])
             self.store.update_task(task["id"], last_prompt=self.clock())
             return
+        if self.cfg.done_gate:
+            from . import donegate
+            if donegate.running(self.cfg, task["id"]):
+                self.idle_since[lane] = self.clock()  # its done gate is running: busy, not stalled; the verdict comes as a tell
+                return
         waiting = self.store.open_items_for_task(task["id"]) > 0
         silent = (task.get("last_signal") or 0) < (task.get("last_prompt") or 0)
         if idle_for >= NUDGE_AFTER and silent and not waiting:
@@ -610,15 +668,22 @@ class Engine:
                 waiting += self.store.queued_for(lane)
         waiting += self._spill(busy, free_h + free_l, statuses)
         started: list[dict[str, Any]] = []
+        waits: dict[int, str] = {}  # for the board's machine card: why a queued task is not starting
+        for lane in busy & set(self.team):
+            for t in self.store.queued_for(lane):
+                waits[t["id"]] = f"lane {lane} is busy with another task"
         for nxt in sorted(waiting, key=lambda t: t["id"]):
             lane = nxt["lane"]
             w = wt(nxt)
             if any(t["lane"] == lane for t in started):
+                waits[nxt["id"]] = f"lane {lane} started another task this tick"
                 continue  # the lane has its task for this tick
             if len([t for t in started if wt(t) == w]) >= max(0, free_h if w == "heavy" else free_l):
+                waits[nxt["id"]] = f"every {w} slot is busy" if self.cfg.light_lanes is not None else "every slot is busy"
                 continue  # full. A task skipped for a conflict takes no slot, so a later one can start (head-of-line skip)
             why = self.conflict(nxt, started) or self.cap_reason(nxt)
             if why:
+                waits[nxt["id"]] = why
                 self.log(f"{lane}: task #{nxt['id']} waits: {why}")
                 continue
             try:
@@ -641,6 +706,10 @@ class Engine:
             self.store.drop_pending(lane, ("tell", "nudge", "wrap", "rotate"), keep_task=nxt["id"])
             self.idle_since.pop(lane, None)
             self.log(f"{lane}: task #{nxt['id']} started")
+        if waits != self.waits:
+            from .machine import write_waits
+            self.waits = waits
+            write_waits(self.cfg.state_dir, waits)
 
     def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
         """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)

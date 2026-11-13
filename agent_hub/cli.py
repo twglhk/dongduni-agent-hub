@@ -187,6 +187,15 @@ def cmd_report(args: argparse.Namespace) -> None:
     atts = check_paths(c, args.attach)
     if args.kind == "handoff" and not task:
         raise TowerError("no task to hand off")
+    if args.kind == "done" and task and c.done_gate:
+        from . import donegate
+        if donegate.applies(c, task, me):  # held until the gate passes; the tower delivers the verdict
+            try:
+                print(donegate.start(c, task, me, args.text, atts))
+            except (RuntimeError, ValueError) as e:
+                raise TowerError(f"done not sent: {e}")
+            s.signal(tid)
+            return
     text, retro = stats.split_retro(args.text) if args.kind == "wrapped" else (args.text, None)
     s.add_report(tid, me, args.kind, text, atts)
     if retro:
@@ -266,9 +275,30 @@ def cmd_doing(args: argparse.Namespace) -> None:
     print("Shown on the board.")
 
 
+def cmd_scratch(args: argparse.Namespace) -> None:
+    """A scratch folder (or a detached worktree of your HEAD) outside the project, removed after your task closes."""
+    from . import scratch
+    c = cfg()
+    me = who(args, c)
+    task = store(c).live_task(me)
+    if not task:
+        raise TowerError("no live task: scratch belongs to a task and is swept after it closes")
+    try:
+        print(scratch.make(c, task["id"], c.lane_dir(me), worktree=args.worktree))
+    except (RuntimeError, ValueError, OSError) as e:
+        raise TowerError(str(e))
+
+
 def cmd_tell(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
+    if getattr(args, "urgent", False):
+        from .hooks import urgent_tell
+        try:
+            print(urgent_tell(c, args.lane, args.text))
+        except ValueError as e:
+            raise TowerError(str(e))
+        return
     need_team(c, args.lane)
     s = store(c)
     task = s.live_task(args.lane)
@@ -783,6 +813,10 @@ def cmd_init(args: argparse.Namespace) -> None:
     notes = fix_models(home) if not os.environ.get("DAH_SKIP_MODEL_CHECK") else []
     c = config_mod.load(home)
     wrote = install(c, force=args.force)
+    if not os.environ.get("DAH_SKIP_MODEL_CHECK"):
+        from .install import model_works
+        from .starter import fix_models as fix_subagent_models
+        notes += fix_subagent_models(c, model_works)
     slug = config_mod.register(home)
     print(f"wrote {path}")
     for n in notes:
@@ -1212,11 +1246,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--weak", action="store_true", help="only rows that need fixing or rework")
     p = sub.add_parser("doing", help="hub: one line shown on the board")
     p.add_argument("text")
+    p = sub.add_parser("scratch", help="lane: a scratch folder outside the project, removed after your task closes")
+    p.add_argument("--worktree", action="store_true", help="a detached git worktree of your HEAD instead of an empty folder")
     p = sub.add_parser("stage", help="lane: name the stage of your process card you are on now (shown on the board)")
     p.add_argument("stage", help="stage number or name, e.g. 3")
     p = sub.add_parser("tell", help="hub: message a running task")
     p.add_argument("lane")
     p.add_argument("text")
+    p.add_argument("--urgent", action="store_true",
+                   help="reach a busy Claude Code lane at its next tool call, mid-turn (e.g. \"stop\"); dropped after 2 h")
     p = sub.add_parser("wrap", help="hub: ask a lane to wrap up")
     p.add_argument("lane")
     p.add_argument("--note")
@@ -1362,7 +1400,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,

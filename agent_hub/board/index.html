@@ -390,6 +390,18 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 #use .k{font-weight:700;color:var(--text-2)}
 #use .r b{font-weight:600;color:var(--text-2);margin-right:4px}
 
+/* ---- machine card (machine.py via api/machine) ---- */
+.mc{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:var(--s2)}
+.mc .mr{display:flex;align-items:center;gap:var(--s3);font-size:var(--t5);min-width:0}
+.mc .mr .k{width:72px;flex:none;color:var(--text-2);font-weight:600}
+.mc .mr .v{color:var(--text-3);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mc .wt{font-size:var(--t6);color:var(--text-3);line-height:1.5}
+.mc .wt b{color:var(--text-2);font-weight:600;margin-right:4px}
+#use .mc-d{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;background:var(--text-4);vertical-align:middle}
+#use .mc-d.lv-g{background:var(--green)} #use .mc-d.lv-a{background:var(--orange-ink)} #use .mc-d.lv-r{background:var(--red)}
+#use .lv-a b,#use b.lv-a{color:var(--orange-ink)} #use .lv-r b,#use b.lv-r{color:var(--red-ink)}
+.row .sub.wait{color:var(--orange-ink)}
+
 /* ---- lane add ---- */
 .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .fold.add{color:var(--blue-ink)}
@@ -490,6 +502,7 @@ const UI = {
     use: { day: 'Today', io: '{i} / {o}', task: 'Task {n} new · {c} cache · {o} out · {t} turns',
       today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
+    mc: { title: 'This machine', load: 'Load', cpu: 'CPU', mem: 'Memory', swap: 'Swap', unknown: 'unknown', perCore: '{v} per core · {n} cores', free: '{f} GB free of {t} GB', freeOnly: '{f} GB free', swapUsed: '{s} GB in use', cpuBusy: '{v}% of all cores', waits: 'Why tasks wait', wait: 'Waits: {r}', claude: 'Claude', h5: '5h', week: 'week', g: 'OK', a: 'Busy', r: 'Strained', hint: 'Graded against this machine’s own cores and RAM. The Claude percent comes from an undocumented endpoint and may show unknown.' },
     x: { err: 'Extension error' },
   },
   ko: {
@@ -533,6 +546,7 @@ const UI = {
     use: { day: '오늘', io: '{i} / {o}', task: '작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴',
       today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
+    mc: { title: '이 컴퓨터', load: '부하', cpu: 'CPU', mem: '메모리', swap: '스왑', unknown: '알 수 없음', perCore: '코어당 {v} · 코어 {n}개', free: '{t} GB 중 {f} GB 남음', freeOnly: '{f} GB 남음', swapUsed: '{s} GB 사용 중', cpuBusy: '전체 코어의 {v}%', waits: '작업이 기다리는 이유', wait: '대기: {r}', claude: 'Claude', h5: '5시간', week: '주간', g: '여유', a: '바쁨', r: '빠듯함', hint: '이 컴퓨터의 코어 수와 메모리에 견줘 색을 매겨요. Claude 사용률은 공개되지 않은 주소에서 읽어서 알 수 없음으로 나올 수 있어요.' },
     x: { err: '확장 기능 오류' },
   },
   ja: {
@@ -577,6 +591,7 @@ const UI = {
     use: { day: '今日', io: '{i} / {o}', task: 'タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン',
       today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
+    mc: { title: 'このマシン', load: '負荷', cpu: 'CPU', mem: 'メモリ', swap: 'スワップ', unknown: '不明', perCore: 'コアあたり {v} · {n}コア', free: '{t} GB 中 {f} GB 空き', freeOnly: '{f} GB 空き', swapUsed: '{s} GB 使用中', cpuBusy: '全コアの {v}%', waits: 'タスクが待っている理由', wait: '待機: {r}', claude: 'Claude', h5: '5時間', week: '週間', g: '余裕', a: '混雑', r: '逼迫', hint: 'このマシンのコア数とメモリを基準に色分けしています。Claude の使用率は非公開のエンドポイントから読むため、不明になることがあります。' },
     x: { err: '拡張機能のエラー' },
   },
   zh: {
@@ -620,6 +635,7 @@ const UI = {
     use: { day: '今天', io: '{i} / {o}', task: '任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮',
       today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
+    mc: { title: '本机', load: '负载', cpu: 'CPU', mem: '内存', swap: '交换', unknown: '未知', perCore: '每核 {v} · {n} 核', free: '{t} GB 中空闲 {f} GB', freeOnly: '空闲 {f} GB', swapUsed: '已用 {s} GB', cpuBusy: '全部核心的 {v}%', waits: '任务等待的原因', wait: '等待: {r}', claude: 'Claude', h5: '5 小时', week: '每周', g: '宽裕', a: '繁忙', r: '吃紧', hint: '按本机自己的核心数和内存评级。Claude 用量来自未公开的接口,可能显示为未知。' },
     x: { err: '扩展出错' },
   },
   es: {
@@ -664,6 +680,7 @@ const UI = {
     use: { day: 'Hoy', io: '{i} / {o}',
       task: 'Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
+    mc: { title: 'Esta máquina', load: 'Carga', cpu: 'CPU', mem: 'Memoria', swap: 'Swap', unknown: 'desconocido', perCore: '{v} por núcleo · {n} núcleos', free: '{f} GB libres de {t} GB', freeOnly: '{f} GB libres', swapUsed: '{s} GB en uso', cpuBusy: '{v}% de todos los núcleos', waits: 'Por qué esperan las tareas', wait: 'Espera: {r}', claude: 'Claude', h5: '5 h', week: 'semana', g: 'Bien', a: 'Ocupada', r: 'Al límite', hint: 'Valorado según los núcleos y la RAM de esta máquina. El porcentaje de Claude viene de un endpoint no documentado y puede salir como desconocido.' },
     x: { err: 'Error de la extensión' },
   },
 };
@@ -845,9 +862,22 @@ async function load() {
   render();
   if (fresh) xLoaded();
   if (fresh && S.view === 'engine') loadEngine();
+  if (fresh) loadMachine();
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
+// machine card and footer: api/machine at most every MACH_MS (an older tower without it answers 404: nothing shown)
+const MACH_MS = 10000;
+async function loadMachine() {
+  if (S.auth || S.machBusy || (S.machAt && Date.now() - S.machAt < MACH_MS)) return;
+  S.machBusy = true;
+  try {
+    const j = await get(BASE + 'api/machine'), raw = JSON.stringify(j);
+    if (raw !== S.machRaw) { S.machRaw = raw; S.mach = j; S.machAt = Date.now(); S.machBusy = false; render(); }
+    else S.machAt = Date.now();
+  } catch (e) { S.machAt = Date.now(); if (e.status === 404) S.mach = null; }
+  S.machBusy = false;
+}
 async function loadWs() {
   if (S.auth) return;
   try {
@@ -1079,7 +1109,7 @@ function viewLanes() {
   const v = $('#v-lanes'), d = D(), K = tick();
   // The lane form sits outside every painted container, so typed values survive polling.
   shell(v, () => [h('section', { class: 'sec' }, h('div', { id: 'ln-lanes' }), laneAdd()),
-    h('div', { id: 'ln-tasks' }), h('div', { id: 'ln-reps' })]);
+    h('div', { id: 'ln-tasks' }), h('div', { id: 'ln-mach' }), h('div', { id: 'ln-reps' })]);
   paint($('#ln-lanes'), K + !!S.busy.cap + JSON.stringify([d.lanes, d.lane_cap, d.paused]), () => {
     const cap = d.lane_cap;
     return [h('div', { class: 'sec-h wrap' }, h('h2', null, L.sec.lanes), h('span', { class: 'ext' },
@@ -1091,6 +1121,7 @@ function viewLanes() {
   });
   const live = d.tasks.filter(t => ['queued', 'running', 'wrapping'].includes(t.state)).sort((a, b) => a.id - b.id);
   paint($('#ln-tasks'), K + JSON.stringify(live), () => sec(L.sec.tasks, live.length, live.length ? h('div', { class: 'list' }, live.map(t => taskRow(t))) : empty(L.empty.tasks)));
+  paint($('#ln-mach'), K + S.machRaw, () => S.mach && S.mach.machine ? sec(L.mc.title, null, machineCard(S.mach)) : null);
   paint($('#ln-reps'), K + JSON.stringify(d.reports), () => sec(L.sec.reports, null, d.reports.length ? h('div', { class: 'stack' }, d.reports.map(repCard)) : empty(L.empty.reports)));
 }
 function laneCard(l) {
@@ -1223,14 +1254,50 @@ function useLine(u) {
   if (!u || !((u.tokens_in || 0) + (u.tokens_out || 0))) return null;
   return h('div', { class: 'meta' }, fmt(L.use.today, { i: fmtTok(u.tokens_in), o: fmtTok(u.tokens_out) }) + (isNum(u.cost) ? ' · ' + fmtCost(u.cost) : ''));
 }
+// ---------- machine (api/machine: machine.py graded against this machine, why tasks wait, optional Claude percent) ----------
+const LV = { g: 'rt-green', a: 'rt-amber', r: 'rt-red' };
+function lvChip(lv) { return lv ? rtChip(LV[lv] ? LV[lv].slice(3) : null, L.mc[lv]) : rtChip(null, L.mc.unknown); }
+function num(v, nd) { return isNum(v) ? (nd ? v.toFixed(nd) : String(Math.round(v))) : null; }
+function machineCard(j) {
+  const m = j.machine, U = L.mc;
+  const row = (k, lv, text) => h('div', { class: 'mr' }, h('span', { class: 'k' }, k), lvChip(lv), h('span', { class: 'v' }, text || U.unknown));
+  const free = isNum(m.free_gb) ? (isNum(m.ram_gb) ? fmt(U.free, { f: num(m.free_gb, 1), t: num(m.ram_gb) }) : fmt(U.freeOnly, { f: num(m.free_gb, 1) })) : null;
+  const waits = Object.entries(j.waits || {});
+  return h('div', { class: 'mc', title: U.hint },
+    row(U.load, m.load_lv, isNum(m.load_per_core) ? fmt(U.perCore, { v: num(m.load_per_core, 2), n: m.cores }) : null),
+    row(U.cpu, m.cpu_lv, isNum(m.cpu) ? fmt(U.cpuBusy, { v: num(m.cpu) }) : null),
+    row(U.mem, m.mem_lv, free),
+    row(U.swap, m.swap_lv, isNum(m.swap_gb) ? fmt(U.swapUsed, { s: num(m.swap_gb, 1) }) : null),
+    claudeLine(j.usage) ? h('div', { class: 'mr' }, h('span', { class: 'k' }, U.claude), h('span', { class: 'v' }, claudeLine(j.usage))) : null,
+    waits.length ? h('div', { class: 'wt' }, h('b', null, U.waits), waits.map(([id, r]) => '#' + id + ' ' + r).join(' · ')) : null);
+}
+function claudeLine(u) {
+  if (!u) return null;
+  if (u.unknown || !Array.isArray(u.windows)) return L.mc.unknown;
+  return u.windows.map(w => (L.mc[w.name === '5h' ? 'h5' : 'week']) + ' ' + (isNum(w.percent) ? Math.round(w.percent) + '%' : L.mc.unknown)).join(' · ');
+}
+function pctLv(p) { return !isNum(p) ? null : p < 60 ? 'g' : p < 85 ? 'a' : 'r'; }
+function useMachine() {
+  const j = S.mach;
+  if (!j || !j.machine) return [];
+  const m = j.machine, out = [h('span', { class: 'r', title: L.mc.hint }, h('i', { class: 'mc-d lv-' + (m.lv || 'x') }), h('b', null, L.mc.title), L.mc[m.lv] || L.mc.unknown)];
+  if (j.usage) {
+    const wins = Array.isArray(j.usage.windows) && !j.usage.unknown ? j.usage.windows : null;
+    out.push(h('span', { class: 'r', title: L.mc.hint }, h('b', null, L.mc.claude), wins
+      ? wins.map((w, i) => h('span', { class: 'lv-' + (pctLv(w.percent) || 'x') }, (i ? ' · ' : '') + L.mc[w.name === '5h' ? 'h5' : 'week'] + ' ',
+          h('b', null, isNum(w.percent) ? Math.round(w.percent) + '%' : L.mc.unknown))) : L.mc.unknown));
+  }
+  return out;
+}
 // ---------- usage (a thin line under every tab, above the nav) ----------
 function renderUse() {
   const d = D(), list = d && d.usage && Array.isArray(d.usage.runtimes) ? d.usage.runtimes : [];
   const shown = list.filter(r => (r.tokens_in || 0) + (r.tokens_out || 0) > 0);
-  document.body.classList.toggle('has-use', shown.length > 0);
-  paint($('#use'), LANG + JSON.stringify(shown), () => shown.length ? [h('span', { class: 'k' }, L.use.day),
+  const mach = useMachine();
+  document.body.classList.toggle('has-use', shown.length > 0 || mach.length > 0);
+  paint($('#use'), LANG + JSON.stringify(shown) + (S.machRaw || ''), () => [shown.length ? [h('span', { class: 'k' }, L.use.day),
     shown.map(r => h('span', { class: 'r' }, h('b', null, rtName(r.runtime)),
-      fmt(L.use.io, { i: fmtTok(r.tokens_in), o: fmtTok(r.tokens_out) }) + (isNum(r.cost) ? ' · ' + fmtCost(r.cost) : '')))] : null);
+      fmt(L.use.io, { i: fmtTok(r.tokens_in), o: fmtTok(r.tokens_out) }) + (isNum(r.cost) ? ' · ' + fmtCost(r.cost) : '')))] : null, mach]);
   $('#use').setAttribute('title', L.use.hint);
   $('#use').setAttribute('aria-label', L.sec.usage);
 }
@@ -1325,7 +1392,8 @@ function laneAdd() {
 function taskRow(t) {
   return h('div', { class: 'row' }, h('span', { class: 'chip t-' + t.state }, L.task[t.state] || t.state),
     h('div', { class: 'body' }, h('div', { class: 'title' }, '#' + t.id, ' ', t.title),
-      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created))));
+      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created)),
+      t.state === 'queued' && S.mach && S.mach.waits && S.mach.waits[t.id] ? h('div', { class: 'sub wait' }, fmt(L.mc.wait, { r: S.mach.waits[t.id] })) : null));
 }
 function repCard(r) {
   const key = 'rep' + r.id, atts = r.attachments || [], imgs = atts.filter(p => IMG.test(p));

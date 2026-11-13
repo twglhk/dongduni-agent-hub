@@ -11,6 +11,8 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
                                   engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
+  GET  /api/machine               load, CPU, memory, swap graded g/a/r (machine.py) · why queued tasks wait ·
+                                  Claude usage percent when tower.json sets usage_percent (claudeusage.py)
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
@@ -285,6 +287,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
     own = Site("", cfg, s, "", ext or Extensions(cfg.home, log),
                own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
     siblings: dict[str, Site] = {}
+    from .claudeusage import ClaudeUsage
+    from .machine import Machine, read_waits
+    mach, cusage = Machine(), ClaudeUsage()  # one machine and one Claude login for every workspace served here
 
     def fresh_own() -> Site:
         """This workspace's config as tower.json has it now (infra adds lanes, the board sets max_lanes)."""
@@ -458,6 +463,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 return self._json(401, {"error": "sign in"})
             if path == "/api/state":
                 return self._json(200, state(c, st, me))
+            if path == "/api/machine":
+                return self._json(200, {"machine": mach.view(), "waits": read_waits(c.state_dir),
+                                        "usage": cusage.view() if c.usage_percent == "claude" else None})
             if path == "/api/workspaces":
                 return self._json(200, {"workspaces": workspaces_view(self.site)})
             if path == "/api/history":
