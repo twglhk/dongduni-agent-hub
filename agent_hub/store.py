@@ -302,6 +302,24 @@ class Store:
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id LIMIT 1", (lane,)))
 
+    def queued_for(self, lane: str) -> list[dict[str, Any]]:
+        """A lane's queued tasks, oldest first (the order they start in)."""
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id", (lane,)))
+
+    def last_closed_task(self, lane: str) -> dict[str, Any] | None:
+        """The task the lane most recently finished (closed, not cancelled)."""
+        with self.conn() as con:
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='closed' "
+                                    "ORDER BY closed DESC, id DESC LIMIT 1", (lane,)))
+
+    def busy_lanes(self) -> set[str]:
+        """Lanes holding a slot: a task running or wrapping, or a closing session whose turn has not ended."""
+        with self.conn() as con:
+            running = {r[0] for r in con.execute("SELECT lane FROM tasks WHERE state IN ('running','wrapping')")}
+            closing = {r[0] for r in con.execute("SELECT lane FROM lanes WHERE closing IS NOT NULL")}
+        return running | closing
+
     def tasks(self, states: Iterable[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
         with self.conn() as con:
             if states:

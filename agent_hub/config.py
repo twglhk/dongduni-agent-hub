@@ -7,6 +7,7 @@ State (SQLite DB, logs, members) lives in `<home>/.tower/state/`, which must sta
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -23,6 +24,7 @@ RUNTIMES = ("opencode", "claude", "codex")
 TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
+INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
 DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
 FIRST_OPENCODE_PORT = 4301
 
@@ -45,6 +47,15 @@ class ConfigError(Exception):
     pass
 
 
+def base_lane(lane: str) -> str:
+    """`docs#2` -> `docs`: the lane an instance belongs to."""
+    return lane.partition(INSTANCE_SEP)[0]
+
+
+def instance_lane(base: str, n: int) -> str:
+    return f"{base}{INSTANCE_SEP}{n}"
+
+
 @dataclass
 class Lane:
     id: str
@@ -60,6 +71,7 @@ class Lane:
     terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
     worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
+    base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
 
 
 @dataclass
@@ -95,6 +107,16 @@ class Config:
     stage_table: str = ""        # markdown table with a `model · effort` column (stagemodel.py), path from home
     require_model_lines: bool = False  # `dah task` refuses a brief without `model:` and `effort:` lines
     engines: dict[str, Engine] = field(default_factory=dict)  # always has at least "default" when a team lane has no engine
+    light_lanes: int | None = None  # extra slots (beyond max_lanes) for tasks that touch none of heavy_paths; None = one pool
+    max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
+    heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
+    memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
+    instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
+
+    @property
+    def all_lanes(self) -> dict[str, Lane]:
+        """The configured lanes plus their parallel instances."""
+        return {**self.lanes, **self.instances}
 
     @property
     def state_dir(self) -> Path:
@@ -116,13 +138,14 @@ class Config:
 
     def lane_dir(self, lane: str) -> Path:
         """Where a lane's agent works: the workspace, or the lane's own git worktree."""
-        return self.state_dir / "worktrees" / lane if self.lanes[lane].worktree else self.workdir
+        base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
+        return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]
 
     def instructions(self, lane: str) -> Path:
-        ln = self.lanes[lane]
+        ln = self.all_lanes[lane]
         return self.home / (ln.instructions or f"{TOWER_DIR}/lanes/{lane}.md")
 
 
@@ -247,7 +270,15 @@ def load(home: Path | None = None) -> Config:
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
         lanes[lid] = _lane(lid, lraw or {}, next_port, terminal, home, worktree)
         next_port += 1
-    ports = [ln.port for ln in lanes.values() if ln.port]
+    max_instances = max(1, int(raw.get("max_instances") or 1))
+    instances: dict[str, Lane] = {}
+    for lid, ln in list(lanes.items()):
+        for n in range(2, max_instances + 1) if ln.kind == "team" else ():
+            key = instance_lane(lid, n)
+            instances[key] = dataclasses.replace(ln, id=key, base=lid, label=f"{ln.label} #{n}",
+                                                 port=next_port if ln.port else None, args=list(ln.args), env=dict(ln.env))
+            next_port += 1 if ln.port else 0
+    ports = [ln.port for ln in [*lanes.values(), *instances.values()] if ln.port]
     if len(ports) != len(set(ports)):
         raise ConfigError("two lanes share one port")
     web = raw.get("web") or {}
@@ -275,6 +306,11 @@ def load(home: Path | None = None) -> Config:
         stage_table=str(raw.get("stage_table") or ""),
         require_model_lines=bool(raw.get("require_model_lines")),
         engines=engines,
+        light_lanes=int(raw["light_lanes"]) if raw.get("light_lanes") is not None else None,
+        max_instances=max_instances,
+        heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
+        memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
+        instances=instances,
     )
 
 

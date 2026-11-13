@@ -20,13 +20,14 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Callable
 
 from . import stagemodel
-from .config import HUB, INFRA, Config
+from .config import HUB, INFRA, Config, base_lane, instance_lane
 from .ext import Extensions
-from .store import HUMAN, MULTI_SEP, TOWER, Store
+from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError
 
 BATCH_SECONDS = 8
 SETTLE_SECONDS = 3
@@ -37,6 +38,7 @@ RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
 HUB_STUCK_SECONDS = 900
 USAGE_SECONDS = 60
+CHAIN_CONTEXT_K = 250  # a linked task goes into the finished task's session only while its context is under this
 STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음",
                "ja": "ハブがアイドルに戻らない", "zh": "中枢一直没有回到空闲", "es": "El hub no vuelve a quedar libre"}
 STUCK_BODY = {
@@ -83,6 +85,60 @@ WRAP_RULE = ("(This session carries exactly one item. Handle it, answer it (`dah
              "in a fresh one.)")
 
 
+PATHS_LINE = re.compile(r"^\s*paths\s*:\s*(.+)$", re.I | re.M)
+AFTER_LINE = re.compile(r"^\s*after\s*:\s*#?(\d+)", re.I | re.M)
+
+
+def task_paths(task: dict[str, Any]) -> list[str] | None:
+    """The brief's `paths:` line, comma separated and normalised; None when the brief declares none."""
+    m = PATHS_LINE.search(str(task.get("brief") or ""))
+    if not m:
+        return None
+    out = [p.strip().strip("`").strip().strip("/") for p in re.split(r"[,\n]", m.group(1))]
+    return [p for p in out if p] or None
+
+
+def paths_overlap(a: list[str], b: list[str]) -> bool:
+    return any(x == y or x.startswith(y + "/") or y.startswith(x + "/") for x in a for y in b)
+
+
+def after_of(task: dict[str, Any]) -> int | None:
+    m = AFTER_LINE.search(str(task.get("brief") or ""))
+    return int(m.group(1)) if m else None
+
+
+def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
+    """Why this task may not start now (None = it may). `after: T` waits for T to finish (an unknown T does not block).
+    Two sessions of one lane share one working tree, so beside another live task of the same lane (`also` = tasks the
+    tick has just started) both must declare `paths:` that do not overlap."""
+    dep_id = after_of(task)
+    if dep_id is not None:
+        try:
+            dep = store.task(dep_id)
+        except StoreError:
+            dep = None
+        if dep and dep["state"] in ("queued", "running", "wrapping"):
+            return f"waiting for #{dep['id']}: after"
+    base = base_lane(str(task["lane"]))
+    others = [t for t in [*store.tasks(("running", "wrapping"), limit=500), *also]
+              if t["id"] != task["id"] and base_lane(str(t["lane"])) == base]
+    mine = task_paths(task)
+    for o in others:
+        theirs = task_paths(o)
+        if mine is None:
+            return f"blocked beside #{o['id']}: no paths (#{task['id']} has no `paths:` line)"
+        if theirs is None:
+            return f"blocked beside #{o['id']}: no paths (#{o['id']} has no `paths:` line)"
+        if paths_overlap(mine, theirs):
+            return f"blocked beside #{o['id']}: overlap"
+    return None
+
+
+def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
+    """The next task continues the one just finished: its brief says `after: <prev id>`."""
+    return after_of(nxt) == prev["id"]
+
+
 def clip(text: str, n: int) -> str:
     text = " ".join(text.split())
     return text if len(text) <= n else text[: n - 1] + "…"
@@ -116,8 +172,11 @@ class Engine:
         self.ext = ext or Extensions(cfg.home, log)
         self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
         self.ext_lanes: dict[str, str] | None = None  # lane statuses as extensions last heard them
-        self.team = cfg.team()
-        store.sync_lane_engines({lid: cfg.lanes[lid].engine for lid in self.team})
+        self._team = cfg.team()
+        self.max_instances = cfg.max_instances
+        self.heavy: dict[str, int] = {}  # lane -> process MB over cfg.memory_limit_mb (memwatch fills it)
+        self.rotate_asked: set[int] = set()  # tasks already asked to hand off because their session is fat
+        store.sync_lane_engines({lid: cfg.all_lanes[lid].engine for lid in self.team})
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
@@ -190,6 +249,20 @@ class Engine:
 
     # ---------- tick ----------
 
+    @property
+    def team(self) -> list[str]:
+        """Team lanes plus their parallel instances (`docs#2` ...)."""
+        return [*self._team, *(k for k in self.cfg.instances if base_lane(k) in self._team)]
+
+    def conflict(self, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
+        return conflict_of(self.store, task, also)
+
+    def weight(self, task: dict[str, Any]) -> str:
+        """heavy = `paths:` under one of cfg.heavy_paths (takes a max_lanes slot); anything else is light."""
+        paths = task_paths(task) or []
+        roots = self.cfg.heavy_paths
+        return "heavy" if any(p == r or p.startswith(r + "/") for p in paths for r in roots) else "light"
+
     def lanes(self) -> list[str]:
         return [HUB, *([INFRA] if self.has_infra else []), *self.team]
 
@@ -234,7 +307,7 @@ class Engine:
             seen, self.ext_lanes = self.ext_lanes, dict(statuses)
             for lane, st in statuses.items():
                 if seen is not None and seen.get(lane) != st:
-                    ln = self.cfg.lanes[lane]
+                    ln = self.cfg.all_lanes[lane]
                     events.append(("lane", {"lane": lane, "status": st, "was": seen.get(lane),
                                             "runtime": ln.runtime, "terminal": ln.terminal}))
             for kind, data in events:
@@ -262,19 +335,19 @@ class Engine:
                 self.log(f"{lane}: usage failed: {e}")
                 continue
             if u:
-                self.store.record_usage(lane, sid, self.cfg.lanes[lane].runtime, int(u.get("tokens_in") or 0),
+                self.store.record_usage(lane, sid, self.cfg.all_lanes[lane].runtime, int(u.get("tokens_in") or 0),
                                         int(u.get("tokens_out") or 0), u.get("cost"), u.get("ctx_k"))
 
     # ---------- live asks ----------
 
     def _questions(self, statuses: dict[str, str]) -> None:
         for lane, st in statuses.items():
-            if self.cfg.lanes[lane].terminal == "none" or st != "asking":
+            if self.cfg.all_lanes[lane].terminal == "none" or st != "asking":
                 self.waiting.discard(lane)
             elif lane not in self.waiting:  # only a person at the window can answer it
                 self.waiting.add(lane)
                 self.notify([{"id": lane, "lane": lane, "alert": True,
-                              "title": f"{lane} waits for an answer in its {self.cfg.lanes[lane].terminal} window"}])
+                              "title": f"{lane} waits for an answer in its {self.cfg.all_lanes[lane].terminal} window"}])
                 self.log(f"{lane}: waiting for an answer in its window")
             if lane in (HUB, INFRA):
                 self._ask_board(lane, st)
@@ -357,10 +430,10 @@ class Engine:
                      f"`dah log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
                      f"allows and nothing beyond it. If it is unclear, `dah item add` or `dah report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
-            ln = self.cfg.lanes.get(lane)
+            ln = self.cfg.all_lanes.get(lane)
             cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) "
                               "VALUES(?,?,?,?,?,?)",
-                              (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
+                              (base_lane(lane), clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
                                ln.engine if ln else None))
             self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
                             it["task_id"], it["id"], con=con)
@@ -382,10 +455,16 @@ class Engine:
         info = self.store.lane(lane)
         if task is None:
             if info.get("closing") and st in ("idle", "closed", "asking"):  # asking: a prompt the cancelled or
-                if st != "closed" and self.rt.owned(lane):                   # wrapped task no longer needs
+                if st == "idle" and self.rt.owned(lane) and self._chain(lane, info):  # wrapped task no longer needs
+                    return
+                if st != "closed" and self.rt.owned(lane):
                     self.rt.close(lane)
                     self.log(f"{lane}: wrapped, closed")
                 self.store.set_lane(lane, closing=None)
+            elif lane in self.heavy and st == "idle" and self.rt.owned(lane) and self._idle_for(lane, st) >= SETTLE_SECONDS:
+                mb = self.heavy.pop(lane)  # an idle session with no task: nothing to hand over, close it to free memory
+                self.rt.close(lane)
+                self.log(f"{lane}: {mb} MB, idle session closed")
             return
         if st == "closed":
             self._revive(lane, task)
@@ -393,6 +472,7 @@ class Engine:
         if task.get("rotate_ready"):
             if st == "idle" and self.rt.owned(lane):
                 self.rt.close(lane)
+                self.heavy.pop(lane, None)  # a new process: no old measure until memwatch reads again
                 self._open_resume(lane, task, "handed off to a fresh session")
                 self.store.update_task(task["id"], rotate_ready=None)
             return
@@ -403,6 +483,14 @@ class Engine:
         if msgs and idle_for >= SETTLE_SECONDS:
             self._send(lane, task["session"], "[tower]\n" + "\n\n".join(m["text"] for m in msgs))
             self.store.mark_delivered(m["id"] for m in msgs)
+            self.store.update_task(task["id"], last_prompt=self.clock())
+            return
+        if lane in self.heavy and task["id"] not in self.rotate_asked:
+            self.rotate_asked.add(task["id"])
+            self.store.push(lane, TOWER, "rotate", f"Your session process is using {self.heavy[lane]} MB, over the limit "
+                            f"({self.cfg.memory_limit_mb} MB). Write down where you are and hand off: "
+                            f"`dah report handoff \"[now] ... [plan] ... [files] ...\"`, then end your turn. A fresh "
+                            f"session continues the task.", task["id"])
             self.store.update_task(task["id"], last_prompt=self.clock())
             return
         waiting = self.store.open_items_for_task(task["id"]) > 0
@@ -417,19 +505,67 @@ class Engine:
                                 f"quiet after {NUDGE_LIMIT} nudges. Its last words: `dah last {lane}`.", task["id"])
                 self.store.update_task(task["id"], nudges=n + 1)
 
+    def _chain(self, lane: str, info: dict[str, Any]) -> bool:
+        """A lane whose next queued task says `after: <the task it just finished>` keeps its session: the task goes
+        into it instead of closing it and opening a fresh one. Not for a fat session (memwatch) or a long context."""
+        prev = self.store.last_closed_task(lane)
+        sid = info.get("session")
+        if not prev or not sid or lane in self.heavy:
+            return False
+        nxt = next((t for t in self.store.queued_for(lane) if linked(prev, t) and not self.conflict(t)), None)
+        if nxt is None or self.rt.context_k(lane, sid) >= CHAIN_CONTEXT_K:
+            return False
+        task = self.store.claim_task(nxt["id"])
+        if task is None:
+            return False
+        text = (f"[tower] Task #{prev['id']} is wrapped and this one continues it, so you keep this session. Use what "
+                f"you know, but report on this task fresh with `dah report`.\n\n{self.start_prompt(task)}")
+        try:
+            self._send(lane, sid, text)
+        except Exception as e:
+            self.store.update_task(nxt["id"], state="queued", started=None, last_prompt=None)
+            self.log(f"{lane}: task #{nxt['id']} could not be sent to the same session: {e}")
+            return False
+        self.store.update_task(task["id"], session=sid)
+        self.store.set_lane(lane, closing=None)
+        self.store.drop_pending(lane, ("tell", "nudge", "wrap", "rotate"), keep_task=task["id"])
+        self.log(f"{lane}: task #{task['id']} continues #{prev['id']} in the same session")
+        return True
+
+    def _slots(self) -> tuple[Callable[[dict[str, Any]], str], int, int]:
+        """(weight of a task, free heavy slots, free light slots). Without light_lanes and heavy_paths there is one pool."""
+        split = self.cfg.light_lanes is not None and bool(self.cfg.heavy_paths)
+        wt = self.weight if split else (lambda t: "heavy")
+        busy = self.store.busy_lanes() & set(self.team)
+        live = {t["lane"]: wt(t) for t in self.store.tasks(("running", "wrapping"), limit=500)}
+        heavy_busy = len([b for b in busy if live.get(b, "heavy") == "heavy"])  # a closing session counts as heavy
+        light_busy = len(busy) - heavy_busy
+        return wt, self.max_lanes - heavy_busy, (self.cfg.light_lanes or 0) - light_busy if split else 0
+
     def _start_queued(self, statuses: dict[str, str]) -> None:
-        busy = {t["lane"] for t in self.store.tasks(("running", "wrapping"), limit=500)}
-        free = self.max_lanes - len(busy)
-        waiting = []
+        wt, free_h, free_l = self._slots()
+        busy = self.store.busy_lanes()
+        waiting: list[dict[str, Any]] = []
         for lane in self.team:
-            nxt = self.store.next_queued(lane)
-            if nxt and lane not in busy and not self.store.lane(lane).get("closing"):
-                st = self.rt.status(lane)
-                if st == "closed" or (st == "idle" and self.rt.owned(lane)):
-                    statuses[lane] = st
-                    waiting.append(nxt)
-        for nxt in sorted(waiting, key=lambda t: t["id"])[:max(0, free)]:
+            if lane in busy or not self.store.queued_for(lane):
+                continue
+            st = self.rt.status(lane)
+            if st == "closed" or (st == "idle" and self.rt.owned(lane)):
+                statuses[lane] = st
+                waiting += self.store.queued_for(lane)
+        waiting += self._spill(busy, free_h + free_l, statuses)
+        started: list[dict[str, Any]] = []
+        for nxt in sorted(waiting, key=lambda t: t["id"]):
             lane = nxt["lane"]
+            w = wt(nxt)
+            if any(t["lane"] == lane for t in started):
+                continue  # the lane has its task for this tick
+            if len([t for t in started if wt(t) == w]) >= max(0, free_h if w == "heavy" else free_l):
+                continue  # full. A task skipped for a conflict takes no slot, so a later one can start (head-of-line skip)
+            why = self.conflict(nxt, started)
+            if why:
+                self.log(f"{lane}: task #{nxt['id']} waits: {why}")
+                continue
             try:
                 if statuses[lane] == "idle":
                     self.rt.close(lane)  # a fresh session per task
@@ -444,10 +580,43 @@ class Engine:
             except Exception as e:
                 self.log(f"{lane}: task #{nxt['id']} failed to start: {e}")
                 continue
+            started.append(nxt)
+            self.heavy.pop(lane, None)
             self.store.update_task(nxt["id"], session=sid)
-            self.store.drop_pending(lane, ("tell", "nudge", "wrap"), keep_task=nxt["id"])
+            self.store.drop_pending(lane, ("tell", "nudge", "wrap", "rotate"), keep_task=nxt["id"])
             self.idle_since.pop(lane, None)
             self.log(f"{lane}: task #{nxt['id']} started")
+
+    def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
+        """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)
+        are free, gets its first queued task that may run beside the live ones moved onto the key. Tasks that conflict
+        (overlapping or undeclared `paths:`, an unfinished `after:`) stay queued and the next one is tried."""
+        for task in self.store.tasks(("queued",), limit=500):  # max_instances was lowered: back to the base lane
+            n = task["lane"].partition("#")[2]
+            if n and (not n.isdigit() or int(n) > self.max_instances):
+                self.store.update_task(task["id"], lane=base_lane(task["lane"]))
+        out: list[dict[str, Any]] = []
+        if self.max_instances < 2 or room <= 0:
+            return out
+        moved: list[dict[str, Any]] = []
+        for base in self._team:
+            if base not in busy:
+                continue
+            keys = [instance_lane(base, n) for n in range(2, self.max_instances + 1)]
+            key = next((k for k in keys if k not in busy and not self.store.lane(k).get("closing")
+                        and not self.store.queued_for(k) and self.rt.status(k) == "closed"), None)
+            if key is None:
+                continue
+            for task in self.store.queued_for(base):
+                if not self.conflict(task, moved):
+                    moved.append({**task, "lane": key})
+                    break
+        for task in sorted(moved, key=lambda t: t["id"])[:room]:
+            self.store.update_task(task["id"], lane=task["lane"])
+            statuses[task["lane"]] = "closed"
+            self.log(f"{task['lane']}: task #{task['id']} moved to a parallel session")
+            out.append(self.store.task(task["id"]))
+        return out
 
     def _revive(self, lane: str, task: dict[str, Any]) -> None:
         if task["respawns"] >= RESPAWN_LIMIT:
@@ -510,11 +679,12 @@ class Engine:
             self.store.mark_delivered(m["id"] for m in msgs)
             return
         if (not msgs and sid and idle_for >= 30 and self.rt.owned(HUB)
-                and self.rt.context_k(HUB, sid) >= HUB_ROTATE_K):
+                and (HUB in self.heavy or self.rt.context_k(HUB, sid) >= HUB_ROTATE_K)):
+            why = f"process at {self.heavy.pop(HUB)} MB" if HUB in self.heavy else "context grew large"
             self.rt.close(HUB)
             self.rt.open(HUB, self.hub_prompt())
             self.idle_since.pop(HUB, None)
-            self.log("hub: context grew large, fresh session")
+            self.log(f"hub: {why}, fresh session")
 
     def _watch_stuck(self) -> None:
         msgs = self.store.pending(HUB)

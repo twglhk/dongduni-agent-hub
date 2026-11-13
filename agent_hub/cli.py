@@ -20,7 +20,8 @@ from typing import Any
 from . import config as config_mod
 from . import procs
 from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
-from .engine import VERDICT_WORD, Engine, clip
+from .engine import VERDICT_WORD, Engine, clip, conflict_of
+from .memwatch import MemWatch
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
 from .notify import notifier
 from .store import HUMAN, Store, StoreError
@@ -45,7 +46,7 @@ def who(args: argparse.Namespace, c: Config) -> str:
     me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
     if not me:
         raise TowerError("Unknown caller. Sessions the tower opens have TOWER_LANE; by hand, add --as LANE.")
-    if me not in c.lanes:
+    if me not in c.all_lanes:
         raise TowerError(f"unknown lane {me} (lanes: {', '.join(c.lanes)})")
     return me
 
@@ -334,6 +335,16 @@ def cmd_infra(args: argparse.Namespace) -> None:
 
 # ---------------------------------------------------------------- reading
 
+def lane_markers(c: Config, s: Store) -> dict[str, list[str]]:
+    """What each lane's session process carries on its command line (memwatch): its session id, or its OpenCode port."""
+    out: dict[str, list[str]] = {}
+    for lid, ln in c.all_lanes.items():
+        sid = s.lane(lid).get("session")
+        if sid:
+            out[lid] = [str(sid), f"--port {ln.port}" if ln.runtime == "opencode" and ln.port else ""]
+    return out
+
+
 def cmd_status(_args: argparse.Namespace) -> None:
     c = cfg()
     s = store(c)
@@ -343,20 +354,27 @@ def cmd_status(_args: argparse.Namespace) -> None:
           + (f" · {c.public_url}" if c.public_url else ""))
     if c.local_only and not os.environ.get("TOWER_LANE"):  # people, not the hub polling its status
         print(REACH_HINT)
-    for lid, ln in c.lanes.items():
+    all_queued = s.tasks(("queued",), 500)
+    for lid, ln in c.all_lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid)
-        queued = sum(1 for t in s.tasks(("queued",), 500) if t["lane"] == lid)
+        queued = sorted((t for t in all_queued if t["lane"] == lid), key=lambda t: t["id"])
+        if ln.base and not (task or queued or row.get("session")):
+            continue  # a parallel session shows only while it is in use
         runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}") + ("·wt" if ln.worktree else "")
         line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
             line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\""
         if queued:
-            line += f" · {queued} queued"
+            line += f" · {len(queued)} queued"
         opened = sum(1 for it in s.items(state="open", lane=lid))
         if opened:
             line += f" · {opened} open items"
         print(line)
+        for t in queued:  # why a queued task is not starting (the engine uses the same rule)
+            why = conflict_of(s, t) if not ln.base else None
+            if why:
+                print(f"  #{t['id']} waits: {why}")
     terms = {ln.terminal for ln in c.lanes.values()}
     if "tmux" in terms:
         from .runtimes import tmux_session
@@ -435,7 +453,7 @@ def cmd_log(args: argparse.Namespace) -> None:
 def cmd_last(args: argparse.Namespace) -> None:
     from .runtimes import Runtimes
     c = cfg()
-    if args.lane not in c.lanes:
+    if args.lane not in c.all_lanes:
         raise TowerError(f"unknown lane {args.lane}")
     texts = Runtimes(c, store(c)).last_text(args.lane, args.n)
     print("\n\n---\n\n".join(texts) if texts else "(nothing yet)")
@@ -450,8 +468,8 @@ def say(text: str) -> None:
 def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
     """A live session belongs to the adapter that started it: when tower.json changes a lane's runtime or terminal,
     close it the old way, or the new adapter would start a second agent beside it."""
-    for lid, ln in old.lanes.items():
-        nl = new.lanes.get(lid)
+    for lid, ln in old.all_lanes.items():
+        nl = new.all_lanes.get(lid)
         if nl and (nl.runtime, nl.terminal, nl.worktree) != (ln.runtime, ln.terminal, ln.worktree) \
                 and rt.status(lid) != "closed":
             rt.close(lid)
@@ -478,6 +496,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     cfg_path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
     mtime = cfg_path.stat().st_mtime
     engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+    memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
     tunnel: subprocess.Popen[bytes] | None = None
     tunnel_at = 0.0
 
@@ -499,6 +518,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     close_changed(engine.rt, c, c2, say)
                     c = c2
                     engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+                    memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
                     say("tower.json reloaded")
             except (ConfigError, OSError) as e:
                 say(f"tower.json not reloaded: {e}")
@@ -507,6 +527,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                 say(f"tunnel started: {c.tunnel}")
             try:
                 if not (c.state_dir / "paused").exists():
+                    memwatch.poll()
+                    engine.heavy = memwatch.heavy
                     engine.tick()
             except Exception as e:  # the loop never dies; the next tick looks again
                 say(f"tick failed: {e!r}")

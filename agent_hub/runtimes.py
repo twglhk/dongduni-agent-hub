@@ -99,7 +99,7 @@ def _git(cfg: Config, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def worktree_branch(lane: Lane) -> str:
-    return f"dah/{lane.id}"
+    return f"dah/{lane.base or lane.id}"
 
 
 def lane_cwd(cfg: Config, lane: Lane) -> Path:
@@ -1079,7 +1079,7 @@ class Runtimes:
     def __init__(self, cfg: Config, store: Store, ext: Extensions | None = None):
         self.cfg = cfg
         ext = ext or registry(cfg.home)
-        self.adapters: dict[str, Adapter] = {lid: adapter_class(ln, ext)(cfg, store, ln) for lid, ln in cfg.lanes.items()}
+        self.adapters: dict[str, Adapter] = {lid: adapter_class(ln, ext)(cfg, store, ln) for lid, ln in cfg.all_lanes.items()}
 
     def _a(self, lane: str) -> Any:
         return self.adapters[lane]
@@ -1097,7 +1097,7 @@ class Runtimes:
         self._a(lane).reply_question(qid, answers)
 
     def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
-        ln = self.cfg.lanes[lane]
+        ln = self.cfg.all_lanes[lane]
         self._a(lane).set_opts(model, effort)  # OpenCode lanes keep their configured model; claude and codex honour these
         if ln.worktree:
             lane_cwd(self.cfg, ln)
