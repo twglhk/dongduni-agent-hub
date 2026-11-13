@@ -54,6 +54,20 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
+### 0.9.0
+
+A minor release below 1.0. No breaking changes.
+
+**New**
+
+- **Model and effort guide.** `guide/MODELS.md` (`dah guide models`): the current Claude lineup (Fable, Opus, Sonnet, Haiku), effort levels, and the rule: start from the model's own default, raise where a task earns it, make the task small before making the model strong. The engine templates' pattern libraries ship with these defaults (`sonnet/high`).
+- **Validation.** `fable` joins the ranked models; `stagemodel.problems()` flags a mistyped model alias or an effort outside `low|medium|high|xhigh|max`. `dah task` now warns (it does not refuse unless `require_model_lines` is set) when a brief names no model or effort, or a bad one.
+- **Two required lanes.** `dah engine add` creates `NAME-research` (a referenced note against tier-1 sources on the research-note process card, with a library row; Opus medium) and `NAME-audit` (reads raw evidence for why a pattern happened and sends the hub cards with predicted effects, then scores them; Fable high) with their skills. `dah init` creates plain `research` and `audit` lanes and skills. On Claude lanes the lane's `model` is preset to `opus` and `fable`; change it where Fable is not configured.
+
+**Upgrade**
+
+`dah update` leaves existing lanes alone. To get the two lanes in an existing workspace: `dah lane add research --runtime claude` and `dah lane add audit --runtime claude` then `dah install` (it writes the lane files and skills from the new templates), or `dah engine add NAME --from blank`.
+
 ### 0.8.0
 
 A minor release below 1.0, with breaking changes. `agent_hub/__init__.py` is the only place the version is set; `pyproject.toml` reads it.

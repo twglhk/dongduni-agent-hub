@@ -45,6 +45,26 @@ class StageModelTest(unittest.TestCase):
         self.assertEqual(stagemodel.missing_lines("model: opus\neffort: high"), [])
 
 
+class ValidationTest(unittest.TestCase):
+    def test_four_aliases_and_full_ids_pass(self) -> None:
+        for m in ("fable", "opus", "sonnet", "haiku", "Opus", "claude-opus-5-5", "gpt-5", "openai/gpt-5"):
+            self.assertEqual(stagemodel.problems(m, "high"), [], m)
+
+    def test_typo_and_bad_effort_are_flagged(self) -> None:
+        self.assertEqual(len(stagemodel.problems("opuss", None)), 1)
+        self.assertEqual(len(stagemodel.problems("opus", "ultra")), 1)
+        self.assertEqual(len(stagemodel.problems("sonet", "huge")), 2)
+
+    def test_all_five_effort_levels_and_fable_in_a_table(self) -> None:
+        for lvl in ("low", "medium", "high", "xhigh", "max"):
+            self.assertEqual(stagemodel.problems("fable", lvl), [])
+        t = Path(tempfile.mkdtemp()) / "lib.md"
+        t.write_text("| # | Kind | Model · effort |\n|---|---|---|\n| 1 | A | 1 haiku/low; 2 sonnet/high; 3 opus/xhigh; 4 fable/max |\n", encoding="utf-8")
+        self.assertEqual(stagemodel.resolve(t, "Line: #1 stage 1-4"), ("fable", "max"))
+        self.assertEqual(stagemodel.resolve(t, "Line: #1 stage 3"), ("opus", "xhigh"))
+        self.assertEqual(stagemodel.resolve(t, "Line: #1 stage 1"), ("haiku", "low"))
+
+
 class EngineOptsTest(unittest.TestCase):
     def test_task_start_passes_model_and_effort(self) -> None:
         cfg = make_home({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude"}})
