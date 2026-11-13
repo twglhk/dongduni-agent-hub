@@ -779,10 +779,14 @@ def cmd_init(args: argparse.Namespace) -> None:
         path = init(home, args.name, args.lang, hub, infra, args.project, args.safe, args.force, args.terminal)
     except FileExistsError as e:
         raise TowerError(str(e))
+    from .install import fix_models
+    notes = fix_models(home) if not os.environ.get("DAH_SKIP_MODEL_CHECK") else []
     c = config_mod.load(home)
     wrote = install(c, force=args.force)
     slug = config_mod.register(home)
     print(f"wrote {path}")
+    for n in notes:
+        print(f"note: {n}")
     for w in wrote:
         print(f"wrote {w}")
     print(f"board port {c.web_port} · workspace \"{slug}\" registered (`dah workspaces`)")

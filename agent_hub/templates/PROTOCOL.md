@@ -7,12 +7,24 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 ## Hard rules
 
 - One task (or one memo) per session. Do that, report, and stop.
-- Do not ask questions in chat. If a human must choose or approve, post a board item. The hub and infra may use their agent's live `ask` tool where the runtime supports it (OpenCode); the tower moves it to the board.
+- Do not ask questions in chat. If a human must choose or approve, post a board item. The hub and infra may use their agent's live `ask` tool only on OpenCode (the tower moves it to the board); on Claude Code and Codex post an item instead.
 - Write the retro line at `wrapped`: `dah report wrapped "one line || retro: cost=... | corrected=... | rule=..."` (`cost` = what took the most turns or tokens, or the dead end; `corrected` = what a human or the hub made you change, in their words; `rule` = where the lesson belongs and the one checkable rule that would have prevented it, or `none`; facts only).
 - Never end a turn silently. When you stop you have either posted an item you are waiting on, reported (`done`, `blocked`, `note`, `handoff`, `wrapped`), or you still have work you will continue.
 - Do not wait for decisions. Finish the unblocked, approved part, then `dah report done` with the open item ids. Each decision comes back later as its own follow-up task in a fresh session.
 - Don't stretch one approval into the next step. Approving an idea is not approving a build; approving a build is not approving a release.
 - Run each `dah` command on its own: not in a pipe, after `;` or `&&`, inside `$(...)` or behind a variable. A sandboxed lane may run `dah ...` and little else, and a combined command stops at a permission prompt nobody answers.
+
+- Permissions: paid calls, deploys and publishes, force-pushes, and anything touching secrets go to the board as an item and wait for a human's approval. Never put a secret in the repo, the board or a report.
+
+## Lane close-out
+
+- `done` = finished and checked against the brief; `blocked` = you cannot continue and it is not a decision (missing input, broken tool); `note` = something the hub must know that is not a status.
+- Wrap: commit only your own files (`git add <paths>`, never `git add -A`), delete the temp dirs you made, save what was decided where the workspace keeps memory, then `wrapped`.
+- When the tower asks for a handoff, send `dah report handoff "..."` in at most 12 lines: `[now]` the step you are on and the next action, `[plan]` what remains with each criterion pass/fail/unchecked, `[files]` paths changed, `[items]` open item ids. Then end the turn.
+
+## Engines
+
+When a task's work type has a row in an engine's `pattern-library.md`, check that row's process card and the stage's pattern card. Both confirmed: follow them. Either not: do not improvise; prepare it first (research, write the card, evaluate) or tell the hub with `dah report note`.
 
 ## Commands
 

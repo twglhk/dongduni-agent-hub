@@ -33,7 +33,7 @@ import yaml
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 KNOWN_KEYS = {"name", "description", "license", "compatibility", "metadata"}
-SKILL_DIRS = (".opencode/skills", ".agents/skills")  # `.agents/skills` is where `dah engine add` puts an engine's skills
+SKILL_DIRS = (".opencode/skills", ".agents/skills", ".claude/skills")  # `.agents/skills` is where `dah engine add` puts an engine's skills
 BODY_BUDGET = 150
 REF_BUDGET = 300
 

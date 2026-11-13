@@ -88,7 +88,8 @@ class ScaffoldTest(unittest.TestCase):
         for lid in ("research", "audit"):
             self.assertIn(lid, cfg.lanes)
             self.assertTrue(cfg.instructions(lid).is_file())
-            self.assertTrue((self.home / ".agents/skills" / lid / "SKILL.md").is_file())
+            where = ".claude/skills" if cfg.lanes[lid].runtime == "claude" else ".agents/skills"
+            self.assertTrue((self.home / where / lid / "SKILL.md").is_file())
             self.assertIn(f'skill("{lid}")', cfg.instructions(lid).read_text(encoding="utf-8"))
 
     def test_models_guide_is_shipped(self) -> None:
@@ -122,7 +123,7 @@ class ScaffoldTest(unittest.TestCase):
         self.tower("engine", "add", "beta", "--from", "animation", "--runtime", "codex")
         cfg = config_mod.load(self.home)
         self.assertEqual(cfg.lanes["beta-story"].runtime, "codex")
-        self.assertIn("alpha-storyboard", {p.name for p in (self.home / ".agents/skills").iterdir()})
+        self.assertIn("alpha-storyboard", {p.name for p in (self.home / (".claude/skills" if cfg.lanes["alpha-story"].runtime == "claude" else ".agents/skills")).iterdir()})
         self.assertIn("beta-storyboard", {p.name for p in (self.home / ".agents/skills").iterdir()})
         self.assertIn("exists", self.tower("engine", "add", "alpha", "--from", "blank", ok=False))
         self.assertIn("one of", self.tower("engine", "add", "gamma", "--from", "nope", ok=False))

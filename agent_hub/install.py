@@ -80,6 +80,51 @@ def lane_template(lane: str) -> str:
     return (TEMPLATES / "lanes" / "team.md").read_text(encoding="utf-8").replace("{lane}", lane)
 
 
+BLOCK_START, BLOCK_END = "<!-- dah:start -->", "<!-- dah:end -->"
+
+
+def write_agents_block(home: Path, wrote: list[str]) -> None:
+    """Put the short agent-hub pointer into CLAUDE.md and AGENTS.md so a plain session finds the tower. An existing
+    file is only appended to (our own marked block is refreshed in place); a CLAUDE.md that imports AGENTS.md is left."""
+    block = (TEMPLATES / "AGENTS-block.md").read_text(encoding="utf-8")
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        path = home / name
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if name == "CLAUDE.md" and "@AGENTS.md" in text.splitlines() and BLOCK_START in (home / "AGENTS.md").read_text(encoding="utf-8"):
+            continue
+        a, b = text.find(BLOCK_START), text.find(BLOCK_END)
+        if a >= 0 and b > a:
+            new = text[:a] + block.rstrip("\n") + text[b + len(BLOCK_END):]
+        else:
+            new = text + ("" if not text or text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n") + block
+        if new != text:
+            path.write_text(new, encoding="utf-8")
+            wrote.append(name)
+
+
+def remove_agents_block(home: Path) -> list[str]:
+    gone = []
+    for name in ("AGENTS.md", "CLAUDE.md"):
+        path = home / name
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        a, b = text.find(BLOCK_START), text.find(BLOCK_END)
+        if a >= 0 and b > a:
+            rest = (text[:a].rstrip("\n") + "\n" + text[b + len(BLOCK_END):].lstrip("\n")).strip("\n")
+            if rest:
+                path.write_text(rest + "\n", encoding="utf-8")
+            else:
+                path.unlink()
+            gone.append(f"removed the agent-hub block from {name}")
+    return gone
+
+
+def required_skills_dir(cfg: Config, role: str) -> str:
+    """Claude Code reads project skills from .claude/skills; the others from .agents/skills."""
+    return ".claude/skills" if cfg.lanes[role].runtime == "claude" else ""
+
+
 def install(cfg: Config, force: bool = False) -> list[str]:
     """Idempotent: existing files are kept unless force. Returns the paths written."""
     home, wrote = cfg.home, []
@@ -88,9 +133,10 @@ def install(cfg: Config, force: bool = False) -> list[str]:
         _write(cfg.instructions(lid), lane_template(lid), force, wrote, home)
     for role in REQUIRED_LANES:
         if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE):
-            for path, text in required_skill_files(home, role, role, "this project", "").items():
+            for path, text in required_skill_files(home, role, role, "this project", required_skills_dir(cfg, role)).items():
                 _write(path, text, force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
+    write_agents_block(home, wrote)
     ignore_state(home, wrote)
     if not (home / TOWER_DIR / "state" / "board.sha").is_file():
         board_changed(home)  # remember which built-in board this workspace started from
@@ -202,6 +248,32 @@ def upgrade_command() -> list[str] | None:
     raise FileNotFoundError("cannot tell how dah was installed")
 
 
+def model_works(runtime: str, model: str, timeout: int = 90) -> bool:
+    """One tiny call to see whether the agent CLI accepts a model alias (a plan may lack `fable`)."""
+    if runtime != "claude" or not shutil.which("claude"):
+        return True
+    try:
+        p = subprocess.run(["claude", "--model", model, "-p", "Reply with ok."], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return True  # cannot tell: keep the default
+    return p.returncode == 0
+
+
+def fix_models(home: Path, probe=model_works) -> list[str]:
+    """Lanes that name a model the runtime refuses get `opus` instead; says what it changed."""
+    notes: list[str] = []
+
+    def fn(data: dict) -> None:
+        for lid, ln in (data.get("lanes") or {}).items():
+            if (ln or {}).get("model") == "fable" and not probe(ln.get("runtime", ""), "fable"):
+                ln["model"] = "opus"
+                notes.append(f"lane {lid}: model fable is not available to this agent, using opus")
+
+    edit_config(home, fn)
+    return notes
+
+
 def default_runtime() -> str | None:
     return next((r for r in ("opencode", "claude", "codex") if shutil.which(r)), None)
 
@@ -294,6 +366,11 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
+    for role in REQUIRED_LANES:
+        if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE) and cfg.lanes[role].runtime == "claude":
+            for path, text in required_skill_files(home, role, role, "this project", ".claude/skills").items():
+                _write(path, text, False, report["shortcuts"], home)
+    write_agents_block(home, report["shortcuts"])
     ignore_state(home, report["shortcuts"])
     return report
 
@@ -489,6 +566,7 @@ def detach(cfg: Config, purge: bool) -> list[str]:
                         f"kept worktree {path}: {(p.stderr or p.stdout).strip()[:200]}")
     for lid in cfg.lanes:
         done += [f"removed {f}" for f in remove_shims(cfg, lid)]
+    done += remove_agents_block(cfg.home)
     gi = cfg.home / ".gitignore"
     if gi.is_file():
         lines = gi.read_text(encoding="utf-8").splitlines()
@@ -580,7 +658,7 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
         raise ValueError('--label: no quotes, backslashes, colons, # or line breaks (it goes into skill descriptions)')
     src = ENGINE_TEMPLATES / kind
     meta = json.loads((src / "kind.json").read_text(encoding="utf-8"))
-    skills_dir = skills or engines_mod.SKILLS_DEFAULT
+    skills_dir = skills or (".claude/skills" if runtime == "claude" else engines_mod.SKILLS_DEFAULT)
     edir = f"engines/{eid}"
     library = f"{edir}/pattern-library.md"
     lib_path = cfg.home / library

@@ -18,13 +18,18 @@ The tower batches news into your session while you are idle: human requests, rep
 1. **Human request** (`Request #N`): do it, or break it into tasks. A big outcome becomes a few tasks and a board item for the plan, not a separate list. Answer it on the board with `dah memo reply N "what you did / what happens next"`.
 2. **Item from a lane**: read it (`dah show ID`) and the actual artifact. If it is a quality or defect call inside approved scope, decide it yourself with `dah decide ... --basis`. If it needs a human (new scope, taste, money, final adoption, anything irreversible), make it readable and `dah escalate ID --why "..."`.
 3. **Done report**: check the real output, not the summary. Defect inside the deliverable → `dah tell LANE "fix: ..."`. Pass → `dah wrap LANE`.
-4. **Decision**: the tower already queued a follow-up task where one was needed; check the plan still holds.
+4. **Decision**: the tower already queued a follow-up task where one was needed; check the plan still holds, then close the item: either follow the answer or decide what is yours to decide (`dah decide ... --basis`), so no item stays open once its answer is handled.
 
-Keep `dah doing "one line"` current so humans see what you are on.
+Keep `dah doing "one line"` current so humans see what you are on. Run each `dah` command on its own (no `cd ... &&`, no `;`).
 
 ## Team lanes
 
-Run `dah status` to see which lanes exist. A task brief must stand alone: the outcome, the done criteria, the files and rules that matter, and what not to touch. One deliverable per task.
+Run `dah status` to see which lanes exist. A task brief must stand alone: the outcome, the done criteria, the files and rules that matter, and what not to touch. One deliverable per task. Every brief also carries:
+
+- `model:` and `effort:` lines (`guide/MODELS.md`), or a `Line:` header naming the process card, whose row sets them.
+- `paths:` the files the lane may touch; `after: T` when it needs task T first; `--deliverable KEY` when it reworks something already made.
+
+Use the research lane for a question that needs sources, and the audit lane to review a process; an audit card is a proposal you decide. At review read `dah ratings` and `dah blame`. Check the engine flow in `.tower/PROTOCOL.md` before you queue work in a method that has cards.
 
 When work needs a lane that does not exist yet, send it to infra (`dah infra "add a lane X that does Y, runtime Z" --approved "request #N"`) and tell the human what you asked for. Until it exists, do small work yourself.
 
@@ -33,4 +38,5 @@ Requests to change the board or the tower itself (a new tab, a dashboard, an int
 ## Limits
 
 - You never approve your own scope changes. Humans approve new scope, spending, releases, secrets and anything visible outside the team.
+- On Claude Code you have no live `ask`: post a board item when a human must choose.
 - Keep your own instruction file current only when a human approved the change.

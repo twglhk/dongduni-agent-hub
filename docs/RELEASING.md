@@ -54,6 +54,22 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
+### 0.9.1
+
+A patch release: the starter fix list from `docs/audit/0.9.0-starter.md` section 5.
+
+**New**
+
+- **`CLAUDE.md` and `AGENTS.md`.** `dah init` and `dah update` add a short marked block (`<!-- dah:start -->`) to both files: the tower runs lane sessions, a plain session reads `.tower/lanes/$TOWER_LANE.md` and `.tower/PROTOCOL.md` only when `TOWER_LANE` is set, and requests go through `dah`. An existing file is only appended to; the block is refreshed in place; a `CLAUDE.md` that imports `@AGENTS.md` is left alone. `dah uninstall` removes the block.
+- **Skills where Claude Code reads them.** On a `claude` lane the research and audit skills (and engine skills) go to `.claude/skills/`; other runtimes keep `.agents/skills/`.
+- **Instructions.** Hub: brief fields (`model:`, `effort:`, `paths:`, `after:`, `--deliverable`), when to use research and audit, `dah ratings`/`dah blame` at review, close the item after a decision, no live `ask` on Claude Code, one `dah` command at a time. PROTOCOL: permissions block, lane close-out (done/blocked/note, own-files commit, handoff shape), engine flow. Team lane: blocked/note/handoff pointers.
+- **Model fallback.** `dah init` probes `fable` once on a claude lane and writes `opus` when the agent refuses it.
+- "Roam" removed from the setup guide's hint list.
+
+**Upgrade**
+
+`dah update` refreshes the lane files (your edits are kept; a changed file gets a `.new` beside it) and adds the block and skills.
+
 ### 0.9.0
 
 A minor release below 1.0. No breaking changes.
