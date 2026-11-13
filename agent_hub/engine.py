@@ -24,7 +24,7 @@ import re
 import time
 from typing import Any, Callable
 
-from . import stagemodel
+from . import engines as engines_mod, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane
 from .ext import Extensions
 from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError
@@ -196,10 +196,9 @@ class Engine:
 
     def _opts(self, task: dict[str, Any]) -> dict[str, str]:
         """Per-task model and effort from the brief (and the stage table), passed to the runtime only when set."""
-        table = self.cfg.home / self.cfg.stage_table if self.cfg.stage_table else None
-        model, effort = stagemodel.resolve(table, task["brief"])
+        model, effort = stagemodel.resolve(stagemodel.table_for(self.cfg, task["lane"]), task["brief"])
         if (model, effort) != (task.get("model"), task.get("effort")):  # the ledger shows what the task ran with
-            self.store.update_task(task["id"], model=model, effort=effort)
+            self.store.update_task(task["id"], model=model, effort=effort, **engines_mod.line_fields(task["brief"]))
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
     def start_prompt(self, task: dict[str, Any]) -> str:

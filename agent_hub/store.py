@@ -158,6 +158,7 @@ CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
 LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NOT NULL DEFAULT 0"),
                   ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
+LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"))  # the brief's Line: header and `dah stage`
 
 
 class StoreError(Exception):
@@ -202,7 +203,7 @@ class Store:
                 if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
             have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
-            for col, decl in LEDGER_COLUMNS:  # same for the ledger columns
+            for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
 

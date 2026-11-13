@@ -220,13 +220,32 @@ def cmd_task(args: argparse.Namespace) -> None:
         from .stagemodel import missing_lines
         if gap := missing_lines(args.brief):
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
+    from . import engines as engines_mod
+    if c.require_line:
+        eng = c.engines.get(c.lanes[args.lane].engine)
+        if eng and eng.library:
+            try:
+                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, c.home / (eng.skills or engines_mod.SKILLS_DEFAULT)))
+            except ValueError as e:
+                raise TowerError(str(e))
     s = store(c)
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
     tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine)
+    s.update_task(tid, **engines_mod.line_fields(args.brief))
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}"
           + (f" (after task #{live['id']} wraps)" if live else ""))
+
+
+def cmd_stage(args: argparse.Namespace) -> None:
+    c = cfg()
+    me = who(args, c)
+    task = store(c).live_task(me)
+    if not task:
+        raise TowerError(f"{me} has no running task")
+    store(c).update_task(task["id"], stage_now=clip(args.stage, 40))
+    print(f"task #{task['id']} is on stage {args.stage}")
 
 
 def cmd_doing(args: argparse.Namespace) -> None:
@@ -954,6 +973,10 @@ def cmd_engine(args: argparse.Namespace) -> None:
         for key in ("dir", "library", "skills", "map"):
             print(f"  {key + ':':<9} {getattr(e, key) or '-'}")
         print(f"  lanes:    {', '.join(e.lanes) or '-'}")
+        if e.library:
+            from . import engines as engines_mod
+            print("pipelines:")
+            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, c.home / (e.skills or engines_mod.SKILLS_DEFAULT))))
         return
     if not args.id.replace("-", "").replace("_", "").isalnum():
         raise TowerError("engine id: use letters, digits, - and _")
@@ -1029,6 +1052,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("brief")
     p = sub.add_parser("doing", help="hub: one line shown on the board")
     p.add_argument("text")
+    p = sub.add_parser("stage", help="lane: name the stage of your process card you are on now (shown on the board)")
+    p.add_argument("stage", help="stage number or name, e.g. 3")
     p = sub.add_parser("tell", help="hub: message a running task")
     p.add_argument("lane")
     p.add_argument("text")
@@ -1173,7 +1198,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "tell": cmd_tell,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "stage": cmd_stage, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,

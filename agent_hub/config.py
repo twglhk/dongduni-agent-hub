@@ -106,6 +106,7 @@ class Config:
     worktree: bool = False       # default for team lanes that do not set their own
     stage_table: str = ""        # markdown table with a `model · effort` column (stagemodel.py), path from home
     require_model_lines: bool = False  # `dah task` refuses a brief without `model:` and `effort:` lines
+    require_line: bool = False   # `dah task` refuses a brief whose `Line:` header is missing or names an unconfirmed method (engines.py)
     engines: dict[str, Engine] = field(default_factory=dict)  # always has at least "default" when a team lane has no engine
     light_lanes: int | None = None  # extra slots (beyond max_lanes) for tasks that touch none of heavy_paths; None = one pool
     max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
@@ -305,6 +306,7 @@ def load(home: Path | None = None) -> Config:
         worktree=worktree,
         stage_table=str(raw.get("stage_table") or ""),
         require_model_lines=bool(raw.get("require_model_lines")),
+        require_line=bool(raw.get("require_line")),
         engines=engines,
         light_lanes=int(raw["light_lanes"]) if raw.get("light_lanes") is not None else None,
         max_instances=max_instances,
