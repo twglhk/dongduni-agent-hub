@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config as config_mod
-from . import procs
+from . import procs, stats
 from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
 from .engine import VERDICT_WORD, Engine, clip, conflict_of
 from .memwatch import MemWatch
@@ -187,7 +187,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     atts = check_paths(c, args.attach)
     if args.kind == "handoff" and not task:
         raise TowerError("no task to hand off")
-    s.add_report(tid, me, args.kind, args.text, atts)
+    text, retro = stats.split_retro(args.text) if args.kind == "wrapped" else (args.text, None)
+    s.add_report(tid, me, args.kind, text, atts)
+    if retro:
+        s.add_retro(tid, me, text, retro["cost"], retro["corrected"], retro["rule"], retro["raw"])
     s.signal(tid)
     tag = me + (f" task #{tid} \"{task['title']}\"" if task else "")
     if args.kind == "handoff" and task:
@@ -343,6 +346,26 @@ def lane_markers(c: Config, s: Store) -> dict[str, list[str]]:
         if sid:
             out[lid] = [str(sid), f"--port {ln.port}" if ln.runtime == "opencode" and ln.port else ""]
     return out
+
+
+def day_arg(day: str | None) -> float:
+    if not day:
+        return 0.0
+    try:
+        return stats.day_start(day)
+    except ValueError:
+        raise TowerError("--since takes a day as YYYY-MM-DD")
+
+
+def cmd_stats(args: argparse.Namespace) -> None:
+    """The task ledger: tokens, turns and rework per lane, engine, model, effort or week."""
+    s = store(cfg())
+    tasks = stats.collect(s, args.lane, day_arg(args.since))
+    print(stats.render(stats.summarize(tasks, args.by), args.lane, args.since))
+
+
+def cmd_retros(args: argparse.Namespace) -> None:
+    print(stats.render_retros(store(cfg()).retros(args.lane, day_arg(args.since))))
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
@@ -1040,6 +1063,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
 
     sub.add_parser("status", help="lanes, tasks and open items")
+    p = sub.add_parser("stats", help="the task ledger: tokens, turns and rework per lane, engine, model, effort or week")
+    p.add_argument("--by", choices=stats.BY, default="lane")
+    p.add_argument("--lane")
+    p.add_argument("--since", metavar="YYYY-MM-DD")
+    p = sub.add_parser("retros", help="what lanes noted when they wrapped (cost, corrected, rule)")
+    p.add_argument("--lane")
+    p.add_argument("--since", metavar="YYYY-MM-DD")
     p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
     p.add_argument("payload", nargs="*")
     p = sub.add_parser("show", help="one board item")
@@ -1145,7 +1175,7 @@ def build_parser() -> argparse.ArgumentParser:
 HANDLERS = {
     "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
-    "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
+    "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
     "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),

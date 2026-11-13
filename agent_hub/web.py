@@ -86,6 +86,8 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "status": row.get("status") or "closed", "doing": doing,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
+                    "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
+                                     "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
     return out
 

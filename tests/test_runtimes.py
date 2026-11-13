@@ -107,6 +107,8 @@ class HeadlessTest(unittest.TestCase):
         self.assertEqual(second[second.index("--resume") + 1], sid)
         self.assertEqual(self.rt.usage("hub", sid), {"tokens_in": 84000, "tokens_out": 600, "cost": 0.5, "ctx_k": 42})
         self.assertIsNone(self.rt.usage("hub", "another-session"))
+        self.assertEqual(self.rt.ledger("hub", sid), {"new": 2000, "cache": 82000, "out": 600, "turns": None})
+        self.assertIsNone(self.rt.ledger("hub", "another-session"))
         self.rt.close("hub")
         self.assertEqual(self.rt.status("hub"), "closed")
 

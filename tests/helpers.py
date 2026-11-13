@@ -43,6 +43,7 @@ class FakeRuntime:
         self.replies: list[tuple[str, str, list[list[str]]]] = []
         self.ctx: dict[str, int] = {}
         self.use: dict[str, dict[str, Any]] = {}
+        self.ledger_use: dict[str, dict[str, Any]] = {}  # lane -> {"new", "cache", "out", "turns"}
         self.not_owned: set[str] = set()
 
     def status(self, lane: str) -> str:
@@ -82,6 +83,9 @@ class FakeRuntime:
 
     def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
         return self.use.get(lane)
+
+    def ledger(self, lane: str, sid: str | None) -> dict[str, Any] | None:
+        return self.ledger_use.get(lane)
 
     def last_text(self, lane: str, n: int = 1) -> list[str]:
         return []

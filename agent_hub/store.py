@@ -41,7 +41,14 @@ CREATE TABLE IF NOT EXISTS tasks(
   handoff TEXT,
   rotate_ready REAL,
   goal_id INTEGER,                  -- unused since goals were removed; kept so older databases still open
-  engine TEXT                       -- the engine of the lane when the task was queued (NULL on rows from before engines)
+  engine TEXT,                      -- the engine of the lane when the task was queued (NULL on rows from before engines)
+  model TEXT,                       -- the model and effort the task was opened with (NULL: the lane's own)
+  effort TEXT,
+  tok_new INTEGER NOT NULL DEFAULT 0,    -- ledger: input + cache writes, summed over the task's sessions
+  tok_cache INTEGER NOT NULL DEFAULT 0,  -- cache reads
+  tok_out INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  tok_at REAL                       -- when the ledger last measured the task
 );
 CREATE TABLE IF NOT EXISTS items(
   id INTEGER PRIMARY KEY,
@@ -122,10 +129,35 @@ CREATE TABLE IF NOT EXISTS usage(
   updated REAL NOT NULL,
   PRIMARY KEY(lane, session)
 );
+CREATE TABLE IF NOT EXISTS task_sessions(
+  task_id INTEGER NOT NULL,
+  session TEXT NOT NULL,
+  new INTEGER NOT NULL DEFAULT 0,       -- this task's share of the session (a chained task starts after the earlier one's share)
+  cache INTEGER NOT NULL DEFAULT 0,
+  out INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(task_id, session)
+);
+CREATE TABLE IF NOT EXISTS retros(
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER,
+  lane TEXT NOT NULL,
+  summary TEXT NOT NULL,            -- the one line a wrapped report starts with
+  cost TEXT NOT NULL DEFAULT '',
+  corrected TEXT NOT NULL DEFAULT '',
+  rule TEXT NOT NULL DEFAULT '',
+  raw TEXT NOT NULL DEFAULT '',
+  created REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS messages_pending ON messages(target, delivered);
 CREATE INDEX IF NOT EXISTS items_state ON items(state, audience);
 CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
 """
+
+
+LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NOT NULL DEFAULT 0"),
+                  ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
+                  ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 
 
 class StoreError(Exception):
@@ -169,6 +201,10 @@ class Store:
             for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
                 if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
+            have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
+            for col, decl in LEDGER_COLUMNS:  # same for the ledger columns
+                if col not in have:
+                    con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -583,6 +619,58 @@ class Store:
             if fields:
                 con.execute(f"UPDATE lanes SET {', '.join(f'{k}=?' for k in fields)} WHERE lane=?",
                             (*fields.values(), lane))
+
+    # ---------- task ledger and retros ----------
+
+    def task_for_session(self, lane: str, session: str) -> dict[str, Any] | None:
+        """The newest task of the lane that runs (or ran) in this session."""
+        with self.conn() as con:
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND session=? AND started IS NOT NULL "
+                                    "ORDER BY id DESC LIMIT 1", (lane, session)))
+
+    def record_task_usage(self, task_id: int, session: str, new: int, cache: int, out: int, turns: int | None) -> None:
+        """A session's cumulative totals, as the task's own share. Tasks that followed each other in one session
+        (`after:`) split it: this task owns what the earlier tasks of the session did not. A total below what is
+        already written is a transcript that lost its head, so it never replaces the larger value. The task row
+        carries the sum over its sessions."""
+        with self.conn() as con:
+            before = con.execute("SELECT COALESCE(SUM(new),0), COALESCE(SUM(cache),0), COALESCE(SUM(out),0), "
+                                 "COALESCE(SUM(turns),0) FROM task_sessions WHERE session=? AND task_id<?",
+                                 (session, task_id)).fetchone()
+            share = [max(0, a - b) for a, b in zip((new, cache, out, turns or 0), before)]
+            old = con.execute("SELECT new, cache, out, turns FROM task_sessions WHERE task_id=? AND session=?",
+                              (task_id, session)).fetchone()
+            if old is not None and sum(share[:3]) < sum(old[:3]):
+                return
+            if turns is None and old is not None:
+                share[3] = old[3]
+            con.execute("INSERT INTO task_sessions(task_id, session, new, cache, out, turns) VALUES(?,?,?,?,?,?) "
+                        "ON CONFLICT(task_id, session) DO UPDATE SET new=excluded.new, cache=excluded.cache, "
+                        "out=excluded.out, turns=excluded.turns", (task_id, session, *share))
+            con.execute("UPDATE tasks SET tok_new=(SELECT SUM(new) FROM task_sessions WHERE task_id=?), "
+                        "tok_cache=(SELECT SUM(cache) FROM task_sessions WHERE task_id=?), "
+                        "tok_out=(SELECT SUM(out) FROM task_sessions WHERE task_id=?), "
+                        "turns=(SELECT SUM(turns) FROM task_sessions WHERE task_id=?), tok_at=? WHERE id=?",
+                        (task_id, task_id, task_id, task_id, self.clock(), task_id))
+
+    def task_rotations(self) -> dict[int, int]:
+        """Extra sessions a task went through (handoffs, reopened sessions): sessions seen minus one."""
+        with self.conn() as con:
+            return {r[0]: r[1] - 1 for r in con.execute("SELECT task_id, count(*) FROM task_sessions GROUP BY task_id")}
+
+    def add_retro(self, task_id: int | None, lane: str, summary: str, cost: str, corrected: str, rule: str, raw: str) -> int:
+        with self.conn() as con:
+            return _id(con.execute("INSERT INTO retros(task_id, lane, summary, cost, corrected, rule, raw, created) "
+                                   "VALUES(?,?,?,?,?,?,?,?)", (task_id, lane, summary, cost, corrected, rule, raw, self.clock())))
+
+    def retros(self, lane: str | None = None, since: float = 0.0, limit: int = 500) -> list[dict[str, Any]]:
+        where, args = ["created>=?"], [since]
+        if lane:
+            where.append("lane=?")
+            args.append(lane)
+        with self.conn() as con:
+            return _rows(con.execute(f"SELECT * FROM retros WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?",
+                                     (*args, limit)))
 
     # ---------- usage ----------
 

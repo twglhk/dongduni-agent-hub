@@ -198,6 +198,8 @@ class Engine:
         """Per-task model and effort from the brief (and the stage table), passed to the runtime only when set."""
         table = self.cfg.home / self.cfg.stage_table if self.cfg.stage_table else None
         model, effort = stagemodel.resolve(table, task["brief"])
+        if (model, effort) != (task.get("model"), task.get("effort")):  # the ledger shows what the task ran with
+            self.store.update_task(task["id"], model=model, effort=effort)
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
     def start_prompt(self, task: dict[str, Any]) -> str:
@@ -337,6 +339,21 @@ class Engine:
             if u:
                 self.store.record_usage(lane, sid, self.cfg.all_lanes[lane].runtime, int(u.get("tokens_in") or 0),
                                         int(u.get("tokens_out") or 0), u.get("cost"), u.get("ctx_k"))
+            self._ledger(lane, sid)
+
+    def _ledger(self, lane: str, sid: str) -> None:
+        """The same reading, split new / cache / out with turns, written onto the task that owns the session."""
+        task = self.store.task_for_session(lane, sid)
+        if task is None:
+            return
+        try:
+            got = self.rt.ledger(lane, sid)
+        except Exception as e:
+            self.log(f"{lane}: ledger failed: {e}")
+            return
+        if got:
+            self.store.record_task_usage(task["id"], sid, int(got.get("new") or 0), int(got.get("cache") or 0),
+                                         int(got.get("out") or 0), got.get("turns"))
 
     # ---------- live asks ----------
 

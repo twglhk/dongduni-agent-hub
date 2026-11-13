@@ -460,7 +460,8 @@ const UI = {
       memo: 'Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
-    use: { day: 'Today', io: '{i} / {o}', today: 'Today {i} in · {o} out',
+    use: { day: 'Today', io: '{i} / {o}', task: 'Task {n} new · {c} cache · {o} out · {t} turns',
+      today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
     x: { err: 'Extension error' },
   },
@@ -500,7 +501,8 @@ const UI = {
       memo: '인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
-    use: { day: '오늘', io: '{i} / {o}', today: '오늘 {i} 입력 · {o} 출력',
+    use: { day: '오늘', io: '{i} / {o}', task: '작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴',
+      today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
     x: { err: '확장 기능 오류' },
   },
@@ -541,7 +543,8 @@ const UI = {
       memo: 'インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
-    use: { day: '今日', io: '{i} / {o}', today: '今日 入力 {i} · 出力 {o}',
+    use: { day: '今日', io: '{i} / {o}', task: 'タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン',
+      today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
     x: { err: '拡張機能のエラー' },
   },
@@ -581,7 +584,8 @@ const UI = {
       memo: '请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
-    use: { day: '今天', io: '{i} / {o}', today: '今天 输入 {i} · 输出 {o}',
+    use: { day: '今天', io: '{i} / {o}', task: '任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮',
+      today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
     x: { err: '扩展出错' },
   },
@@ -623,6 +627,7 @@ const UI = {
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
     use: { day: 'Hoy', io: '{i} / {o}',
+      task: 'Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
     x: { err: 'Error de la extensión' },
   },
@@ -1054,7 +1059,12 @@ function laneCard(l) {
       : l.doing ? null : h('div', { class: 'tk none' }, L.label.noTask),
     l.doing ? h('div', { class: l.task_id ? 'dg' : 'tk' }, l.doing) : null,
     l.ctx_k > 0 ? h('div', { class: 'meta' }, `${L.label.ctx} ${l.ctx_k}K`) : null,
+    taskTokLine(l.task_tokens),
     useLine(l.usage));
+}
+function taskTokLine(k) {
+  if (!k || !((k.new || 0) + (k.cache || 0) + (k.out || 0))) return null;
+  return h('div', { class: 'meta' }, fmt(L.use.task, { n: fmtTok(k.new), c: fmtTok(k.cache), o: fmtTok(k.out), t: k.turns || 0 }));
 }
 function useLine(u) {
   if (!u || !((u.tokens_in || 0) + (u.tokens_out || 0))) return null;
