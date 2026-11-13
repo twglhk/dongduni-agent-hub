@@ -6,7 +6,7 @@ Releases are built and published by GitHub Actions, not from a laptop. Any machi
 
 | piece | where | what it does |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | every push to `main`, every PR | unit tests on Ubuntu, macOS and Windows × Python 3.10 and 3.13, then builds the wheel, installs it in a fresh venv and runs `dah init`, `dah goal add`, `dah status` |
+| `.github/workflows/ci.yml` | every push to `main`, every PR | unit tests on Ubuntu, macOS and Windows × Python 3.10 and 3.13, then builds the wheel, installs it in a fresh venv and runs `dah init`, `dah engine list`, `dah status` |
 | `.github/workflows/release.yml` | a pushed tag `v*` | runs `ci.yml`, checks the tag equals `agent_hub.__version__`, builds sdist + wheel, publishes to PyPI, creates a GitHub release with both files |
 | PyPI Trusted Publisher | pypi.org → `dongduni-agent-hub` → Publishing | trusts owner `twglhk`, repo `dongduni-agent-hub`, workflow `release.yml`, environment `pypi`. This is why no token exists |
 | GitHub environment `pypi` | repo Settings → Environments | created by the first release; add required reviewers there if you want a manual approval before each publish |

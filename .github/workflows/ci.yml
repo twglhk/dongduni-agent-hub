@@ -35,5 +35,5 @@ jobs:
           WS="$RUNNER_TEMP/ws"; mkdir -p "$WS"; cd "$WS"
           export AGENT_HUB_HOME="$RUNNER_TEMP/reg"
           "$BIN/dah" init --name CI --lang ko --hub claude --infra claude
-          "$BIN/dah" --as hub goal add "첫 목표"
+          "$BIN/dah" engine list
           "$BIN/dah" status
