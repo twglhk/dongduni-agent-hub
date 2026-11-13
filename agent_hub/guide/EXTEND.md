@@ -50,7 +50,7 @@ routes = {("GET", "stats"): stats, ("POST", "jira/sync"): sync}
 
 - `("GET", "stats")` answers `GET api/x/stats`; `("POST", "jira/sync")` answers `POST api/x/jira/sync`.
 - `fn(ctx, body)` returns a JSON value (status 200) or `(status, value)`. An exception is a 500 with its message.
-- `ctx`: `cfg` (the workspace config), `store` (the board's state: goals, items, tasks, reports, memos), `me` (who is signed in), `query` (the URL query, one value per key), `log`.
+- `ctx`: `cfg` (the workspace config), `store` (the board's state: items, tasks, reports, memos), `me` (who is signed in), `query` (the URL query, one value per key), `log`.
 - Only signed-in people reach them, with the workspace's own auth. POSTs need the `x-tower: 1` header, as every board POST does (`dah.post` sends it).
 - Another workspace shown on the same board (`/w/<workspace>/`) serves its own routes.
 
@@ -75,8 +75,8 @@ def on_tick(ctx):
   - `item`: a decision or review was posted
   - `decided`: one was decided (`verdict`, `choice`, `note`, `decided_by`)
   - `memo`: someone wrote to the hub or infra on the board
-  - `goal`: a goal was added, ranked, planned, ticked, paused, finished or dropped
-  - `task`: a task was queued, started, closed or cancelled (`lane`, `state`, `title`, `goal_id`, ...)
+  - (`goal` events stopped in 0.8.0 with the goals feature; an extension that listens for them simply never fires)
+  - `task`: a task was queued, started, closed or cancelled (`lane`, `state`, `title`, ...)
   - `lane`: a lane's status changed (`lane`, `status`, `was`, `runtime`, `terminal`; status: closed, idle, busy, asking, unknown)
 - `on_notify(ctx, notes)` for every push the tower sends people (ntfy, Slack, desktop), with the same notes: each has `title` and `lane`, `alert` is true for the tower's own alerts (a lane waiting in its window, a hub that keeps closing), and board items carry the item's fields. Use it for a channel agent-hub does not ship (Discord, Telegram, a pager). Notes are copies: changing them changes nothing.
 - `on_tick(ctx)` once per tick. `ctx`: `cfg`, `store`, `log`, `now`.

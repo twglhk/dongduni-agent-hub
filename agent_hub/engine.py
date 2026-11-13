@@ -16,14 +16,10 @@
   extensions       `.tower/ext/*.py` on_event(ctx, kind, data) for what changed since the last tick (lane statuses
                    included), then on_tick(ctx); after the built-in work, errors logged (see ext.py). Every push to
                    people also goes to on_notify(ctx, notes).
-  goals            when the hub is idle, nothing is queued or running and the goals changed since it was last told,
-                   the hub gets the ranked goals and moves the first one forward. Unchanged goals never re-prompt it,
-                   so a hub that is waiting on humans is left alone.
 """
 
 from __future__ import annotations
 
-import json
 import time
 from typing import Any, Callable
 
@@ -40,7 +36,6 @@ NUDGE_LIMIT = 2
 RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
 HUB_STUCK_SECONDS = 900
-GOAL_IDLE_SECONDS = 60
 USAGE_SECONDS = 60
 STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음",
                "ja": "ハブがアイドルに戻らない", "zh": "中枢一直没有回到空闲", "es": "El hub no vuelve a quedar libre"}
@@ -130,7 +125,6 @@ class Engine:
         self.hub_backoff = False  # when the hub was opened lately: a session that keeps dying backs off
         self.waiting: set[str] = set()  # lanes in a terminal window held by a permission menu, already announced
         self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
-        self.goals_told = ""  # the goals as the hub last heard them; unchanged goals never re-prompt it
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
 
@@ -192,21 +186,7 @@ class Engine:
         m = len(self.store.items(state="open", audience=HUMAN))
         run = len(self.store.tasks(("running", "wrapping")))
         q = len(self.store.tasks(("queued",)))
-        g = len(self.store.goals(("active",)))
-        return f"(now: {g} active goals · {h} items for the hub · {m} for humans · {run} tasks running · {q} queued)"
-
-    def goals_prompt(self, goals: list[dict[str, Any]]) -> str:
-        lines = []
-        for g in goals:
-            plan = f"{g['steps_done']}/{len(g['steps'])} steps" if g["steps"] else "no plan yet"
-            nxt = next((f" · next: {s['text']}" for s in g["steps"] if not s.get("done")), "")
-            lines.append(f"{g['priority']}. goal #{g['id']} \"{g['title']}\" ({plan}{nxt})")
-        return ("[tower] Nothing is queued or running. Active goals, first priority first:\n" + "\n".join(lines)
-                + "\n\nMove the first goal you can forward. No plan yet: propose one to the humans (a board item, or "
-                  "`dah goal plan ID --step ...` when the request already says what to do). Otherwise queue the next "
-                  "step as a task (`dah task LANE --goal ID ...`) or do it yourself, and tick finished steps "
-                  "(`dah goal check ID N`). A goal is met: `dah goal done ID \"what was delivered\"`. If every goal "
-                  "waits on humans, end your turn.")
+        return f"(now: {h} items for the hub · {m} for humans · {run} tasks running · {q} queued)"
 
     # ---------- tick ----------
 
@@ -378,10 +358,10 @@ class Engine:
                      f"allows and nothing beyond it. If it is unclear, `dah item add` or `dah report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
             ln = self.cfg.lanes.get(lane)
-            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id, engine) "
-                              "VALUES(?,?,?,?,?,?,?)",
+            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) "
+                              "VALUES(?,?,?,?,?,?)",
                               (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
-                               src["goal_id"], ln.engine if ln else None))
+                               ln.engine if ln else None))
             self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
                             it["task_id"], it["id"], con=con)
             return
@@ -529,28 +509,12 @@ class Engine:
             self._send(HUB, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")
             self.store.mark_delivered(m["id"] for m in msgs)
             return
-        if not msgs and sid and idle_for >= GOAL_IDLE_SECONDS and self._drive_goals(sid):
-            return
         if (not msgs and sid and idle_for >= 30 and self.rt.owned(HUB)
                 and self.rt.context_k(HUB, sid) >= HUB_ROTATE_K):
             self.rt.close(HUB)
             self.rt.open(HUB, self.hub_prompt())
             self.idle_since.pop(HUB, None)
             self.log("hub: context grew large, fresh session")
-
-    def _drive_goals(self, sid: str) -> bool:
-        goals = self.store.goals(("active",))
-        if not goals or self.store.tasks(("queued", "running", "wrapping"), limit=1):
-            return False
-        closed = self.store.goal_tasks()
-        mark = json.dumps([(g["id"], g["priority"], g["steps"], g["updated"], closed.get(g["id"], {}).get("closed", 0))
-                           for g in goals])
-        if mark == self.goals_told:
-            return False
-        self.goals_told = mark
-        self._send(HUB, sid, self.goals_prompt(goals))
-        self.log(f"hub: told about {len(goals)} active goal(s)")
-        return True
 
     def _watch_stuck(self) -> None:
         msgs = self.store.pending(HUB)

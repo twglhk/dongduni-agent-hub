@@ -9,7 +9,7 @@
           fn(ctx, body) -> dict | (status, dict); ctx: cfg, store, me, query, log. Signed-in people only;
           POST needs the board's `x-tower: 1` header like every built-in POST.
       on_tick(ctx)                    after every tower tick; ctx: cfg, store, log, now
-      on_event(ctx, kind, data)       kind: report | item | decided | memo | goal | task (data: that row)
+      on_event(ctx, kind, data)       kind: report | item | decided | memo | task (data: that row)
                                       | lane (data: lane, status, was, runtime, terminal)
       on_notify(ctx, notes)           each push the tower sends people (title, lane, alert, the item's fields)
       runtimes = {"name": cls}        an agent runtime: a subclass of runtimes.Adapter, used as "runtime": "name"
@@ -34,7 +34,7 @@ BOARD_DIR = "board"
 EXT_DIR = "ext"
 STATIC_SUFFIXES = {".js", ".mjs", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
                    ".woff", ".woff2", ".txt", ".md"}
-EVENT_KINDS = ("report", "item", "decided", "memo", "goal", "task", "lane")
+EVENT_KINDS = ("report", "item", "decided", "memo", "task", "lane")
 
 
 def board_dir(home: Path) -> Path:

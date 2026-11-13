@@ -3,15 +3,14 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
 
   GET  /                          board (board/index.html, or the workspace's .tower/board/index.html; /?builtin
                                   always opens the built-in one)
-  GET  /api/state                 goals · lanes · open items · tasks · reports · memos · counts
-  GET  /api/history?kind=K&offset=N   decided | reports | closed | goals | memos | requests, 20 per page
+  GET  /api/state                 lanes · open items · tasks · reports · memos · counts
+  GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   POST /api/memo                  {text, to: infra | hub}
-  POST /api/goals                 {title, detail}
-  POST /api/goals/<id>            {action: top | up | down | pause | resume | drop | done | reopen, note}
+  *    /api/goals...              410 Gone (goals were removed in 0.8.0)
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
   GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
@@ -41,7 +40,7 @@ from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, Config
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
 from .install import edit_config
-from .store import GOAL_RANKED, HUMAN, Store, StoreError
+from .store import HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "credentials", "id_rsa", "id_ed25519"}
@@ -52,7 +51,6 @@ PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
-GOAL_ACTIONS = {"pause": "paused", "resume": "active", "drop": "dropped", "done": "done", "reopen": "active"}
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css")):
     mimetypes.add_type(_type, _ext)  # the Windows registry can say text/plain
@@ -128,8 +126,6 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "runtimes": list(RUNTIMES),
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
-        "goals": s.goals(GOAL_RANKED) + s.history("goals", 0, PREVIEW),
-        "goal_tasks": {str(k): v for k, v in s.goal_tasks().items()},
         "lanes": lanes_view(cfg, s, used),
         "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
@@ -137,20 +133,6 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "memos": {INFRA: s.memos(INFRA, PREVIEW), HUB: s.memos(HUB, PREVIEW)},
         "counts": {k: s.history_count(k) for k in (*Store.HISTORY, *Store.MEMO_HISTORY)},
     }
-
-
-def goal_action(s: Store, gid: int, action: str, note: str, by: str) -> str:
-    """Apply one board action to a goal; returns the news line for the hub."""
-    g = s.goal(gid)
-    if action in ("top", "up", "down"):
-        pos = {"top": 1, "up": g["priority"] - 1, "down": g["priority"] + 1}[action]
-        order = s.move_goal(gid, max(1, pos))
-        return f"{by} moved goal #{gid} \"{g['title']}\" to priority {order.index(gid) + 1}. Order now: " + \
-            ", ".join(f"#{i}" for i in order)
-    if action not in GOAL_ACTIONS:
-        raise StoreError(f"action must be one of top, up, down, {', '.join(GOAL_ACTIONS)}")
-    g = s.set_goal_state(gid, GOAL_ACTIONS[action], note)
-    return f"{by} marked goal #{gid} \"{g['title']}\" {g['state']}" + (f": {note}" if note else "")
 
 
 class Site:
@@ -215,8 +197,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                    "running": tower_pid(site.cfg) is not None}
             if ok:
                 row["open"] = len(site.s.items(state="open", audience=HUMAN))
-                top = site.s.goals(("active",))
-                row["goal"] = top[0]["title"] if top else None
             out.append(row)
         return out
 
@@ -310,6 +290,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
+            if path == "/api/goals" or path.startswith("/api/goals/"):
+                return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             if path in ("/", "/index.html"):
                 page = None if "builtin" in parse_qs(self.query, keep_blank_values=True) else board_override(c.home)
                 return self._static(page or BOARD, "text/html; charset=utf-8")
@@ -329,7 +311,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 try:
                     rows = st.history((q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])), PAGE)
                 except (StoreError, ValueError) as e:
-                    return self._json(400, {"error": str(e)})
+                    return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
@@ -415,6 +397,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
+            if path == "/api/goals" or path.startswith("/api/goals/"):
+                return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             n = int(self.headers.get("content-length") or 0)
             if n > MAX_BODY:
                 return self._json(413, {"error": "too large"})
@@ -456,14 +440,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     mid = st.push(to, who, "memo", text)
                     log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
-                if path == "/api/goals":
-                    gid = st.add_goal(str(body.get("title") or "")[:200], str(body.get("detail") or "")[:4000], who)
-                    g = st.goal(gid)
-                    st.push(HUB, who, "goal", f"New goal #{gid} (priority {g['priority']}) from {who}: \"{g['title']}\""
-                            + (f" — {g['detail']}" if g["detail"] else "")
-                            + ". Agree a plan with them (a board item or a memo reply), then `dah goal plan`.")
-                    log(f"{who} goal #{gid}")
-                    return self._json(200, {"ok": True, "id": gid})
                 if path == "/api/settings":
                     raw = body.get("max_lanes")
                     if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_LANES_LIMIT:
@@ -476,13 +452,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                 f"may run tasks at once.")
                         log(f"{who} max_lanes {old} → {raw}")
                     return self._json(200, {"ok": True, "max_lanes": raw})
-                m = re.fullmatch(r"/api/goals/(\d+)", path)
-                if m:
-                    news = goal_action(st, int(m.group(1)), str(body.get("action") or ""),
-                                       str(body.get("note") or "")[:1000], who)
-                    st.push(HUB, who, "goal", news)
-                    log(news)
-                    return self._json(200, {"ok": True, "goal": st.goal(int(m.group(1)))})
             except StoreError as e:
                 return self._json(409, {"error": str(e)})
             if path.startswith("/api/x/"):

@@ -6,7 +6,6 @@ Who is calling comes from TOWER_LANE (set in sessions the tower opens) or `--as 
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import os
 import re
@@ -24,7 +23,7 @@ from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_
 from .engine import VERDICT_WORD, Engine, clip
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
 from .notify import notifier
-from .store import GOAL_RANKED, GOAL_STATES, HUMAN, Store, StoreError
+from .store import HUMAN, Store, StoreError
 
 TICK_SECONDS = 4
 TUNNEL_RETRY = 30
@@ -110,8 +109,6 @@ def cmd_mine(args: argparse.Namespace) -> None:
         print("No task right now.")
         return
     print(f"task #{task['id']} \"{task['title']}\" ({task['state']})\n{task['brief']}\n")
-    if task.get("goal_id"):
-        print(f"serves goal: {goal_line(s.goal(task['goal_id']))}\n")
     for it in s.items(lane=me):
         if it["task_id"] == task["id"]:
             print(f"#{it['id']} [{verdict_text(it)}] {it['title']}" + (f" — {it['note']}" if it.get("note") else ""))
@@ -220,79 +217,12 @@ def cmd_task(args: argparse.Namespace) -> None:
         if gap := missing_lines(args.brief):
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
     s = store(c)
-    if args.goal is not None and s.goal(args.goal)["state"] != "active":
-        raise TowerError(f"goal #{args.goal} is not active")
-    tid = s.add_task(args.lane, args.title, args.brief, args.goal, c.lanes[args.lane].engine)
+    if args.goal is not None:
+        print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
+    tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine)
     live = s.live_task(args.lane)
-    print(f"task #{tid} → {args.lane}" + (f" for goal #{args.goal}" if args.goal is not None else "")
+    print(f"task #{tid} → {args.lane}"
           + (f" (after task #{live['id']} wraps)" if live else ""))
-
-
-# ---------------------------------------------------------------- goals
-
-def goal_line(g: dict[str, Any]) -> str:
-    plan = f" · {g['progress']}% ({g['steps_done']}/{len(g['steps'])})" if g["steps"] else " · no plan yet"
-    rank = f"{g['priority']}. " if g["state"] in GOAL_RANKED else ""
-    return f"{rank}#{g['id']} [{g['state']}] {g['title']}{plan if g['state'] != 'done' else ' · done'}"
-
-
-def goal_actor(args: argparse.Namespace) -> str:
-    me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
-    if not me:
-        return getpass.getuser()
-    if me != HUB:
-        raise TowerError("goals are set by humans and the hub; report to the hub instead")
-    return me
-
-
-def cmd_goal(args: argparse.Namespace) -> None:
-    c = cfg()
-    s = store(c)
-    if args.sub == "list":
-        goals = s.goals(GOAL_STATES if args.all else GOAL_RANKED)
-        print("\n".join(goal_line(g) for g in goals) if goals else "No goals. `dah goal add \"title\"`")
-        return
-    if args.sub == "show":
-        g = s.goal(args.id)
-        print(goal_line(g) + f"\nby {g['created_by']} · {hhmm(g['created'])}")
-        if g["detail"]:
-            print(f"\n{g['detail']}")
-        for i, st in enumerate(g["steps"], 1):
-            print(f"  {i}. [{'x' if st.get('done') else ' '}] {st['text']}")
-        if g.get("note"):
-            print(f"\nnote: {g['note']}")
-        for t in s.tasks(limit=500):
-            if t["goal_id"] == g["id"]:
-                print(f"  task #{t['id']} {t['lane']} {t['state']} \"{t['title']}\"")
-        return
-    me = goal_actor(args)
-    if args.sub == "add":
-        gid = s.add_goal(args.title, args.detail or "", me)
-        if args.priority:
-            s.move_goal(gid, args.priority)
-        g = s.goal(gid)
-        news = f"New goal #{gid} (priority {g['priority']}) from {me}: \"{g['title']}\"" + (
-            f" — {g['detail']}" if g["detail"] else "") + ". Agree a plan with the humans, then `dah goal plan`."
-        print(f"goal #{gid} added at priority {g['priority']}")
-    elif args.sub == "priority":
-        order = s.move_goal(args.id, args.position)
-        news = f"{me} moved goal #{args.id} to priority {args.position}. Order now: " + ", ".join(f"#{i}" for i in order)
-        print(f"order: {' '.join('#' + str(i) for i in order)}")
-    elif args.sub == "plan":
-        g = s.plan_goal(args.id, args.step)
-        news = f"{me} set the plan of goal #{args.id}: " + "; ".join(st["text"] for st in g["steps"])
-        print(goal_line(g))
-    elif args.sub in ("check", "uncheck"):
-        g = s.check_steps(args.id, args.steps, args.sub == "check")
-        news = f"{me} {args.sub}ed step(s) {', '.join(map(str, args.steps))} of goal #{args.id}: now {g['progress']}%"
-        print(goal_line(g))
-    else:
-        state = {"done": "done", "drop": "dropped", "pause": "paused", "resume": "active"}[args.sub]
-        g = s.set_goal_state(args.id, state, args.note or "")
-        news = f"{me} marked goal #{args.id} \"{g['title']}\" {state}" + (f": {args.note}" if args.note else "")
-        print(goal_line(g))
-    if me != HUB:
-        s.push(HUB, me, "goal", news)
 
 
 def cmd_doing(args: argparse.Namespace) -> None:
@@ -418,10 +348,6 @@ def cmd_status(_args: argparse.Namespace) -> None:
         print(f"lane windows: tmux attach -t {tmux_session(c)}")
     if "orca" in terms:
         print("lane windows: Orca terminal tabs in this workspace")
-    goals = s.goals()
-    print("\ngoals (first priority first):" if goals else "\ngoals: none yet")
-    for g in goals:
-        print(f"  {goal_line(g)}")
     hub_items = s.items(state="open", audience=HUB)
     print(f"\nopen for the hub: {len(hub_items)} · for humans: {len(s.items(state='open', audience=HUMAN))}")
     for it in hub_items[:20]:
@@ -1039,7 +965,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("task", help="hub: queue a task for a team lane")
     p.add_argument("lane")
     p.add_argument("--title", required=True)
-    p.add_argument("--goal", type=int, metavar="GOAL_ID", help="the goal this task serves")
+    p.add_argument("--goal", type=int, metavar="GOAL_ID", help="removed in 0.8.0; ignored with a notice")
     p.add_argument("brief")
     p = sub.add_parser("doing", help="hub: one line shown on the board")
     p.add_argument("text")
@@ -1072,32 +998,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("target", choices=(INFRA,))
     q.add_argument("text")
 
-    p = sub.add_parser("goal", help="goals the team works toward: add, rank, plan, tick steps, finish")
-    gsub = p.add_subparsers(dest="sub", required=True)
-    q = gsub.add_parser("add", help="a new goal (last priority unless --priority)")
-    q.add_argument("title")
-    q.add_argument("--detail", help="what done looks like, constraints")
-    q.add_argument("--priority", type=int, metavar="N", help="1 = first")
-    q = gsub.add_parser("list")
-    q.add_argument("--all", action="store_true", help="also done and dropped goals")
-    q = gsub.add_parser("show")
-    q.add_argument("id", type=int)
-    q = gsub.add_parser("priority", help="move a goal to position N (1 = first)")
-    q.add_argument("id", type=int)
-    q.add_argument("position", type=int)
-    q = gsub.add_parser("plan", help="set the goal's steps (replaces the list; unchanged steps keep their tick)")
-    q.add_argument("id", type=int)
-    q.add_argument("--step", action="append", required=True, metavar="TEXT")
-    for name in ("check", "uncheck"):
-        q = gsub.add_parser(name, help=f"{name} steps by number")
-        q.add_argument("id", type=int)
-        q.add_argument("steps", type=int, nargs="+")
-    for name in ("done", "pause", "resume", "drop"):
-        q = gsub.add_parser(name)
-        q.add_argument("id", type=int)
-        q.add_argument("note", nargs="?", default="")
-
-    sub.add_parser("status", help="goals, lanes, tasks and open items")
+    sub.add_parser("status", help="lanes, tasks and open items")
     p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
     p.add_argument("payload", nargs="*")
     p = sub.add_parser("show", help="one board item")
@@ -1205,7 +1106,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
     "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

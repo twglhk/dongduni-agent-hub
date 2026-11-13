@@ -1,6 +1,6 @@
 import unittest
 
-from agent_hub.engine import (BATCH_SECONDS, GOAL_IDLE_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
+from agent_hub.engine import (BATCH_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
                               RESPAWN_LIMIT, Engine)
 from agent_hub.store import HUB, HUMAN, INFRA, Store
 from tests.helpers import Clock, FakeRuntime, make_home
@@ -104,42 +104,20 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.s.items(state="open", audience=HUMAN), [])
         self.assertEqual(self.rt.sent, [])  # nothing was forced into the busy session
 
-    def test_idle_hub_is_told_goals_once_per_change(self) -> None:
+    def test_idle_hub_is_never_prompted_without_news(self) -> None:
         self.s.set_lane(HUB, enabled=1)
         self.e.tick()
         self.rt.st[HUB] = "idle"
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(self.rt.sent, [])  # no goals, nothing to say
-        g1 = self.s.add_goal("Ship v2", "", "ana")
-        g2 = self.s.add_goal("Fix login", "", "ana")
-        self.s.move_goal(g2, 1)
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)
-        text = self.rt.sent[0][2]
-        self.assertLess(text.index(f"goal #{g2}"), text.index(f"goal #{g1}"))
-        self.assertIn("no plan yet", text)
-        self.rt.st[HUB] = "idle"
-        self.run_ticks(5, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)  # unchanged goals: left alone
-        self.s.plan_goal(g2, ["repro", "fix"])
-        self.s.check_steps(g2, [1])
-        t = self.s.add_task("docs", "fix", "b", goal_id=g2)
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)  # a task is in flight
-        self.s.update_task(t, state="closed")
-        self.rt.st[HUB] = "idle"
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 2)
-        self.assertIn("1/2 steps · next: fix", self.rt.sent[1][2])
+        self.run_ticks(5, step=60)
+        self.assertEqual(self.rt.sent, [])  # nothing queued, nothing to say: the hub is left alone
 
-    def test_follow_up_task_keeps_its_goal(self) -> None:
-        g = self.s.add_goal("Docs site", "", "ana")
-        t = self.s.add_task("docs", "A", "b", goal_id=g)
+    def test_follow_up_task_is_queued_without_goal_state(self) -> None:
+        t = self.s.add_task("docs", "A", "b")
         self.e.tick()
         self.s.decide(self.item("docs", t), "ok", HUB, basis="in scope")
         self.e.tick()
         follow = [x for x in self.s.tasks() if x["id"] != t][0]
-        self.assertEqual(follow["goal_id"], g)
+        self.assertIsNone(follow["goal_id"])
 
     # ----- team lanes -----
 

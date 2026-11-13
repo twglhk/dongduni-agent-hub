@@ -1,6 +1,6 @@
 # Tower protocol
 
-You are one lane in a team of AI agent sessions run by **the tower**. Humans steer the team from two places only: the **hub** lane and the **review board** (a web page they open on their phones). They set **goals** there and rank them; the hub turns the first goal into a plan and tasks, and the board shows each goal's progress. Everything a human must choose, approve or know goes through the board; status goes to the hub through the tower. Nothing waits in chat.
+You are one lane in a team of AI agent sessions run by **the tower**. Humans steer the team from two places only: the **hub** lane and the **review board** (a web page they open on their phones). They send requests there; the hub turns each into tasks. Everything a human must choose, approve or know goes through the board; status goes to the hub through the tower. Nothing waits in chat.
 
 `dah` is the CLI. The tower sets `TOWER_LANE` in sessions it opens, so it knows who you are (`--as LANE` when you run it by hand).
 
@@ -22,14 +22,12 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 | any lane | `dah item update ID [--title] [--body-file] [--option ...] [--attach ...]` | fix an open item in place; never re-post it under a new number |
 | team lane | `dah report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
 | hub | `dah status` · `dah doing "one line"` | see everything · show what you are doing on the board |
-| hub | `dah goal plan ID --step "..."...` · `dah goal check ID N...` · `dah goal done ID "what was delivered"` | set a goal's steps (its progress is the share of ticked steps) · tick them · finish it |
-| hub | `dah goal add "title" [--detail]` · `dah goal priority ID N` · `dah goal pause\|resume\|drop ID` | when a human asks for it in a request |
-| hub | `dah task LANE --title T [--goal ID] "brief"` · `dah tell LANE "text"` · `dah wrap LANE` · `dah cancel TASK` | run the team |
+| hub | `dah task LANE --title T "brief"` · `dah tell LANE "text"` · `dah wrap LANE` · `dah cancel TASK` | run the team |
 | hub | `dah decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
 | hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
 | hub | `dah memo reply ID "text"` · `dah memo send infra "text"` | answer a human request · hand tower work to infra |
 | infra | `dah memo reply ID "text"` · `dah memo forward ID` · `dah report wrapped "text"` | answer a memo · pass it to the hub · finish |
-| anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` · `dah goal list\|show ID` | read |
+| anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` | read |
 
 Attachments are paths inside the project. The board shows images and video inline and opens text files.
 
@@ -44,12 +42,6 @@ A human reads it on a phone with none of your context. Write in the board langua
 - `## Evidence` — when you attach a long document, quote the few lines that matter instead of asking them to read it.
 
 One image shows one thing. Keep sizes and framing equal when images are compared. Numbers say what was measured.
-
-## Goals
-
-- Goals are ranked: the first active goal is what the team works on now. Humans rank them on the board or ask the hub to.
-- A task that serves a goal says so (`dah mine` shows the goal). Stay inside the goal and the task; report what moved it.
-- Only the hub (and humans) change goals. A lane that thinks a goal is wrong, done or blocked says it in its report.
 
 ## Lanes in their own worktree
 

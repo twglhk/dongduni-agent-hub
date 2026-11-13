@@ -132,7 +132,6 @@ def on_tick(ctx):
         self.assertEqual((mod.seen, len(mod.ticks)), ([], 1))
 
         clock.tick(5)
-        gid = s.add_goal("Ship", "", "ana")
         iid = s.add_item(HUB, None, "decision", "Port?", "## a\nb", [{"label": "80", "desc": ""}, {"label": "8080", "desc": ""}], [], audience=HUMAN)
         mid = s.push(INFRA, "ana", "memo", "explode please")
         rid = s.add_report(None, "docs", "done", "Done", [])
@@ -140,7 +139,7 @@ def on_tick(ctx):
         clock.tick(5)
         s.decide(iid, "ok", "ana", "80")
         e.tick()
-        self.assertEqual([x for x in mod.seen if x[0] != "lane"], [("report", rid), ("item", iid), ("goal", gid),
+        self.assertEqual([x for x in mod.seen if x[0] != "lane"], [("report", rid), ("item", iid),
                                                                    ("decided", iid)])
         self.assertEqual(len(mod.ticks), 3)
         self.assertTrue(any("hook bug" in line for line in logs))  # logged, and the tick went on
