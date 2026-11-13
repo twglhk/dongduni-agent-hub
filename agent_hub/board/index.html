@@ -172,7 +172,19 @@ body.has-last{--chat-h:104px}
 .see-all:disabled{color:var(--text-4);cursor:default}
 
 /* ---- lanes / reports / memos ---- */
-.lc{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:6px;align-content:start}
+.kvs{display:grid;gap:4px;margin:var(--s2) 0}
+.kv{display:flex;gap:var(--s3);font-size:var(--t5);line-height:1.5}
+.kv .k{color:var(--text-3);min-width:64px;flex:none}
+.stages{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s2) 0}
+.stg{padding:4px 8px;border-radius:var(--r-xs);background:var(--grey-weak);color:var(--grey-ink);font-size:var(--t6);font-weight:600}
+.stg.now{background:var(--blue-weak);color:var(--blue-ink)}
+.days{display:flex;gap:6px;align-items:flex-end;height:72px}
+.day{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:var(--t6);color:var(--text-3)}
+.day i{display:block;width:100%;min-height:2px;background:var(--blue-weak);border-radius:3px 3px 0 0}
+.row.static{cursor:default}
+.sb>.tk{font-size:var(--t5);font-weight:600;line-height:1.45;margin:var(--s2) 0}
+.sb>.tk .id{color:var(--text-3);font-weight:500;margin-right:4px}
+.lc{text-align:left;width:100%;cursor:pointer;background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:6px;align-content:start}
 .lc .hd{display:flex;align-items:center;gap:var(--s2);min-width:0}
 .lc .nm{font-weight:700;font-size:var(--t4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lc .hd .chip:last-child{margin-left:auto}
@@ -460,6 +472,7 @@ const UI = {
       memo: 'Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
+    lv: { skills: 'Skills', noSkills: 'No skills named in its role file', process: 'Process', stage: 'Stage', stageN: 'stage {n}', noProc: 'No process yet', fixing: 'Fixing', fixBy: { 'send-back': 'Send-back', blame: 'Blamed stage' }, model: 'Model', tokens: 'Tokens', week: 'Last 7 days', recent: 'Recent tasks', engine: 'Engine', missing: 'folder not found', none: 'Nothing yet' },
     use: { day: 'Today', io: '{i} / {o}', task: 'Task {n} new · {c} cache · {o} out · {t} turns',
       today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
@@ -501,6 +514,7 @@ const UI = {
       memo: '인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
+    lv: { skills: '스킬', noSkills: '역할 파일에 적힌 스킬이 없어요', process: '공정', stage: '단계', stageN: '{n}단계', noProc: '아직 공정이 없어요', fixing: '고치는 중', fixBy: { 'send-back': '되돌려 받음', blame: '지목된 단계' }, model: '모델', tokens: '토큰', week: '최근 7일', recent: '최근 작업', engine: '엔진', missing: '폴더를 찾지 못했어요', none: '아직 없어요' },
     use: { day: '오늘', io: '{i} / {o}', task: '작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴',
       today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
@@ -543,6 +557,7 @@ const UI = {
       memo: 'インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
+    lv: { skills: 'スキル', noSkills: '役割ファイルにスキルの記載がありません', process: '工程', stage: 'ステージ', stageN: 'ステージ {n}', noProc: 'まだ工程がありません', fixing: '修正中', fixBy: { 'send-back': '差し戻し', blame: '指摘されたステージ' }, model: 'モデル', tokens: 'トークン', week: '直近7日', recent: '最近の作業', engine: 'エンジン', missing: 'フォルダが見つかりません', none: 'まだありません' },
     use: { day: '今日', io: '{i} / {o}', task: 'タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン',
       today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
@@ -584,6 +599,7 @@ const UI = {
       memo: '请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
+    lv: { skills: '技能', noSkills: '职责文件里没有写技能', process: '流程', stage: '阶段', stageN: '第 {n} 阶段', noProc: '还没有流程', fixing: '修正中', fixBy: { 'send-back': '被退回', blame: '被点名的阶段' }, model: '模型', tokens: '令牌', week: '最近 7 天', recent: '最近的任务', engine: '引擎', missing: '找不到文件夹', none: '暂无' },
     use: { day: '今天', io: '{i} / {o}', task: '任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮',
       today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
@@ -626,6 +642,7 @@ const UI = {
       memo: 'Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
+    lv: { skills: 'Habilidades', noSkills: 'Su archivo de rol no nombra ninguna', process: 'Proceso', stage: 'Etapa', stageN: 'etapa {n}', noProc: 'Aún sin proceso', fixing: 'Corrigiendo', fixBy: { 'send-back': 'Devuelto', blame: 'Etapa señalada' }, model: 'Modelo', tokens: 'Tokens', week: 'Últimos 7 días', recent: 'Tareas recientes', engine: 'Motor', missing: 'carpeta no encontrada', none: 'Aún nada' },
     use: { day: 'Hoy', io: '{i} / {o}',
       task: 'Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
@@ -680,7 +697,7 @@ function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? '
 // ---------- state ----------
 const S = {
   data: null, raw: '', ok: null, loading: false, auth: false,
-  view: 'hub', item: null, menu: null, pushed: false, sheetKey: '', sheetId: null,
+  view: 'hub', item: null, lane: null, laneData: {}, menu: null, pushed: false, sheetKey: '', sheetId: null,
   drafts: {}, busy: {}, extra: {}, tried: {}, open: {}, hubOpen: false, laneAdd: false, capFocus: 0, ws: [],
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
@@ -803,7 +820,7 @@ async function load() {
     const j = normalize(await get(BASE + 'api/state'));
     S.ok = true; fresh = true;
     const raw = JSON.stringify(j);
-    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); }
+    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); if (S.lane) loadLane(S.lane); }
   } catch (e) { if (e.status !== 401) S.ok = false; }
   S.loading = false;
   render();
@@ -825,8 +842,9 @@ async function loadWs() {
 // ---------- routing ----------
 function route() {
   const hs = location.hash.replace(/^#/, '');
-  const m = /^item-(\d+)$/.exec(hs), prev = S.view;
-  S.item = m ? Number(m[1]) : null; S.menu = null;
+  const mi = /^item-(\d+)$/.exec(hs), ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs), m = mi || ml, prev = S.view;
+  S.item = mi ? Number(mi[1]) : null; S.lane = ml ? ml[1] : null; S.menu = null;
+  if (ml) loadLane(ml[1]);
   if (!m) { S.pushed = false; S.view = TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
   if (S.view === 'history' && prev !== 'history') resetHist(S.hist.kind);
   render();
@@ -834,6 +852,7 @@ function route() {
 }
 function go(view) { location.hash = view; }
 function openItem(id) { S.pushed = true; location.hash = 'item-' + id; }
+function openLane(id) { S.pushed = true; location.hash = 'lane-' + id; }
 function openMenu(kind) { S.menu = kind; if (kind === 'ws') loadWs(); renderSheet(true); }
 function closeSheet() {
   if (S.menu) { S.menu = null; renderSheet(true); return; }
@@ -1053,14 +1072,50 @@ function viewLanes() {
   paint($('#ln-reps'), K + JSON.stringify(d.reports), () => sec(L.sec.reports, null, d.reports.length ? h('div', { class: 'stack' }, d.reports.map(repCard)) : empty(L.empty.reports)));
 }
 function laneCard(l) {
-  return h('div', { class: 'lc' },
+  const mdl = [l.model, l.effort].filter(Boolean).join(' · ');
+  const proc = l.process ? [l.process, l.stage ? fmt(L.lv.stageN, { n: l.stage }) : ''].filter(Boolean).join(' · ') : '';
+  return h('button', { class: 'lc', type: 'button', onclick: () => openLane(l.lane) },
     h('div', { class: 'hd' }, h('span', { class: 'nm' }, l.label || l.lane), l.runtime ? h('span', { class: 'chip' }, l.runtime) : null, statusChip(l.status)),
     l.task_id ? h('div', { class: 'tk' }, h('span', { class: 'id' }, '#' + l.task_id), l.task_title || '')
       : l.doing ? null : h('div', { class: 'tk none' }, L.label.noTask),
     l.doing ? h('div', { class: l.task_id ? 'dg' : 'tk' }, l.doing) : null,
+    proc || mdl || l.fixing ? h('div', { class: 'meta' }, proc ? h('span', null, proc) : null, mdl ? h('span', { class: 'chip' }, mdl) : null,
+      l.fixing ? h('span', { class: 'chip st-asking' }, L.lv.fixing) : null) : null,
     l.ctx_k > 0 ? h('div', { class: 'meta' }, `${L.label.ctx} ${l.ctx_k}K`) : null,
     taskTokLine(l.task_tokens),
     useLine(l.usage));
+}
+async function loadLane(id) {
+  try { const j = await get(BASE + 'api/lanes/' + encodeURIComponent(id)); S.laneData[id] = j; if (S.lane === id) renderSheet(); }
+  catch (e) { if (e.status === 404) { toast(L.msg.notFound, true); if (S.lane === id) closeSheet(); } }
+}
+function kv(k, v) { return v === null || v === undefined || v === '' ? null : h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v)); }
+function tokSum(k) { return k && ((k.new || 0) + (k.cache || 0) + (k.out || 0)) ? fmt(L.use.task, { n: fmtTok(k.new), c: fmtTok(k.cache), o: fmtTok(k.out), t: k.turns || 0 }) : null; }
+function laneSheet(d) {
+  const t = d.task, p = d.process, f = d.fixing, out = [];
+  out.push(h('div', { class: 'meta' }, h('span', { class: 'chip' }, rtName(d.runtime)), statusChip(d.status), d.engine ? h('span', { class: 'chip' }, L.lv.engine + ' ' + d.engine) : null));
+  if (t) out.push(h('div', { class: 'tk' }, h('span', { class: 'id' }, '#' + t.id), t.title));
+  const mdl = t ? [t.model, t.effort].filter(Boolean).join(' · ') : '';
+  out.push(h('div', { class: 'kvs' }, kv(L.lv.model, mdl || d.model), kv(L.lv.tokens, t && tokSum(t.tokens))));
+  out.push(h('div', { class: 'h3' }, L.lv.process));
+  if (p) {
+    out.push(h('div', { class: 'tk' }, p.type + (p.version ? ' v' + p.version : ''), ' ', h('span', { class: 'chip' }, p.status || '—')));
+    out.push(h('div', { class: 'stages' }, p.stages.map(s => h('span', { class: 'stg' + (String(s.n) === String(p.now) ? ' now' : ''), title: L.lv.stage + ' ' + s.n }, s.n + ' ' + s.name))));
+    if (p.now) out.push(h('div', { class: 'meta' }, L.lv.stage + ' ' + p.now));
+  } else out.push(empty(L.lv.noProc));
+  if (f) out.push(h('div', { class: 'h3' }, L.lv.fixing), h('div', { class: 'box esc' },
+    [L.lv.fixBy[f.by] || f.by, f.type, f.stage ? fmt(L.lv.stageN, { n: f.stage }) : '', '#' + f.task_id].filter(Boolean).join(' · ')));
+  out.push(h('div', { class: 'h3' }, L.lv.skills));
+  out.push(d.skills.length ? h('div', { class: 'meta' }, d.skills.map(s => h('span', { class: 'chip' + (s.found ? '' : ' st-asking'), title: s.found ? '' : L.lv.missing }, s.name))) : empty(L.lv.noSkills));
+  out.push(h('div', { class: 'h3' }, L.lv.week));
+  const max = Math.max(1, ...d.days.map(x => x.tokens_in + x.tokens_out));
+  out.push(h('div', { class: 'days' }, d.days.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
+    h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` }), h('span', null, x.day.slice(8))))));
+  out.push(h('div', { class: 'h3' }, L.lv.recent));
+  out.push(d.recent.length ? h('div', { class: 'list' }, d.recent.map(r => h('div', { class: 'row static' }, h('div', { class: 'body' },
+    h('div', { class: 'title' }, '#' + r.id + ' ' + r.title),
+    h('div', { class: 'sub' }, [L.task && L.task[r.state] || r.state, [r.model, r.effort].filter(Boolean).join(' · '), tokSum(r.tokens)].filter(Boolean).join(' · ')))))) : empty(L.lv.none));
+  return out;
 }
 function taskTokLine(k) {
   if (!k || !((k.new || 0) + (k.cache || 0) + (k.out || 0))) return null;
@@ -1249,6 +1304,11 @@ function sheetView() {
     const title = S.menu === 'lang' ? L.lang.title : S.menu === 'thread' ? L.chat.title : L.ws.title;
     const dep = S.menu === 'ws' ? S.ws : S.menu === 'thread' ? S.data && S.data.memos.hub : LANG;
     return { id: 'm-' + S.menu, key: [S.menu, dep], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
+  }
+  if (S.lane) {
+    const ld = S.laneData[S.lane];
+    if (!ld) return { id: 'l' + S.lane, key: [null], label: S.lane, head: () => menuHead(laneLabel(S.lane)), build: () => ({ body: [empty(L.empty.loading)], cta: null }) };
+    return { id: 'l' + ld.lane, key: [ld], label: ld.label, head: () => menuHead(ld.label), build: () => ({ body: laneSheet(ld), cta: null }) };
   }
   const it = S.item !== null ? itemById(S.item) : null;
   if (S.item !== null && !it && S.data) fetchItem(S.item);
@@ -1631,7 +1691,7 @@ window.dah = {
       return;
     }
     const typing = document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName);
-    if (e.key === 'Escape' && (S.item !== null || S.menu) && !typing) closeSheet();
+    if (e.key === 'Escape' && (S.item !== null || S.lane || S.menu) && !typing) closeSheet();
   });
   $('#sheet-bd').addEventListener('click', closeSheet);
   $('#signout').addEventListener('click', logout);

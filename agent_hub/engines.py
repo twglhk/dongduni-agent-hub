@@ -164,6 +164,32 @@ def confirmed(row: dict[str, Any]) -> bool:
     return row["process_status"] == "confirmed" and row["pattern_status"] in GREEN
 
 
+# ---------------------------------------------------------------- what a lane runs
+
+_SKILL_CALL = re.compile(r"""skill\(\s*["']([A-Za-z0-9_-]+)["']\s*\)""")
+
+
+def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None = None, lane: str = "") -> list[dict[str, Any]]:
+    """Skills a lane runs: `skill("name")` mentions in its role file, plus the skill column of the library rows it owns.
+    `found` says whether a folder of that name exists in the skills directory."""
+    names = list(dict.fromkeys(_SKILL_CALL.findall(role_text)))
+    for r in rows or []:
+        if r["lane"] == lane and r["skill"] and r["skill"] not in names:
+            names.append(r["skill"])
+    return [{"name": n, "found": (skills / n).is_dir()} for n in names]
+
+
+def row_view(rows: list[dict[str, Any]], row: str | None, stage: str | None) -> dict[str, Any] | None:
+    """The process a task runs: {row, type, version, status, stages: [{n, name}], now} for library row `row`; None when unknown.
+    `now` is the stage the lane named with `dah stage`, else the one the Line header names."""
+    hit = next((r for r in rows if row and r["n"] == str(row).upper()), None)
+    if hit is None:
+        return None
+    p = hit["process"]
+    return {"row": hit["n"], "type": hit["type"], "version": p["version"] if p else None, "status": hit["process_status"],
+            "stages": [{"n": s["n"], "name": s["name"]} for s in p["stages"]] if p else [], "now": stage or None}
+
+
 # ---------------------------------------------------------------- the Line: header
 
 def first_line(brief: str) -> str:

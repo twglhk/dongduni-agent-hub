@@ -6,6 +6,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/state                 lanes · open items · tasks · reports · memos · counts
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
+  GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
@@ -36,6 +37,7 @@ from urllib.parse import parse_qs, unquote
 
 from . import __version__
 from . import config as config_mod
+from . import engines as engines_mod
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -68,8 +70,64 @@ def safe_file(root: Path, rel: str) -> Path | None:
     return full
 
 
+def engine_rows(cfg: Config, lane: str) -> tuple[list[dict[str, Any]], Path]:
+    """(library rows with their process cards, skills directory) of a lane's engine; no engine or library -> ([], default dir)."""
+    ln = cfg.all_lanes.get(lane)
+    eng = cfg.engines.get(ln.engine) if ln and ln.engine else None
+    skills = cfg.home / ((eng.skills if eng else "") or engines_mod.SKILLS_DEFAULT)
+    return (engines_mod.build(cfg.home / eng.library, skills) if eng and eng.library else []), skills
+
+
+def tok(t: dict[str, Any]) -> dict[str, Any] | None:
+    return ({"new": t["tok_new"], "cache": t["tok_cache"], "out": t["tok_out"], "turns": t["turns"]} if t.get("tok_at") else None)
+
+
+def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What the lane is fixing: a send-back task (`Line: … fix`) or a task whose blame names a stage; None otherwise."""
+    if not t:
+        return None
+    if t.get("line_mode") == "fix":
+        return {"by": "send-back", "task_id": t["id"], "row": t.get("line_row"), "type": view["type"] if view else None,
+                "stage": t.get("stage_now") or t.get("line_stage")}
+    if blame:
+        return {"by": "blame", "task_id": t["id"], "row": t.get("line_row"), "type": view["type"] if view else None,
+                "stage": blame["effective"], "confirmed": blame["is_confirmed"]}
+    return None
+
+
+def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
+    """Everything the lane sheet shows. `lid` is a configured lane."""
+    ln = cfg.lanes[lid]
+    row = s.lane(lid)
+    live = row.get("status") not in (None, "closed")
+    rows, skills_dir = engine_rows(cfg, lid)
+    try:
+        role = cfg.instructions(lid).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        role = ""
+    recent = s.lane_tasks(lid, 6) if ln.kind == "team" else []
+    cur = next((t for t in recent if t["state"] in ("running", "wrapping")), None)
+    shown = cur or (recent[0] if recent else None)
+    view = engines_mod.row_view(rows, shown.get("line_row") if shown else None,
+                                (shown.get("stage_now") or shown.get("line_stage")) if shown else None)
+    blame = s.blames().get(cur["id"]) if cur else None
+    return {"lane": lid, "label": ln.label or lid, "kind": ln.kind, "runtime": ln.runtime, "engine": ln.engine or None,
+            "model": ln.model or None, "status": row.get("status") or "closed", "live": live,
+            "skills": engines_mod.lane_skills(role, skills_dir, rows, lid) if ln.kind == "team" else [],
+            "task": ({"id": shown["id"], "title": shown["title"], "state": shown["state"], "model": shown["model"],
+                      "effort": shown["effort"], "line_row": shown["line_row"], "line_stage": shown["line_stage"],
+                      "line_mode": shown["line_mode"], "stage_now": shown["stage_now"], "tokens": tok(shown)}
+                     if shown else None),
+            "process": view, "fixing": fixing_of(cur, blame, view),
+            "days": s.usage_days(lid, 7),
+            "recent": [{"id": t["id"], "title": t["title"], "state": t["state"], "model": t["model"], "effort": t["effort"],
+                        "line_row": t["line_row"], "tokens": tok(t)} for t in recent]}
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
+    blamed = set(s.blames())
+    libs: dict[str, list[dict[str, Any]]] = {}
     for lid, ln in cfg.lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
@@ -83,9 +141,19 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                 doing = clip(f"#{m['id']} {m['text']}", 80)
             except StoreError:
                 pass
+        proc = None
+        if task and task["line_row"]:
+            rows = libs.get(ln.engine) if ln.engine in libs else libs.setdefault(ln.engine, engine_rows(cfg, lid)[0])
+            hit = next((r for r in rows if r["n"] == task["line_row"]), None)
+            proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "status": row.get("status") or "closed", "doing": doing,
+                    "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
+                    "model": task["model"] if task else None, "effort": task["effort"] if task else None,
+                    "line_row": task["line_row"] if task else None, "process": proc,
+                    "stage": (task["stage_now"] or task["line_stage"]) if task else None,
+                    "fixing": bool(task and (task["line_mode"] == "fix" or task["id"] in blamed)),
                     "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
@@ -315,6 +383,12 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
+            m = re.fullmatch(r"/api/lanes/([^/]+)", path)
+            if m:
+                lid = unquote(m.group(1))
+                if lid not in c.lanes:
+                    return self._json(404, {"error": f"no lane {lid}"})
+                return self._json(200, lane_view(c, st, lid))
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:

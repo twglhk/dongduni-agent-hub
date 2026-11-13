@@ -788,6 +788,23 @@ class Store:
                 cur["cost"] = (cur["cost"] or 0.0) + r["cost"]
         return out
 
+    def usage_days(self, lane: str, days: int = 7) -> list[dict[str, Any]]:
+        """A lane's last `days` days, oldest first, empty days included: {day, tokens_in, tokens_out, sessions}."""
+        end = self.clock()
+        names = [self.day(end - 86400 * i) for i in range(days - 1, -1, -1)]
+        with self.conn() as con:
+            got = {r["day"]: r for r in _rows(con.execute(
+                "SELECT day, SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out, COUNT(*) AS sessions FROM usage "
+                "WHERE lane=? AND day>=? GROUP BY day", (lane, names[0])))}
+        return [{"day": d, "tokens_in": (got.get(d) or {}).get("tokens_in") or 0,
+                 "tokens_out": (got.get(d) or {}).get("tokens_out") or 0, "sessions": (got.get(d) or {}).get("sessions") or 0}
+                for d in names]
+
+    def lane_tasks(self, lane: str, limit: int = 5) -> list[dict[str, Any]]:
+        """A lane's latest tasks, newest first (any state)."""
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
+
     def session_ctx(self, lane: str, session: str | None) -> int | None:
         if not session:
             return None
