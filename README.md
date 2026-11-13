@@ -18,9 +18,11 @@ You run several agent sessions. Each time, you re-explain the context, spawn sub
 ![The loop: you ask the hub, it turns the request into tasks on process cards, lanes work and report, the hub reviews and asks you only what needs a human, and the Engine tab rates each stage.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/how.svg)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/port/09-engine-desktop.png" width="300" alt="The board's Engine tab: pipelines with stage ratings, lanes, skills, what changed">
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-decide.png" width="300" alt="A decision on the board: options, recommendation, Decide button">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/port/09-engine-desktop.png" width="760" alt="The board's Engine tab: pipelines with stage ratings, lanes, skills, what changed">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-decide.png" width="360" alt="A decision on the board: options, recommendation, Decide button">
 </p>
 
 > **Agents:** asked to install or set up agent-hub / dongduni-agent-hub? Install the package (`uv tool install dongduni-agent-hub`, or `pipx install dongduni-agent-hub`; for one project only, see [Install](#install)), then run `dah guide` and follow that playbook phase by phase. It is also [online](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/guide/SETUP.md).
