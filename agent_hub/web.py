@@ -174,7 +174,7 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
         pipes.append({"row": r["n"], "type": r["type"], "lane": r["lane"], "skill": r["skill"], "version": p["version"] if p else None,
                       "process_status": r["process_status"], "pattern_status": r["pattern_status"], "model": r["model_text"],
                       "rating": {k: pr[k] for k in ("n", "pct", "state", "color", "fixes")} if pr else None, "stages": stages})
-    skills = engines_mod.skill_list(skills_dir, by_lane)
+    skills = engines_mod.engine_skills(cfg, eid, {**by_lane, "": [{"name": n, "found": True} for n in e.skill_names]})
     days: dict[str, dict[str, Any]] = {}
     for lid in e.lanes:
         for d in s.usage_days(lid, 7):
@@ -186,7 +186,7 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
     hand = engines_mod.read_map(cfg.home / e.map) if e.map else engines_mod.read_map(cfg.home / e.dir / "engine.json") if e.dir else \
         engines_mod.read_map(cfg.home / "engine.json")
     return {"id": eid, "label": e.label or eid, "implicit": e.implicit, "lanes": lanes, "pipelines": pipes,
-            "skills": [{k: x[k] for k in ("name", "files", "lanes")} for x in skills],
+            "skills": [{k: x[k] for k in ("name", "files", "lanes", "shared")} for x in skills],
             "tools": hand["tools"], "experiments": hand["experiments"], "notes": hand["notes"],
             "usage": sorted(days.values(), key=lambda x: x["day"]),
             "changes": {"since": base["at"] if base else None, "items": engines_mod.diff(base, live) if base else []}}

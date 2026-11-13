@@ -327,6 +327,46 @@ def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]
     return out
 
 
+def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
+    """Skills engine `eid` names: per lane the `skill("x")` mentions of its role file and the library rows it owns, plus the
+    engine's own `skill_names` (under the key ""). {lane id or "": [{name, found}]}."""
+    e = cfg.engines[eid]
+    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    rows = library(cfg.home / e.library) if e.library else []
+    out: dict[str, list[dict[str, Any]]] = {}
+    for lid in e.lanes:
+        try:
+            role = cfg.instructions(lid).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            role = ""
+        out[lid] = lane_skills(role, skills_dir, rows, lid)  # type: ignore[arg-type]
+    out[""] = [{"name": n, "found": (skills_dir / n).is_dir()} for n in e.skill_names]
+    return out
+
+
+def engine_skills(cfg: Config, eid: str, by_lane: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
+    """The skills one engine's tab lists: {name, files, hash, lanes, shared}. An engine with a skills directory of its own lists every
+    folder of it. Engines that share one directory list only what its lanes name (or its `skill_names`), and a folder
+    that lanes of two engines name is `shared: true` (the tab shows it once under a shared label)."""
+    e = cfg.engines[eid]
+    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    mine = by_lane if by_lane is not None else named_skills(cfg, eid)
+    out = skill_list(skills_dir, {k: v for k, v in mine.items() if k})
+    for s in out:
+        s["shared"] = False
+    sharers = [oid for oid, o in cfg.engines.items() if oid != eid and (o.skills or SKILLS_DEFAULT) == (e.skills or SKILLS_DEFAULT)]
+    if not sharers:  # its folder is its own: everything in it belongs to it
+        return out
+    own = {s["name"] for ss in mine.values() for s in ss}
+    others: set[str] = set()
+    for oid in sharers:
+        others |= {s["name"] for ss in named_skills(cfg, oid).values() for s in ss}
+    out = [s for s in out if s["name"] in own]
+    for s in out:
+        s["shared"] = s["name"] in others
+    return out
+
+
 def _card_text(c: dict[str, Any] | None) -> str:
     return "" if not c or not c["exists"] else " ".join(x for x in (f"v{c['version']}" if c["version"] else "", c["status"]) if x)
 
@@ -412,7 +452,7 @@ def live_snapshot(cfg: Config, eid: str, now: float) -> dict[str, Any]:
     e = cfg.engines[eid]
     skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
     rows = build(cfg.home / e.library, skills_dir) if e.library else []
-    return snapshot(list(e.lanes), skill_list(skills_dir, {}), rows, now)
+    return snapshot(list(e.lanes), engine_skills(cfg, eid), rows, now)
 
 
 def weekly(cfg: Config, now: float | None = None, log: Any = None) -> list[str]:

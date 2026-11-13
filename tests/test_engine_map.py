@@ -198,3 +198,43 @@ class BoardTextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TwoEnginesSkillsTest(unittest.TestCase):
+    """Engines sharing one skills folder each list only their own skills; a skill both name is shared."""
+
+    def setUp(self) -> None:
+        self.home, _ = make_engine_home()
+        sk = self.home / ".agents/skills"
+        for n in ("sound-mix", "voice", "notes"):
+            (sk / n).mkdir()
+            (sk / n / "SKILL.md").write_text(n)
+        (self.home / ".tower" / "lanes").mkdir(exist_ok=True)
+        (self.home / ".tower/lanes/story.md").write_text('Use skill("layout") and skill("notes").')
+        (self.home / ".tower/lanes/mixer.md").write_text('Use skill("sound-mix") and skill("notes").')
+        raw = json.loads((self.home / ".tower/tower.json").read_text())
+        raw["lanes"]["mixer"] = {"runtime": "codex"}
+        raw["engines"]["audio"] = {"skills": ".agents/skills", "lanes": ["mixer"], "skill_names": ["voice"]}
+        (self.home / ".tower/tower.json").write_text(json.dumps(raw))
+        from agent_hub import config as config_mod
+        self.cfg = config_mod.load(self.home)
+
+    def names(self, eid: str) -> dict[str, bool]:
+        return {s["name"]: s["shared"] for s in engines.engine_skills(self.cfg, eid)}
+
+    def test_each_engine_lists_its_own_and_shared_once(self) -> None:
+        self.assertEqual(self.names("anim"), {"layout": False, "notes": True})
+        self.assertEqual(self.names("audio"), {"sound-mix": False, "voice": False, "notes": True})
+
+    def test_snapshot_follows_the_engine_scope(self) -> None:
+        self.assertEqual(sorted(engines.live_snapshot(self.cfg, "audio", 0.0)["skills"]), ["notes", "sound-mix", "voice"])
+
+    def test_engine_with_its_own_folder_lists_all_of_it(self) -> None:
+        raw = json.loads((self.home / ".tower/tower.json").read_text())
+        raw["engines"]["audio"]["skills"] = ".agents/audio-skills"
+        (self.home / ".agents/audio-skills/x").mkdir(parents=True)
+        (self.home / ".agents/audio-skills/x/SKILL.md").write_text("x")
+        (self.home / ".tower/tower.json").write_text(json.dumps(raw))
+        from agent_hub import config as config_mod
+        cfg = config_mod.load(self.home)
+        self.assertEqual([s["name"] for s in engines.engine_skills(cfg, "audio")], ["x"])
