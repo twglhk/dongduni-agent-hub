@@ -9,9 +9,9 @@ Instructions for coding agents working in this repository.
 
 | path | what |
 | --- | --- |
-| `agent_hub/engine.py` | the tick: hub, infra inbox, team lanes, decision routing, live asks, goal prompts. No LLM. |
+| `agent_hub/engine.py` | the tick: hub, infra inbox, team lanes, decision routing, live asks, scheduling (paths, slots, linked tasks, usage caps). No LLM. |
 | `agent_hub/runtimes.py` | one adapter per agent runtime (opencode / claude / codex), in the background or in a terminal window (tmux, Orca) |
-| `agent_hub/store.py` | SQLite schema and all state changes (goals, tasks, items, messages, …) |
+| `agent_hub/store.py` | SQLite schema and all state changes (tasks, items, messages, ledger, deliverables, …) |
 | `agent_hub/config.py` | `tower.json`, the workspace registry (`~/.config/agent-hub/workspaces.json`, `%APPDATA%\agent-hub` on Windows), port picking |
 | `agent_hub/procs.py` | starting, checking and stopping processes on Linux, macOS and Windows; npm shims on Windows |
 | `agent_hub/ext.py` | workspace extensions: `.tower/board/` files and override, `.tower/ext/*.py` routes and engine hooks |
@@ -20,7 +20,9 @@ Instructions for coding agents working in this repository.
 | `agent_hub/discover.py` · `install.py` | setup survey and workspace installer |
 | `agent_hub/templates/` | protocol and lane instruction templates copied into workspaces |
 | `agent_hub/guide/` | the setup playbook, the extension guide and the guides for reaching the board (`dah guide`); shipped in the package |
-| `agent_hub/stagemodel.py` | per-task model and effort from brief lines and an optional table |
+| `agent_hub/stagemodel.py` | per-task model and effort from brief lines, a library's `model · effort` column or an optional table |
+| `agent_hub/engines.py` · `rating.py` · `stats.py` | engines: pattern library, process and pattern cards, skills list, weekly snapshots; ratings and blame; the token ledger |
+| `agent_hub/memwatch.py` | renews idle sessions over a memory line |
 | `docs/` | README illustrations, the engine playbook, a Claude lane harness section, releasing |
 | `tools/skill_lint.py` | lint for OpenCode skills |
 

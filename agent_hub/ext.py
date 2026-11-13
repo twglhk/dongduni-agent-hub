@@ -9,11 +9,15 @@
           fn(ctx, body) -> dict | (status, dict); ctx: cfg, store, me, query, log. Signed-in people only;
           POST needs the board's `x-tower: 1` header like every built-in POST.
       on_tick(ctx)                    after every tower tick; ctx: cfg, store, log, now
-      on_event(ctx, kind, data)       kind: report | item | decided | memo | goal | task (data: that row)
+      on_event(ctx, kind, data)       kind: report | item | decided | memo | task (data: that row)
                                       | lane (data: lane, status, was, runtime, terminal)
       on_notify(ctx, notes)           each push the tower sends people (title, lane, alert, the item's fields)
       runtimes = {"name": cls}        an agent runtime: a subclass of runtimes.Adapter, used as "runtime": "name"
       terminals = {"name": cls}       a terminal app for lane windows: a subclass of runtimes.Host
+      caps = {"name": fn}             a usage cap, used as `"cap": "name"` on an engine in tower.json; fn(ctx) returns a
+                                      reason to hold that engine's queued tasks, or None. ctx: cfg, store, log, now, engine
+      caps = {"name": fn}             a usage cap, used as `"cap": "name"` on an engine in tower.json; fn(ctx) returns a
+                                      reason to hold that engine's queued tasks, or None. ctx: cfg, store, log, now, engine
 
 Built-in routes and engine decisions are the contract and cannot be overridden. A failing extension is logged and
 skipped; it never stops the board or the tower. Files are reloaded when they change.
@@ -34,7 +38,7 @@ BOARD_DIR = "board"
 EXT_DIR = "ext"
 STATIC_SUFFIXES = {".js", ".mjs", ".css", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
                    ".woff", ".woff2", ".txt", ".md"}
-EVENT_KINDS = ("report", "item", "decided", "memo", "goal", "task", "lane")
+EVENT_KINDS = ("report", "item", "decided", "memo", "task", "lane")
 
 
 def board_dir(home: Path) -> Path:

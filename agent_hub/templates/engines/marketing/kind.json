@@ -1,0 +1,6 @@
+{
+  "description": "Short posts and launch threads.",
+  "lanes": {
+    "copy": "Writes posts and threads in the project's voice."
+  }
+}

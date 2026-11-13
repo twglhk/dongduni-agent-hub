@@ -1,6 +1,6 @@
 # SETUP.md — agent playbook
 
-You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first goal is on it, and you have watched one memo go round trip.
+You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first request has gone through the hub, and you have watched one request to infra go round trip.
 
 `dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws` prints the guides for reaching the board.
 
@@ -62,6 +62,8 @@ Only what is still open, for example:
 7. Lanes in windows (`--terminal`): open each agent the lanes use once by hand in the workspace (`claude`, `codex`, `opencode`) and get past its first-run screens (folder trust, accepting `bypassPermissions`); a lane cannot answer them and would wait there.
 8. Team lanes are optional at the start. Add them only if the person names them. A lane is a role on top of the agent they already use, not a new agent: `dah lane add <id> --runtime <r>` writes `.tower/lanes/<id>.md` (fill in: area, files it owns, done criteria, what not to touch) and a `/dah-<id>` shortcut so they can also open the role by hand. Only when a role needs its own model, prompt or tool limits, point it at one of *their* existing agents with `--agent NAME` (an OpenCode agent or a Claude Code `--agent`; Codex: `"args": ["--profile", NAME]`). Do not create new agent definitions for lanes. If several lanes may change the same files at once, or the person keeps working in the same checkout while lanes run, offer `--worktree`: the lane gets a git worktree and branch `dah/<id>` of its own and the hub merges it.
 
+9. Engines are optional too. One workspace with team lanes already runs as one implicit engine (`default`). If they do repeatable deliverables (a post, a shot, a screen) and want the lanes to share a written method with ratings, offer `dah engine add <name> --from blank|animation|marketing` and point them at `dah guide engines`. Everything it writes starts as `draft`; do not mark a card confirmed for them.
+
 ## Phase 4 — Launch
 
 1. `dah start` (background; log at `.tower/state/tower.log`) or `dah run` in a terminal tab they keep open.
@@ -87,11 +89,11 @@ Do not skip this phase silently: a board that only opens on this machine is easy
 
 ## Phase 6 — Prove the loop
 
-0. Ask for their first goal or goals (first priority first) and add them in the board's **Goals** section (or `dah goal add "..." --detail "..."`). The hub proposes a plan as a board item; once they approve it the goal shows its steps and progress, and the first steps go to lanes.
-1. From the board's Infra tab, send the memo: "Reply with the tower version and the lanes you see." Watch `dah status`: infra opens, replies (`dah memo reply`), wraps, closes. The reply shows under the memo.
+0. Ask what they want the team to do first and send it as their first request in the board's **Hub** tab. The hub proposes a plan as a board item when the request is big; once they approve it, the first steps go to lanes.
+1. In the chat pinned at the bottom of the board, write: "Ask infra to reply with the tower version and the lanes it sees." Watch `dah status`: the hub sends the request, infra opens, replies (`dah memo reply`), wraps, closes. The hub answers you in the chat.
 2. From the Hub tab, send a request: "Post a review item asking me to approve the setup." The hub posts it; approve it on the phone; the hub gets the decision.
 3. Check the hub goes idle again after each of these (`dah status` shows `idle` within a few minutes). If it stays `busy`, a hook or plugin keeps its session working (see `hooks`/`plugins` in the survey): give the hub lane another `"agent"` or runtime. The tower also posts a board item when news waits on a busy hub for 15 minutes.
-4. Fix anything that did not work, then tell the person in their language: the board URL, how to sign in, how to set and rank goals, how to reach it from the phone (the path they chose, or the paths from phase 5 that fit them if they stayed local), where to watch the lanes if they run in windows (`dah status` prints it), how to add a lane (the Lanes tab's Add a lane form, a request to infra), how to get features agent-hub does not have (a request to infra builds them in `.tower/board/` and `.tower/ext/`, see `dah guide extend`; never by editing the installed package), how to update (`dah update`, or ask infra on the board), how to stop (`dah stop`), how to take it out again (`dah uninstall`), and where the logs are.
+4. Fix anything that did not work, then tell the person in their language: the board URL, how to sign in, how to send requests to the hub, how to reach it from the phone (the path they chose, or the paths from phase 5 that fit them if they stayed local), where to watch the lanes if they run in windows (`dah status` prints it), how to add a lane (the Lanes tab's Add a lane form, a request to infra), how to get features agent-hub does not have (a request to infra builds them in `.tower/board/` and `.tower/ext/`, see `dah guide extend`; never by editing the installed package), how to update (`dah update`, or ask infra on the board), how to stop (`dah stop`), how to take it out again (`dah uninstall`), and where the logs are.
 
 ## Troubleshooting
 

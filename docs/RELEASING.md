@@ -17,7 +17,7 @@ The package is pure Python (`py3-none-any`): one wheel serves Windows, macOS and
 
 1. Start from an up-to-date `main` with a green CI run (`gh run list --limit 3`).
 2. Pick the version ([semver](https://semver.org); while below 1.0, bump the minor for anything that changes commands, files or behaviour people rely on, the patch for fixes).
-3. Set it in `agent_hub/__init__.py` (`__version__ = "X.Y.Z"`). That is the only place; `pyproject.toml` reads it.
+3. Set it in `agent_hub/__init__.py` (`__version__ = "X.Y.Z"`). That is the only place; `pyproject.toml` reads it. Add the release's section under "Release notes" below.
 4. Run the tests: `python3 -m unittest discover -s tests -t .` must print `OK`.
 5. Commit and tag:
 
@@ -49,3 +49,40 @@ The package is pure Python (`py3-none-any`): one wheel serves Windows, macOS and
 ## Moving or renaming the repo
 
 Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` in `agent_hub/install.py`, the links in `README.md` and the setup guide; then update the Trusted Publisher on pypi.org before the next tag.
+
+## Release notes
+
+Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
+
+### 0.8.0 (prepared on branch `port/engines`; not tagged, not published)
+
+A minor release below 1.0, with breaking changes. `agent_hub/__init__.py` is the only place the version is set; `pyproject.toml` reads it.
+
+**New**
+
+- **Engines.** A set of lanes with one method: a pattern library, skills holding process cards and pattern cards, a review lane. `dah engine list|show|add NAME --from blank|animation|marketing`, `dah lane add --engine`, `dah guide engines`. An install that declares none runs one implicit engine, `default`. Engines sharing a skills folder each list only the skills their lanes name (or `skill_names`); a skill two engines name shows once as shared.
+- **Process cards.** A brief starts with `Line: #3 Type · stage 2 · … · make|prepare|fix`; `dah stage N` names the stage in progress; `require_line` refuses a brief whose card is not confirmed. Model and effort per stage come from the library's `model · effort` column.
+- **Ratings.** `dah deliverable`, `dah blame`, `dah ratings`: first-pass rate per stage and process, token cost per attempt and per adopted deliverable. A `dah tell` starting with `fix:` counts as a send-back (PROTOCOL, "Sending work back").
+- **Task ledger.** Model, effort, tokens and turns per task, a retro line on `wrapped`, `dah stats`, `dah retros`; optional usage cap per engine (`tokens-day:N` or an extension's `caps`).
+- **Board.** Engine tab (switcher, pipelines with ratings, skills, tools, experiments, tokens of the last seven days, weekly snapshot and what changed), per-lane sheets, a request box on every tab, five-language strings.
+- **Scheduler.** `paths:` conflicts between tasks, head-of-line skip, `light_lanes` and `heavy_paths`, `max_instances` parallel sessions per lane (`docs#2`), linked tasks, memory guard (`memory_limit_mb`).
+
+**Breaking**
+
+- **Goals are gone.** `dah goal`, the Goals section, the goal prompts and `dah task --goal` (ignored with a notice) are removed; `/api/goals*` answers 410 for this release and is dropped in the next; `on_event` kind `goal` stops firing. Goal rows in an old database stay there, unread. Anyone who lives on goals: send the work as requests, or stay on 0.7.x.
+- **The Infra tab is gone.** Humans reach infra only through the hub (`dah infra "..." --approved "request #N"`); `to: infra` from the board answers 409. A workspace whose `lanes/hub.md` was edited gets the new hub template as `hub.md.new`; until it is merged the hub does not forward infra work. `dah update` prints this and asks infra to merge.
+
+**Compatible**
+
+- `tower.json`: new optional keys only (`engines`, `light_lanes`, `max_instances`, `heavy_paths`, `require_line`, `memory_limit_mb`); an old file loads unchanged and `dah update` rewrites nothing in it beyond the existing `--safe` fix.
+- Database: columns are added, none dropped, so a downgrade to 0.7.x still opens it.
+- Template texts: `templates/shipped.json` carries every release's text, so `dah update` swaps untouched copies and writes `.new` beside edited ones (tested from a 0.7.0 workspace in `tests/test_update_070.py`).
+
+**Upgrade**
+
+```sh
+dah update --dry-run     # what would be upgraded, which package files were changed in place
+dah update               # upgrade, migrate each workspace, restart the tower
+```
+
+Check before tagging: full suite `OK`; `grep -rniE "godot|blender|hero|boss" agent_hub/` shows no game words in source; the CI matrix is unchanged.

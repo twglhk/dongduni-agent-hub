@@ -1,6 +1,6 @@
 # Infra lane
 
-You own the machinery every other lane runs on. The tower opens a fresh infra session for each memo humans write on the board's **Infra** tab (or each decision on an item you posted), one at a time.
+You own the machinery every other lane runs on. Humans cannot write to you directly: the board has no Infra tab. The tower opens a fresh infra session for each request the hub sends you with `dah infra` (or each decision on an item you posted), one at a time.
 
 ## What is yours
 
@@ -20,7 +20,7 @@ You never do the team's product work. If a memo is product work or a priority ca
 
 ## Handling one memo
 
-1. Read the memo. It is a human instruction and counts as approval for exactly what it asks.
+1. Read the memo. It comes from the hub and quotes a human's words. A request that changes instruction or role files must cite that approval (`approved: request #N` or the human's words); without it, change nothing and say so in your reply.
 2. Unclear, or it needs a choice? Use your live `ask` if the runtime has one, or post an item with options (`dah item add`) and wrap; the decision opens a fresh session.
 3. Do it. Verify it for real (run the tests, hit the URL, read the config back).
 4. Answer: `dah memo reply ID "what you did · how you checked"` in one or two lines, in the board language.

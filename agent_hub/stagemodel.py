@@ -7,7 +7,8 @@ The hub names them in the brief, one line each:
 
 A brief line always wins. Optional second source: a markdown table named in `tower.json` as `stage_table`
 (a row per kind of work, one column whose header contains "model"). The brief points at a row and stages with a
-line like `Line: row 4 stage 2-3` (or `Line: #4 stage 2`). A cell is one `opus/high` for the whole row or
+line like `Line: row 4 stage 2-3` (or `Line: #4 stage 2`). A row id is digits or one letter and digits (`4`, `D5`). The table can be an engine's pattern library
+(`engines.py`): the same `model · effort` column. A cell is one `opus/high` for the whole row or
 per-stage entries `1-2 sonnet/medium; 3 opus/high`. Across a range of stages the strongest model and the highest
 effort win. Names are not checked here: whatever the runtime accepts passes through (`opus`, `gpt-5`, ...);
 the rank tables only order the ones they know.
@@ -20,11 +21,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .config import Config
+
 MODEL_RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
 EFFORT_RANK = {"low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4}
 _EFFORTS = "low|medium|high|xhigh|max"
 _ENTRY = re.compile(rf"^(?:(\d+)(?:\s*-\s*(\d+))?\s*[:=]?\s+)?([\w.\-]+)\s*/\s*({_EFFORTS})$", re.I)
-_LINE = re.compile(r"^line:\s*(?:row\s*|#)?(\d+)\b[^\n]*?\bstage\s*(\d+)(?:\s*-\s*(\d+))?", re.M | re.I)
+_LINE = re.compile(r"^line:\s*(?:row\s*|#)?([A-Za-z]?\d+)\b[^\n]*?\bstage\s*(\d+)(?:\s*-\s*(\d+))?", re.M | re.I)
 _MODEL = re.compile(r"^\s*model:\s*([\w.\-/]+)", re.M | re.I)
 _EFFORT = re.compile(rf"^\s*effort:\s*({_EFFORTS})\b", re.M | re.I)
 
@@ -45,7 +48,7 @@ def _entries(cell: str) -> list[tuple[int, int, str, str]]:
     return out
 
 
-def _table(path: Path) -> dict[int, list[tuple[int, int, str, str]]]:
+def _table(path: Path) -> dict[str, list[tuple[int, int, str, str]]]:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -58,15 +61,15 @@ def _table(path: Path) -> dict[int, list[tuple[int, int, str, str]]]:
         if col < 0 and cells and cells[0] == "#":
             col = next((i for i, c in enumerate(cells) if "model" in c.lower()), -1)
             continue
-        if col < 0 or col >= len(cells) or not cells[0].isdigit():
+        if col < 0 or col >= len(cells) or not re.fullmatch(r"[A-Za-z]?\d+", cells[0]):
             continue
         if ents := _entries(cells[col]):
-            out[int(cells[0])] = ents
+            out[cells[0].upper()] = ents
     return out
 
 
-def from_table(path: Path, row: int, first: int | None, last: int | None) -> tuple[str | None, str | None]:
-    ents = _table(path).get(row)
+def from_table(path: Path, row: int | str, first: int | None, last: int | None) -> tuple[str | None, str | None]:
+    ents = _table(path).get(str(row).upper())
     if not ents:
         return None, None
     lo, hi = (first, last) if first is not None and last is not None else (0, 99)
@@ -77,6 +80,14 @@ def from_table(path: Path, row: int, first: int | None, last: int | None) -> tup
             max((e[3] for e in hit), key=EFFORT_RANK.__getitem__))
 
 
+def table_for(cfg: Config, lane: str) -> Path | None:
+    """The table a lane's tasks are read against: its engine's library when the engine names one, else `stage_table`."""
+    ln = cfg.all_lanes.get(lane)
+    engine = cfg.engines.get(ln.engine) if ln and ln.engine else None
+    rel = (engine.library if engine else "") or cfg.stage_table
+    return cfg.home / rel if rel else None
+
+
 def resolve(table: Path | None, brief: str) -> tuple[str | None, str | None]:
     """(model, effort) for a brief: explicit lines first, then the table row the `Line:` line names."""
     em, ee = _MODEL.search(brief), _EFFORT.search(brief)
@@ -85,6 +96,6 @@ def resolve(table: Path | None, brief: str) -> tuple[str | None, str | None]:
         m = _LINE.search(brief)
         if m:
             first = int(m[2])
-            tm, te = from_table(table, int(m[1]), first, int(m[3]) if m[3] else first)
+            tm, te = from_table(table, m[1], first, int(m[3]) if m[3] else first)
             model, effort = model or tm, effort or te
     return model, effort

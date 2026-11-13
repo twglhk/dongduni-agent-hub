@@ -3,15 +3,18 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
 
   GET  /                          board (board/index.html, or the workspace's .tower/board/index.html; /?builtin
                                   always opens the built-in one)
-  GET  /api/state                 goals · lanes · open items · tasks · reports · memos · counts
-  GET  /api/history?kind=K&offset=N   decided | reports | closed | goals | memos | requests, 20 per page
+  GET  /api/state                 lanes · open items · tasks · reports · memos · counts
+  GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
+  GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
+  GET  /api/engines               every engine: id, label, lanes, library rows
+  GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
+                                  engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
-  POST /api/memo                  {text, to: infra | hub}
-  POST /api/goals                 {title, detail}
-  POST /api/goals/<id>            {action: top | up | down | pause | resume | drop | done | reopen, note}
+  POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
+  *    /api/goals...              410 Gone (goals were removed in 0.8.0)
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
   GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
@@ -27,9 +30,11 @@ Every POST must carry `x-tower: 1` (a custom header forces a CORS preflight, so 
 from __future__ import annotations
 
 import getpass
+import hashlib
 import json
 import mimetypes
 import re
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -37,11 +42,13 @@ from urllib.parse import parse_qs, unquote
 
 from . import __version__
 from . import config as config_mod
+from . import engines as engines_mod
+from . import rating
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
 from .install import edit_config
-from .store import GOAL_RANKED, HUMAN, Store, StoreError
+from .store import HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "credentials", "id_rsa", "id_ed25519"}
@@ -52,7 +59,6 @@ PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
-GOAL_ACTIONS = {"pause": "paused", "resume": "active", "drop": "dropped", "done": "done", "reopen": "active"}
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css")):
     mimetypes.add_type(_type, _ext)  # the Windows registry can say text/plain
@@ -70,8 +76,126 @@ def safe_file(root: Path, rel: str) -> Path | None:
     return full
 
 
+def engine_rows(cfg: Config, lane: str) -> tuple[list[dict[str, Any]], Path]:
+    """(library rows with their process cards, skills directory) of a lane's engine; no engine or library -> ([], default dir)."""
+    ln = cfg.all_lanes.get(lane)
+    eng = cfg.engines.get(ln.engine) if ln and ln.engine else None
+    skills = cfg.home / ((eng.skills if eng else "") or engines_mod.SKILLS_DEFAULT)
+    return (engines_mod.build(cfg.home / eng.library, skills) if eng and eng.library else []), skills
+
+
+def tok(t: dict[str, Any]) -> dict[str, Any] | None:
+    return ({"new": t["tok_new"], "cache": t["tok_cache"], "out": t["tok_out"], "turns": t["turns"]} if t.get("tok_at") else None)
+
+
+def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict[str, Any] | None) -> dict[str, Any] | None:
+    """What the lane is fixing: a send-back task (`Line: … fix`) or a task whose blame names a stage; None otherwise."""
+    if not t:
+        return None
+    if t.get("line_mode") == "fix":
+        return {"by": "send-back", "task_id": t["id"], "row": t.get("line_row"), "type": view["type"] if view else None,
+                "stage": t.get("stage_now") or t.get("line_stage")}
+    if blame:
+        return {"by": "blame", "task_id": t["id"], "row": t.get("line_row"), "type": view["type"] if view else None,
+                "stage": blame["effective"], "confirmed": blame["is_confirmed"]}
+    return None
+
+
+def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
+    """Everything the lane sheet shows. `lid` is a configured lane."""
+    ln = cfg.lanes[lid]
+    row = s.lane(lid)
+    live = row.get("status") not in (None, "closed")
+    rows, skills_dir = engine_rows(cfg, lid)
+    try:
+        role = cfg.instructions(lid).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        role = ""
+    recent = s.lane_tasks(lid, 6) if ln.kind == "team" else []
+    cur = next((t for t in recent if t["state"] in ("running", "wrapping")), None)
+    shown = cur or (recent[0] if recent else None)
+    view = engines_mod.row_view(rows, shown.get("line_row") if shown else None,
+                                (shown.get("stage_now") or shown.get("line_stage")) if shown else None)
+    blame = s.blames().get(cur["id"]) if cur else None
+    return {"lane": lid, "label": ln.label or lid, "kind": ln.kind, "runtime": ln.runtime, "engine": ln.engine or None,
+            "model": ln.model or None, "status": row.get("status") or "closed", "live": live,
+            "skills": engines_mod.lane_skills(role, skills_dir, rows, lid) if ln.kind == "team" else [],
+            "task": ({"id": shown["id"], "title": shown["title"], "state": shown["state"], "model": shown["model"],
+                      "effort": shown["effort"], "line_row": shown["line_row"], "line_stage": shown["line_stage"],
+                      "line_mode": shown["line_mode"], "stage_now": shown["stage_now"], "tokens": tok(shown)}
+                     if shown else None),
+            "process": view, "fixing": fixing_of(cur, blame, view),
+            "days": s.usage_days(lid, 7),
+            "recent": [{"id": t["id"], "title": t["title"], "state": t["state"], "model": t["model"], "effort": t["effort"],
+                        "line_row": t["line_row"], "tokens": tok(t)} for t in recent]}
+
+
+def engines_view(cfg: Config) -> list[dict[str, Any]]:
+    out = []
+    for eid, e in cfg.engines.items():
+        rows = engines_mod.library(cfg.home / e.library) if e.library else []
+        out.append({"id": eid, "label": e.label or eid, "lanes": list(e.lanes), "rows": len(rows), "implicit": e.implicit})
+    return out
+
+
+def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
+    """Everything the AI Engine tab shows for one engine."""
+    e = cfg.engines[eid]
+    skills_dir = cfg.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+    rows = engines_mod.build(cfg.home / e.library, skills_dir) if e.library else []
+    rated = {r["row"]: r for r in rating.attach({eid: rows}, s, cfg.home, {eid: skills_dir})} if rows else {}
+    by_lane: dict[str, list[dict[str, Any]]] = {}
+    lanes = []
+    for lid in e.lanes:
+        ln = cfg.lanes[lid]
+        try:
+            role = cfg.instructions(lid).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            role = ""
+        sk = engines_mod.lane_skills(role, skills_dir, rows, lid)
+        by_lane[lid] = sk
+        st = s.lane(lid)
+        task = s.live_task(lid)
+        lanes.append({"lane": lid, "label": ln.label or lid, "status": st.get("status") or "closed", "skills": sk,
+                      "rows": [r["n"] for r in rows if r["lane"] == lid], "task_id": task["id"] if task else None,
+                      "process": next((r["type"] for r in rows if task and r["n"] == task["line_row"]), None)})
+    pipes = []
+    for r in rows:
+        p, g = r["process"], rated.get(r["n"])
+        stages = []
+        for i, st in enumerate(p["stages"] if p else []):
+            gs = g["stages"][i]["rating"] if g and i < len(g["stages"]) else None
+            c = st["card"]
+            stages.append({"n": st["n"], "name": st["name"], "by": st["by"],
+                           "card": {"status": c["status"], "version": c["version"], "color": c["color"]} if c and c["exists"] else None,
+                           "rating": ({k: gs[k] for k in ("n", "pct", "state", "color", "pending")} if gs else None),
+                           "weakest": bool(g and g["stages"][i].get("weakest"))})
+        pr = g["process"] if g else None
+        pipes.append({"row": r["n"], "type": r["type"], "lane": r["lane"], "skill": r["skill"], "version": p["version"] if p else None,
+                      "process_status": r["process_status"], "pattern_status": r["pattern_status"], "model": r["model_text"],
+                      "rating": {k: pr[k] for k in ("n", "pct", "state", "color", "fixes")} if pr else None, "stages": stages})
+    skills = engines_mod.engine_skills(cfg, eid, {**by_lane, "": [{"name": n, "found": True} for n in e.skill_names]})
+    days: dict[str, dict[str, Any]] = {}
+    for lid in e.lanes:
+        for d in s.usage_days(lid, 7):
+            slot = days.setdefault(d["day"], {"day": d["day"], "tokens_in": 0, "tokens_out": 0})
+            slot["tokens_in"] += d["tokens_in"] or 0
+            slot["tokens_out"] += d["tokens_out"] or 0
+    base = engines_mod.baseline(cfg, eid, now)
+    live = engines_mod.snapshot(list(e.lanes), skills, rows, now)
+    hand = engines_mod.read_map(cfg.home / e.map) if e.map else engines_mod.read_map(cfg.home / e.dir / "engine.json") if e.dir else \
+        engines_mod.read_map(cfg.home / "engine.json")
+    return {"id": eid, "label": e.label or eid, "implicit": e.implicit, "lanes": lanes, "pipelines": pipes,
+            "skills": [{k: x[k] for k in ("name", "files", "lanes", "shared")} for x in skills],
+            "tools": hand["tools"], "experiments": hand["experiments"], "notes": hand["notes"],
+            "usage": sorted(days.values(), key=lambda x: x["day"]),
+            "changes": {"since": base["at"] if base else None, "items": engines_mod.diff(base, live) if base else []}}
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
+    blamed = set(s.blames())
+    libs: dict[str, list[dict[str, Any]]] = {}
     for lid, ln in cfg.lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
@@ -85,9 +209,21 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                 doing = clip(f"#{m['id']} {m['text']}", 80)
             except StoreError:
                 pass
+        proc = None
+        if task and task["line_row"]:
+            rows = libs.get(ln.engine) if ln.engine in libs else libs.setdefault(ln.engine, engine_rows(cfg, lid)[0])
+            hit = next((r for r in rows if r["n"] == task["line_row"]), None)
+            proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "status": row.get("status") or "closed", "doing": doing,
+                    "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
+                    "model": task["model"] if task else None, "effort": task["effort"] if task else None,
+                    "line_row": task["line_row"] if task else None, "process": proc,
+                    "stage": (task["stage_now"] or task["line_stage"]) if task else None,
+                    "fixing": bool(task and (task["line_mode"] == "fix" or task["id"] in blamed)),
+                    "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
+                                     "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
     return out
 
@@ -128,8 +264,6 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "runtimes": list(RUNTIMES),
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
-        "goals": s.goals(GOAL_RANKED) + s.history("goals", 0, PREVIEW),
-        "goal_tasks": {str(k): v for k, v in s.goal_tasks().items()},
         "lanes": lanes_view(cfg, s, used),
         "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
@@ -137,20 +271,6 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "memos": {INFRA: s.memos(INFRA, PREVIEW), HUB: s.memos(HUB, PREVIEW)},
         "counts": {k: s.history_count(k) for k in (*Store.HISTORY, *Store.MEMO_HISTORY)},
     }
-
-
-def goal_action(s: Store, gid: int, action: str, note: str, by: str) -> str:
-    """Apply one board action to a goal; returns the news line for the hub."""
-    g = s.goal(gid)
-    if action in ("top", "up", "down"):
-        pos = {"top": 1, "up": g["priority"] - 1, "down": g["priority"] + 1}[action]
-        order = s.move_goal(gid, max(1, pos))
-        return f"{by} moved goal #{gid} \"{g['title']}\" to priority {order.index(gid) + 1}. Order now: " + \
-            ", ".join(f"#{i}" for i in order)
-    if action not in GOAL_ACTIONS:
-        raise StoreError(f"action must be one of top, up, down, {', '.join(GOAL_ACTIONS)}")
-    g = s.set_goal_state(gid, GOAL_ACTIONS[action], note)
-    return f"{by} marked goal #{gid} \"{g['title']}\" {g['state']}" + (f": {note}" if note else "")
 
 
 class Site:
@@ -215,8 +335,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                    "running": tower_pid(site.cfg) is not None}
             if ok:
                 row["open"] = len(site.s.items(state="open", audience=HUMAN))
-                top = site.s.goals(("active",))
-                row["goal"] = top[0]["title"] if top else None
             out.append(row)
         return out
 
@@ -295,6 +413,22 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
             self.wfile.write(data)
 
+        def _json_tagged(self, body: Any) -> None:
+            """A GET whose answer rarely changes: ETag over the body, 304 when the browser already has it."""
+            data = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
+            tag = '"' + hashlib.sha1(data).hexdigest()[:16] + '"'
+            self.send_response(304 if self.headers.get("if-none-match") == tag else 200)
+            self.send_header("etag", tag)
+            self.send_header("cache-control", "no-cache")
+            if self.headers.get("if-none-match") == tag:
+                self.send_header("content-length", "0")
+                self.end_headers()
+                return
+            self.send_header("content-type", "application/json; charset=utf-8")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def _static(self, path: Path, ctype: str) -> None:
             data = path.read_bytes()
             self.send_response(200)
@@ -310,6 +444,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
+            if path == "/api/goals" or path.startswith("/api/goals/"):
+                return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             if path in ("/", "/index.html"):
                 page = None if "builtin" in parse_qs(self.query, keep_blank_values=True) else board_override(c.home)
                 return self._static(page or BOARD, "text/html; charset=utf-8")
@@ -329,8 +465,22 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 try:
                     rows = st.history((q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])), PAGE)
                 except (StoreError, ValueError) as e:
-                    return self._json(400, {"error": str(e)})
+                    return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
+            if path == "/api/engines":
+                return self._json(200, {"engines": engines_view(c)})
+            m = re.fullmatch(r"/api/engines/([^/]+)/map", path)
+            if m:
+                eid = unquote(m.group(1))
+                if eid not in c.engines:
+                    return self._json(404, {"error": f"no engine {eid}"})
+                return self._json_tagged(engine_map(c, st, eid, time.time()))
+            m = re.fullmatch(r"/api/lanes/([^/]+)", path)
+            if m:
+                lid = unquote(m.group(1))
+                if lid not in c.lanes:
+                    return self._json(404, {"error": f"no lane {lid}"})
+                return self._json(200, lane_view(c, st, lid))
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:
@@ -415,6 +565,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
+            if path == "/api/goals" or path.startswith("/api/goals/"):
+                return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             n = int(self.headers.get("content-length") or 0)
             if n > MAX_BODY:
                 return self._json(413, {"error": "too large"})
@@ -448,22 +600,16 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, {"ok": True, "item": it})
                 if path == "/api/memo":
                     text = str(body.get("text") or "").strip()[:4000]
-                    to = str(body.get("to") or INFRA)
-                    if to not in c.lanes or to not in (HUB, INFRA):
-                        raise StoreError("memos go to hub or infra")
+                    to = str(body.get("to") or HUB)
+                    if to == INFRA:
+                        raise StoreError("infra only takes requests from the hub: ask the hub")
+                    if to != HUB or to not in c.lanes:
+                        raise StoreError("requests from the board go to the hub")
                     if not text:
                         raise StoreError("empty memo")
                     mid = st.push(to, who, "memo", text)
                     log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
-                if path == "/api/goals":
-                    gid = st.add_goal(str(body.get("title") or "")[:200], str(body.get("detail") or "")[:4000], who)
-                    g = st.goal(gid)
-                    st.push(HUB, who, "goal", f"New goal #{gid} (priority {g['priority']}) from {who}: \"{g['title']}\""
-                            + (f" — {g['detail']}" if g["detail"] else "")
-                            + ". Agree a plan with them (a board item or a memo reply), then `dah goal plan`.")
-                    log(f"{who} goal #{gid}")
-                    return self._json(200, {"ok": True, "id": gid})
                 if path == "/api/settings":
                     raw = body.get("max_lanes")
                     if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_LANES_LIMIT:
@@ -476,13 +622,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                 f"may run tasks at once.")
                         log(f"{who} max_lanes {old} → {raw}")
                     return self._json(200, {"ok": True, "max_lanes": raw})
-                m = re.fullmatch(r"/api/goals/(\d+)", path)
-                if m:
-                    news = goal_action(st, int(m.group(1)), str(body.get("action") or ""),
-                                       str(body.get("note") or "")[:1000], who)
-                    st.push(HUB, who, "goal", news)
-                    log(news)
-                    return self._json(200, {"ok": True, "goal": st.goal(int(m.group(1)))})
             except StoreError as e:
                 return self._json(409, {"error": str(e)})
             if path.startswith("/api/x/"):

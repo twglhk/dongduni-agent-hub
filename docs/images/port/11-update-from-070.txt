@@ -1,0 +1,13 @@
+$ dah update --dry-run
+would upgrade: nothing (dah runs from a clone: `git pull` it)
+package files changed in place: none
+
+$ dah update --no-upgrade --no-restart
+Agent Hub (<workspace>): agent-hub 0.7.0 → 0.8.0
+  updated to the new template, workspace parts kept: .tower/PROTOCOL.md
+  updated to the new template, workspace parts kept: .tower/lanes/hub.md
+  updated to the new template, workspace parts kept: .tower/lanes/infra.md
+  updated to the new template, workspace parts kept: .tower/lanes/docs.md
+  note: goals are gone: the 2 goal row(s) stay in the database, unread. Send that work as requests; /api/goals answers 410 and `goal` events no longer fire.
+  note: engines: tower.json declares none, so the team lanes run as one engine `default`; nothing to change. `dah engine add NAME --from blank|animation|marketing` starts a method with cards (`dah guide engines`).
+

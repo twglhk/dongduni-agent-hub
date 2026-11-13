@@ -372,6 +372,9 @@ class TerminalTest(unittest.TestCase):
             for _ in range(2):
                 f.write(json.dumps({"type": "assistant", "message": call}) + "\n")
         self.assertEqual(self.rt.usage("hub", sid)["tokens_in"], 10000 + 100)
+        led = self.rt.ledger("hub", sid)  # the same two lines are one call: counted once, one turn more than before
+        self.assertEqual((led["new"], led["cache"], led["out"]), (1000 + 100, 9000, 50 + 7))
+        self.assertEqual(led["turns"], 2)
 
     def test_orca_that_does_not_answer_is_unknown_not_closed(self) -> None:
         self.rt.open("docs", "x")

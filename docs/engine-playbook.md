@@ -18,6 +18,8 @@ Each step is a gate.
 
 `stage_table` in `tower.json` connects step 1 to the model choice below: the same table row that names a type can carry a `Model · effort` column.
 
+Starting an engine: `dah engine add NAME --from blank|animation|marketing` scaffolds the library, the skills with draft cards and an engine review lane; see [agent_hub/guide/ENGINES.md](../agent_hub/guide/ENGINES.md) (`dah guide engines`).
+
 ## Entries
 
 - **Process card, then pattern card.** Problem: each task reinvents its method, so quality swings by session. Method: (a) a *process card* per deliverable type lists the ordered stages, each with input, output artifact, pattern card, gate, and who passes it (lane, hub, human); (b) a *pattern card* per stage is built by collecting shipped references with numbers, writing the recipe (regularities with spread, steps, checks, what is refused and why), then testing for sameness across fresh sessions. Gate: no stage runs without both cards, unless the brief marks it as finishing an already approved artifact. Proof: first-pass rate per stage.

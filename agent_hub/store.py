@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -20,8 +21,7 @@ HUMAN = "human"
 TOWER = "tower"
 
 TASK_LIVE = ("running", "wrapping")
-GOAL_STATES = ("active", "paused", "done", "dropped")
-GOAL_RANKED = ("active", "paused")
+OUTCOMES = ("adopted", "redirected", "dropped")
 VERDICTS = ("ok", "no", "hold", "answer")  # answer = a human wrote their own answer; the note is the decision
 MULTI_SEP = " + "
 
@@ -42,20 +42,15 @@ CREATE TABLE IF NOT EXISTS tasks(
   respawns INTEGER NOT NULL DEFAULT 0,
   handoff TEXT,
   rotate_ready REAL,
-  goal_id INTEGER                   -- the goal this task serves, if any
-);
-CREATE TABLE IF NOT EXISTS goals(
-  id INTEGER PRIMARY KEY,
-  title TEXT NOT NULL,
-  detail TEXT NOT NULL DEFAULT '',
-  priority INTEGER NOT NULL,        -- 1 = first; only active and paused goals are ranked
-  state TEXT NOT NULL,              -- active | paused | done | dropped
-  steps TEXT NOT NULL DEFAULT '[]', -- the plan: [{"text", "done"}]; progress = done / all
-  note TEXT,
-  created_by TEXT NOT NULL,
-  created REAL NOT NULL,
-  updated REAL NOT NULL,
-  closed REAL
+  goal_id INTEGER,                  -- unused since goals were removed; kept so older databases still open
+  engine TEXT,                      -- the engine of the lane when the task was queued (NULL on rows from before engines)
+  model TEXT,                       -- the model and effort the task was opened with (NULL: the lane's own)
+  effort TEXT,
+  tok_new INTEGER NOT NULL DEFAULT 0,    -- ledger: input + cache writes, summed over the task's sessions
+  tok_cache INTEGER NOT NULL DEFAULT 0,  -- cache reads
+  tok_out INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  tok_at REAL                       -- when the ledger last measured the task
 );
 CREATE TABLE IF NOT EXISTS items(
   id INTEGER PRIMARY KEY,
@@ -114,7 +109,8 @@ CREATE TABLE IF NOT EXISTS lanes(
   active_message INTEGER,           -- infra: the one message this session owns
   active_retries INTEGER DEFAULT 0,
   doing TEXT,
-  doing_at REAL
+  doing_at REAL,
+  engine TEXT                       -- the engine a team lane belongs to, kept in step with tower.json
 );
 CREATE TABLE IF NOT EXISTS members(
   name TEXT PRIMARY KEY,
@@ -135,14 +131,69 @@ CREATE TABLE IF NOT EXISTS usage(
   updated REAL NOT NULL,
   PRIMARY KEY(lane, session)
 );
+CREATE TABLE IF NOT EXISTS task_sessions(
+  task_id INTEGER NOT NULL,
+  session TEXT NOT NULL,
+  new INTEGER NOT NULL DEFAULT 0,       -- this task's share of the session (a chained task starts after the earlier one's share)
+  cache INTEGER NOT NULL DEFAULT 0,
+  out INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY(task_id, session)
+);
+CREATE TABLE IF NOT EXISTS retros(
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER,
+  lane TEXT NOT NULL,
+  summary TEXT NOT NULL,            -- the one line a wrapped report starts with
+  cost TEXT NOT NULL DEFAULT '',
+  corrected TEXT NOT NULL DEFAULT '',
+  rule TEXT NOT NULL DEFAULT '',
+  raw TEXT NOT NULL DEFAULT '',
+  created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deliverable_events(
+  id INTEGER PRIMARY KEY,
+  key TEXT NOT NULL,
+  outcome TEXT NOT NULL,            -- adopted | redirected | dropped
+  note TEXT NOT NULL DEFAULT '',    -- when redirected: the human's own words
+  by TEXT NOT NULL,
+  created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS blames(
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL,
+  stage TEXT NOT NULL,              -- the stage the lane says should have caught this failure
+  cause TEXT NOT NULL DEFAULT '',
+  by TEXT NOT NULL,
+  created REAL NOT NULL,
+  confirmed_stage TEXT,             -- the hub's confirmed (or changed) stage
+  confirmed_by TEXT,
+  confirmed REAL
+);
+CREATE INDEX IF NOT EXISTS deliverable_events_key ON deliverable_events(key, id);
 CREATE INDEX IF NOT EXISTS messages_pending ON messages(target, delivered);
 CREATE INDEX IF NOT EXISTS items_state ON items(state, audience);
 CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
 """
 
 
+LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NOT NULL DEFAULT 0"),
+                  ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
+                  ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
+LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
+                ("deliverable", "TEXT"))  # the brief's Line: header and `dah stage`
+
+
 class StoreError(Exception):
     pass
+
+
+def valid_key(key: str) -> str:
+    """A deliverable key is one short word without spaces (`ui:shop`, `post:sketch-3`); `T12` and `#12` shapes are refused."""
+    key = key.strip()
+    if not re.fullmatch(r"\S{1,60}", key) or re.fullmatch(r"[Tt]\d+|#?\d+", key):
+        raise StoreError(f"a deliverable key is a word of at most 60 characters without spaces (e.g. ui:shop): {key!r}")
+    return key
 
 
 def _id(cur: sqlite3.Cursor) -> int:
@@ -168,15 +219,6 @@ def item_view(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def goal_view(row: dict[str, Any]) -> dict[str, Any]:
-    out = dict(row)
-    out["steps"] = json.loads(out["steps"] or "[]")
-    done = sum(1 for st in out["steps"] if st.get("done"))
-    out["steps_done"] = done
-    out["progress"] = 100 if out["state"] == "done" else round(100 * done / len(out["steps"])) if out["steps"] else 0
-    return out
-
-
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -188,9 +230,13 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.conn() as con:
             con.executescript(SCHEMA)
-            cols = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
-            if "goal_id" not in cols:  # databases made before goals existed
-                con.execute("ALTER TABLE tasks ADD COLUMN goal_id INTEGER")
+            for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
+                if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
+            have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
+            for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
+                if col not in have:
+                    con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -302,10 +348,12 @@ class Store:
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str, goal_id: int | None = None) -> int:
+    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
-                                   (lane, title, brief, "queued", self.clock(), goal_id)))
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable) "
+                                   "VALUES(?,?,?,?,?,?,?)",
+                                   (lane, title, brief, "queued", self.clock(), engine,
+                                    valid_key(deliverable) if deliverable else None)))
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -322,6 +370,24 @@ class Store:
     def next_queued(self, lane: str) -> dict[str, Any] | None:
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id LIMIT 1", (lane,)))
+
+    def queued_for(self, lane: str) -> list[dict[str, Any]]:
+        """A lane's queued tasks, oldest first (the order they start in)."""
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id", (lane,)))
+
+    def last_closed_task(self, lane: str) -> dict[str, Any] | None:
+        """The task the lane most recently finished (closed, not cancelled)."""
+        with self.conn() as con:
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='closed' "
+                                    "ORDER BY closed DESC, id DESC LIMIT 1", (lane,)))
+
+    def busy_lanes(self) -> set[str]:
+        """Lanes holding a slot: a task running or wrapping, or a closing session whose turn has not ended."""
+        with self.conn() as con:
+            running = {r[0] for r in con.execute("SELECT lane FROM tasks WHERE state IN ('running','wrapping')")}
+            closing = {r[0] for r in con.execute("SELECT lane FROM lanes WHERE closing IS NOT NULL")}
+        return running | closing
 
     def tasks(self, states: Iterable[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
         with self.conn() as con:
@@ -349,104 +415,6 @@ class Store:
     def signal(self, task_id: int | None) -> None:
         if task_id is not None:
             self.update_task(task_id, last_signal=self.clock(), nudges=0)
-
-    # ---------- goals: what the team works toward, ranked by humans or the hub ----------
-
-    def add_goal(self, title: str, detail: str, by: str) -> int:
-        if not title.strip():
-            raise StoreError("a goal needs a title")
-        now = self.clock()
-        with self.conn() as con:
-            last = con.execute(f"SELECT COALESCE(MAX(priority), 0) FROM goals WHERE state IN {GOAL_RANKED}").fetchone()[0]
-            return _id(con.execute("INSERT INTO goals(title, detail, priority, state, created_by, created, updated) "
-                                   "VALUES(?,?,?,?,?,?,?)", (title.strip(), detail.strip(), last + 1, "active", by,
-                                                             now, now)))
-
-    def goal(self, goal_id: int) -> dict[str, Any]:
-        with self.conn() as con:
-            row = _one(con.execute("SELECT * FROM goals WHERE id=?", (goal_id,)))
-        if not row:
-            raise StoreError(f"goal #{goal_id} not found")
-        return goal_view(row)
-
-    def goals(self, states: Iterable[str] = GOAL_RANKED) -> list[dict[str, Any]]:
-        """Ranked goals first (by priority), then the rest newest first."""
-        states = list(states)
-        with self.conn() as con:
-            rows = _rows(con.execute(f"SELECT * FROM goals WHERE state IN ({','.join('?' * len(states))}) "
-                                     f"ORDER BY state NOT IN {GOAL_RANKED}, "
-                                     f"CASE WHEN state IN {GOAL_RANKED} THEN priority END, closed DESC, id", states))
-        return [goal_view(r) for r in rows]
-
-    def _rerank(self, con: sqlite3.Connection, order: list[int]) -> None:
-        for i, gid in enumerate(order, 1):
-            con.execute("UPDATE goals SET priority=? WHERE id=?", (i, gid))
-
-    def move_goal(self, goal_id: int, position: int) -> list[int]:
-        """Put a ranked goal at `position` (1 = first). Returns the new order of goal ids."""
-        g = self.goal(goal_id)
-        if g["state"] not in GOAL_RANKED:
-            raise StoreError(f"goal #{goal_id} is {g['state']}; only active or paused goals are ranked")
-        with self.conn() as con:
-            order = [r[0] for r in con.execute(f"SELECT id FROM goals WHERE state IN {GOAL_RANKED} "
-                                               f"ORDER BY priority, id")]
-            order.remove(goal_id)
-            order.insert(max(0, min(position - 1, len(order))), goal_id)
-            self._rerank(con, order)
-            con.execute("UPDATE goals SET updated=? WHERE id=?", (self.clock(), goal_id))
-        return order
-
-    def set_goal_state(self, goal_id: int, state: str, note: str = "") -> dict[str, Any]:
-        if state not in GOAL_STATES:
-            raise StoreError(f"goal state must be one of {', '.join(GOAL_STATES)}")
-        g = self.goal(goal_id)
-        now = self.clock()
-        with self.conn() as con:
-            if state in GOAL_RANKED and g["state"] not in GOAL_RANKED:  # reopened: rank it last
-                last = con.execute(f"SELECT COALESCE(MAX(priority), 0) FROM goals WHERE state IN {GOAL_RANKED}"
-                                   ).fetchone()[0]
-                con.execute("UPDATE goals SET priority=? WHERE id=?", (last + 1, goal_id))
-            con.execute("UPDATE goals SET state=?, note=COALESCE(NULLIF(?, ''), note), updated=?, closed=? WHERE id=?",
-                        (state, note, now, None if state in GOAL_RANKED else now, goal_id))
-            order = [r[0] for r in con.execute(f"SELECT id FROM goals WHERE state IN {GOAL_RANKED} ORDER BY priority, id")]
-            self._rerank(con, order)
-        return self.goal(goal_id)
-
-    def plan_goal(self, goal_id: int, steps: list[str]) -> dict[str, Any]:
-        """Replace the plan. A step whose text is unchanged keeps its done mark."""
-        g = self.goal(goal_id)
-        was = {st["text"]: bool(st.get("done")) for st in g["steps"]}
-        new = [{"text": t.strip(), "done": was.get(t.strip(), False)} for t in steps if t.strip()]
-        with self.conn() as con:
-            con.execute("UPDATE goals SET steps=?, updated=? WHERE id=?",
-                        (json.dumps(new, ensure_ascii=False), self.clock(), goal_id))
-        return self.goal(goal_id)
-
-    def check_steps(self, goal_id: int, numbers: Iterable[int], done: bool = True) -> dict[str, Any]:
-        g = self.goal(goal_id)
-        steps = g["steps"]
-        for n in numbers:
-            if not 1 <= n <= len(steps):
-                raise StoreError(f"goal #{goal_id} has steps 1..{len(steps)}" if steps else
-                                 f"goal #{goal_id} has no plan yet (`dah goal plan`)")
-            steps[n - 1]["done"] = done
-        with self.conn() as con:
-            con.execute("UPDATE goals SET steps=?, updated=? WHERE id=?",
-                        (json.dumps(steps, ensure_ascii=False), self.clock(), goal_id))
-        return self.goal(goal_id)
-
-    def goal_tasks(self) -> dict[int, dict[str, int]]:
-        """Per goal: tasks queued or running (`live`) and finished (`closed`)."""
-        out: dict[int, dict[str, int]] = {}
-        with self.conn() as con:
-            for gid, state, n in con.execute("SELECT goal_id, state, count(*) FROM tasks WHERE goal_id IS NOT NULL "
-                                             "GROUP BY goal_id, state"):
-                d = out.setdefault(gid, {"live": 0, "closed": 0})
-                if state in ("queued", *TASK_LIVE):
-                    d["live"] += n
-                elif state == "closed":
-                    d["closed"] += n
-        return out
 
     # ---------- items ----------
 
@@ -607,7 +575,6 @@ class Store:
         "decided": ("items WHERE state='decided'", "decided DESC, id DESC"),
         "reports": ("reports", "id DESC"),
         "closed": ("tasks WHERE state IN ('closed','cancelled')", "closed DESC, id DESC"),
-        "goals": ("goals WHERE state IN ('done','dropped')", "closed DESC, id DESC"),
     }
     MEMO_HISTORY = {"memos": INFRA, "requests": HUB}
 
@@ -628,8 +595,6 @@ class Store:
             rows = _rows(con.execute(f"SELECT * FROM {src} ORDER BY {order} LIMIT ? OFFSET ?", (limit, offset)))
         if kind == "decided":
             return [item_view(r) for r in rows]
-        if kind == "goals":
-            return [goal_view(r) for r in rows]
         if kind == "reports":
             for r in rows:
                 r["attachments"] = json.loads(r["attachments"] or "[]")
@@ -639,7 +604,7 @@ class Store:
 
     def changes(self, marks: dict[str, float] | None) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, float]]:
         """What happened since `marks` as (kind, row), grouped by kind in this order, oldest first within each:
-        report, item (created), decided, memo, goal (any change), task (queued, started, closed or cancelled).
+        report, item (created), decided, memo, task (queued, started, closed or cancelled).
         Pass the returned marks next time; None only takes the marks (nothing before now is news)."""
         task_at = "max(created, coalesce(started, 0), coalesce(closed, 0))"
         with self.conn() as con:
@@ -647,7 +612,6 @@ class Store:
                    "item": con.execute("SELECT coalesce(max(id), 0) FROM items").fetchone()[0],
                    "decided": con.execute("SELECT coalesce(max(decided), 0) FROM items").fetchone()[0],
                    "memo": con.execute("SELECT coalesce(max(id), 0) FROM messages").fetchone()[0],
-                   "goal": con.execute("SELECT coalesce(max(updated), 0) FROM goals").fetchone()[0],
                    "task": con.execute(f"SELECT coalesce(max({task_at}), 0) FROM tasks").fetchone()[0]}
             if marks is None:
                 return [], now
@@ -664,13 +628,62 @@ class Store:
             out += [("memo", r) for r in _rows(con.execute(
                 "SELECT * FROM messages WHERE kind='memo' AND id>? AND id<=? ORDER BY id",
                 (marks.get("memo", 0), now["memo"])))]
-            out += [("goal", goal_view(r)) for r in _rows(con.execute(
-                "SELECT * FROM goals WHERE updated>? AND updated<=? ORDER BY updated, id",
-                (marks.get("goal", 0), now["goal"])))]
             out += [("task", r) for r in _rows(con.execute(
                 f"SELECT * FROM tasks WHERE {task_at}>? AND {task_at}<=? ORDER BY {task_at}, id",
                 (marks.get("task", now["task"]), now["task"])))]
         return out, now
+
+    # ---------- deliverables and blame ----------
+
+    def add_outcome(self, key: str, outcome: str, by: str, note: str = "") -> None:
+        """The human's result for a deliverable: adopted, redirected (note = their words) or dropped. The last one counts."""
+        key = valid_key(key)
+        if outcome not in OUTCOMES:
+            raise StoreError(f"the outcome is one of {', '.join(OUTCOMES)}")
+        with self.conn() as con:
+            if not con.execute("SELECT 1 FROM tasks WHERE deliverable=? UNION SELECT 1 FROM deliverable_events WHERE key=? LIMIT 1",
+                               (key, key)).fetchone():
+                raise StoreError(f"no task carries the key {key} (`dah task --deliverable {key}`)")
+            con.execute("INSERT INTO deliverable_events(key, outcome, note, by, created) VALUES(?,?,?,?,?)",
+                        (key, outcome, note.strip(), by, self.clock()))
+
+    def outcome_events(self, key: str) -> list[dict[str, Any]]:
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM deliverable_events WHERE key=? ORDER BY id", (key,)))
+
+    def add_blame(self, task_id: int, stage: str, cause: str, by: str) -> int:
+        """A lane names the stage that should have caught this task's failure. Writing again makes the new line the current one."""
+        with self.conn() as con:
+            return _id(con.execute("INSERT INTO blames(task_id, stage, cause, by, created) VALUES(?,?,?,?,?)",
+                                   (task_id, stage, cause, by, self.clock())))
+
+    def confirm_blame(self, task_id: int, by: str, stage: str | None = None, cause: str = "") -> int:
+        """The hub confirms the task's last blame (a stage changes it). With no blame yet, the stage writes and confirms one."""
+        with self.conn() as con:
+            row = _one(con.execute("SELECT * FROM blames WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)))
+            if not row:
+                if not stage:
+                    raise StoreError(f"task #{task_id} has no blame; give the stage too")
+                bid = _id(con.execute("INSERT INTO blames(task_id, stage, cause, by, created) VALUES(?,?,?,?,?)",
+                                      (task_id, stage, cause, by, self.clock())))
+                row = {"stage": stage}
+            else:
+                bid = row["id"]
+            con.execute("UPDATE blames SET confirmed_stage=?, confirmed_by=?, confirmed=?, "
+                        "cause=CASE WHEN ?<>'' THEN ? ELSE cause END WHERE id=?",
+                        (stage or row["stage"], by, self.clock(), cause, cause, bid))
+            return bid
+
+    def blames(self) -> dict[int, dict[str, Any]]:
+        """Task id -> its last blame (`effective` = the hub's confirmed stage, else the lane's)."""
+        out: dict[int, dict[str, Any]] = {}
+        with self.conn() as con:
+            for r in con.execute("SELECT * FROM blames ORDER BY id"):
+                d = dict(r)
+                d["effective"] = d["confirmed_stage"] or d["stage"]
+                d["is_confirmed"] = d["confirmed"] is not None
+                out[d["task_id"]] = d
+        return out
 
     # ---------- lanes ----------
 
@@ -678,12 +691,71 @@ class Store:
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM lanes WHERE lane=?", (lane,))) or {"lane": lane}
 
+    def sync_lane_engines(self, engines: dict[str, str]) -> None:
+        """Record each team lane's engine (lane id -> engine id) in the lanes table."""
+        with self.conn() as con:
+            for lane, engine in engines.items():
+                con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
+                con.execute("UPDATE lanes SET engine=? WHERE lane=?", (engine, lane))
+
     def set_lane(self, lane: str, **fields: Any) -> None:
         with self.conn() as con:
             con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
             if fields:
                 con.execute(f"UPDATE lanes SET {', '.join(f'{k}=?' for k in fields)} WHERE lane=?",
                             (*fields.values(), lane))
+
+    # ---------- task ledger and retros ----------
+
+    def task_for_session(self, lane: str, session: str) -> dict[str, Any] | None:
+        """The newest task of the lane that runs (or ran) in this session."""
+        with self.conn() as con:
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND session=? AND started IS NOT NULL "
+                                    "ORDER BY id DESC LIMIT 1", (lane, session)))
+
+    def record_task_usage(self, task_id: int, session: str, new: int, cache: int, out: int, turns: int | None) -> None:
+        """A session's cumulative totals, as the task's own share. Tasks that followed each other in one session
+        (`after:`) split it: this task owns what the earlier tasks of the session did not. A total below what is
+        already written is a transcript that lost its head, so it never replaces the larger value. The task row
+        carries the sum over its sessions."""
+        with self.conn() as con:
+            before = con.execute("SELECT COALESCE(SUM(new),0), COALESCE(SUM(cache),0), COALESCE(SUM(out),0), "
+                                 "COALESCE(SUM(turns),0) FROM task_sessions WHERE session=? AND task_id<?",
+                                 (session, task_id)).fetchone()
+            share = [max(0, a - b) for a, b in zip((new, cache, out, turns or 0), before)]
+            old = con.execute("SELECT new, cache, out, turns FROM task_sessions WHERE task_id=? AND session=?",
+                              (task_id, session)).fetchone()
+            if old is not None and sum(share[:3]) < sum(old[:3]):
+                return
+            if turns is None and old is not None:
+                share[3] = old[3]
+            con.execute("INSERT INTO task_sessions(task_id, session, new, cache, out, turns) VALUES(?,?,?,?,?,?) "
+                        "ON CONFLICT(task_id, session) DO UPDATE SET new=excluded.new, cache=excluded.cache, "
+                        "out=excluded.out, turns=excluded.turns", (task_id, session, *share))
+            con.execute("UPDATE tasks SET tok_new=(SELECT SUM(new) FROM task_sessions WHERE task_id=?), "
+                        "tok_cache=(SELECT SUM(cache) FROM task_sessions WHERE task_id=?), "
+                        "tok_out=(SELECT SUM(out) FROM task_sessions WHERE task_id=?), "
+                        "turns=(SELECT SUM(turns) FROM task_sessions WHERE task_id=?), tok_at=? WHERE id=?",
+                        (task_id, task_id, task_id, task_id, self.clock(), task_id))
+
+    def task_rotations(self) -> dict[int, int]:
+        """Extra sessions a task went through (handoffs, reopened sessions): sessions seen minus one."""
+        with self.conn() as con:
+            return {r[0]: r[1] - 1 for r in con.execute("SELECT task_id, count(*) FROM task_sessions GROUP BY task_id")}
+
+    def add_retro(self, task_id: int | None, lane: str, summary: str, cost: str, corrected: str, rule: str, raw: str) -> int:
+        with self.conn() as con:
+            return _id(con.execute("INSERT INTO retros(task_id, lane, summary, cost, corrected, rule, raw, created) "
+                                   "VALUES(?,?,?,?,?,?,?,?)", (task_id, lane, summary, cost, corrected, rule, raw, self.clock())))
+
+    def retros(self, lane: str | None = None, since: float = 0.0, limit: int = 500) -> list[dict[str, Any]]:
+        where, args = ["created>=?"], [since]
+        if lane:
+            where.append("lane=?")
+            args.append(lane)
+        with self.conn() as con:
+            return _rows(con.execute(f"SELECT * FROM retros WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?",
+                                     (*args, limit)))
 
     # ---------- usage ----------
 
@@ -715,6 +787,23 @@ class Store:
             if r["cost"] is not None:
                 cur["cost"] = (cur["cost"] or 0.0) + r["cost"]
         return out
+
+    def usage_days(self, lane: str, days: int = 7) -> list[dict[str, Any]]:
+        """A lane's last `days` days, oldest first, empty days included: {day, tokens_in, tokens_out, sessions}."""
+        end = self.clock()
+        names = [self.day(end - 86400 * i) for i in range(days - 1, -1, -1)]
+        with self.conn() as con:
+            got = {r["day"]: r for r in _rows(con.execute(
+                "SELECT day, SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out, COUNT(*) AS sessions FROM usage "
+                "WHERE lane=? AND day>=? GROUP BY day", (lane, names[0])))}
+        return [{"day": d, "tokens_in": (got.get(d) or {}).get("tokens_in") or 0,
+                 "tokens_out": (got.get(d) or {}).get("tokens_out") or 0, "sessions": (got.get(d) or {}).get("sessions") or 0}
+                for d in names]
+
+    def lane_tasks(self, lane: str, limit: int = 5) -> list[dict[str, Any]]:
+        """A lane's latest tasks, newest first (any state)."""
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
 
     def session_ctx(self, lane: str, session: str | None) -> int | None:
         if not session:

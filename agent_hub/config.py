@@ -7,6 +7,7 @@ State (SQLite DB, logs, members) lives in `<home>/.tower/state/`, which must sta
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import re
@@ -23,6 +24,8 @@ RUNTIMES = ("opencode", "claude", "codex")
 TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
+INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
+DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
 FIRST_OPENCODE_PORT = 4301
 
 DEFAULT_ARGS = {
@@ -44,6 +47,15 @@ class ConfigError(Exception):
     pass
 
 
+def base_lane(lane: str) -> str:
+    """`docs#2` -> `docs`: the lane an instance belongs to."""
+    return lane.partition(INSTANCE_SEP)[0]
+
+
+def instance_lane(base: str, n: int) -> str:
+    return f"{base}{INSTANCE_SEP}{n}"
+
+
 @dataclass
 class Lane:
     id: str
@@ -58,6 +70,22 @@ class Lane:
     env: dict[str, str] = field(default_factory=dict)
     terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
     worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
+    engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
+    base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
+
+
+@dataclass
+class Engine:
+    id: str
+    label: str = ""
+    dir: str = ""                # engine folder, relative to home (process cards, pattern cards)
+    lanes: list[str] = field(default_factory=list)  # team lanes in this engine (filled from lane.engine as well)
+    library: str = ""            # pattern library markdown, relative to home
+    skills: str = ""             # skills folder, relative to home
+    map: str = ""                # optional hand-written engine.json, relative to home
+    skill_names: list[str] = field(default_factory=list)  # skill folders this engine owns besides the ones its lanes name
+    cap: str = ""                # optional usage cap: "tokens-day:N" (built in) or a name an extension registers in `caps`
+    implicit: bool = False       # made up because tower.json declares no `engines`
 
 
 @dataclass
@@ -80,6 +108,18 @@ class Config:
     worktree: bool = False       # default for team lanes that do not set their own
     stage_table: str = ""        # markdown table with a `model · effort` column (stagemodel.py), path from home
     require_model_lines: bool = False  # `dah task` refuses a brief without `model:` and `effort:` lines
+    require_line: bool = False   # `dah task` refuses a brief whose `Line:` header is missing or names an unconfirmed method (engines.py)
+    engines: dict[str, Engine] = field(default_factory=dict)  # always has at least "default" when a team lane has no engine
+    light_lanes: int | None = None  # extra slots (beyond max_lanes) for tasks that touch none of heavy_paths; None = one pool
+    max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
+    heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
+    memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
+    instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
+
+    @property
+    def all_lanes(self) -> dict[str, Lane]:
+        """The configured lanes plus their parallel instances."""
+        return {**self.lanes, **self.instances}
 
     @property
     def state_dir(self) -> Path:
@@ -101,13 +141,14 @@ class Config:
 
     def lane_dir(self, lane: str) -> Path:
         """Where a lane's agent works: the workspace, or the lane's own git worktree."""
-        return self.state_dir / "worktrees" / lane if self.lanes[lane].worktree else self.workdir
+        base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
+        return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]
 
     def instructions(self, lane: str) -> Path:
-        ln = self.lanes[lane]
+        ln = self.all_lanes[lane]
         return self.home / (ln.instructions or f"{TOWER_DIR}/lanes/{lane}.md")
 
 
@@ -150,8 +191,11 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
     if raw.get("worktree") and kind != "team":
         raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
+    engine = str(raw.get("engine") or "")
+    if engine and kind != "team":
+        raise ConfigError(f"lane {lid}: \"engine\" is for team lanes; {lid} runs the whole install")
     return Lane(
-        id=lid, kind=kind, runtime=runtime, label=str(raw.get("label") or lid),
+        id=lid, kind=kind, engine=engine, runtime=runtime, label=str(raw.get("label") or lid),
         port=int(raw["port"]) if raw.get("port") else (port if runtime == "opencode" else None),
         model=str(raw.get("model") or ""),
         agent=agent,
@@ -161,6 +205,52 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
         terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
         worktree=bool(raw["worktree"]) if "worktree" in raw else (worktree and kind == "team"),
     )
+
+
+_ENGINE_PATHS = ("dir", "library", "skills", "map")
+
+
+def _engines(raw: Any, lanes: dict[str, Lane]) -> dict[str, Engine]:
+    """Declared engines plus the implicit "default" one for team lanes that name none. A lane's engine comes from its
+    own `engine` key or from an engine's `lanes` list; naming two different engines is an error."""
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError("engines must be an object: {\"name\": {...}}")
+    out: dict[str, Engine] = {}
+    for eid, e in raw.items():
+        if not str(eid).replace("-", "").replace("_", "").isalnum():
+            raise ConfigError(f"engine id {eid!r}: use letters, digits, - and _")
+        if not isinstance(e, dict):
+            raise ConfigError(f"engine {eid}: must be an object")
+        for key in _ENGINE_PATHS:
+            if e.get(key) and (Path(str(e[key])).is_absolute() or ".." in Path(str(e[key])).parts):
+                raise ConfigError(f"engine {eid}: {key} is a path inside the workspace, got {e[key]!r}")
+        if not isinstance(e.get("lanes", []), list):
+            raise ConfigError(f"engine {eid}: lanes must be a list of lane ids")
+        out[eid] = Engine(id=eid, label=str(e.get("label") or eid), lanes=[], cap=str(e.get("cap") or "").strip(),
+                          skill_names=[str(x) for x in e.get("skill_names") or [] if isinstance(x, str)],
+                          **{k: str(e.get(k) or "") for k in _ENGINE_PATHS})
+        for lid in e.get("lanes") or []:
+            ln = lanes.get(str(lid))
+            if ln is None or ln.kind != "team":
+                raise ConfigError(f"engine {eid}: {lid!r} is not a team lane")
+            if ln.engine and ln.engine != eid:
+                raise ConfigError(f"lane {lid} is in engine {ln.engine} (its own key) and in {eid} (engine list)")
+            ln.engine = eid
+    for ln in lanes.values():
+        if ln.kind != "team":
+            continue
+        if not ln.engine:
+            ln.engine = DEFAULT_ENGINE
+            if DEFAULT_ENGINE not in out:
+                out[DEFAULT_ENGINE] = Engine(id=DEFAULT_ENGINE, label="Default", implicit=True)
+        elif ln.engine not in out:
+            raise ConfigError(f"lane {ln.id}: engine {ln.engine!r} is not in `engines`")
+        out[ln.engine].lanes.append(ln.id)
+    if not out:  # no team lane yet: the implicit engine still exists, so `dah engine list` is never empty
+        out[DEFAULT_ENGINE] = Engine(id=DEFAULT_ENGINE, label="Default", implicit=True)
+    return out
 
 
 def load(home: Path | None = None) -> Config:
@@ -185,7 +275,15 @@ def load(home: Path | None = None) -> Config:
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
         lanes[lid] = _lane(lid, lraw or {}, next_port, terminal, home, worktree)
         next_port += 1
-    ports = [ln.port for ln in lanes.values() if ln.port]
+    max_instances = max(1, int(raw.get("max_instances") or 1))
+    instances: dict[str, Lane] = {}
+    for lid, ln in list(lanes.items()):
+        for n in range(2, max_instances + 1) if ln.kind == "team" else ():
+            key = instance_lane(lid, n)
+            instances[key] = dataclasses.replace(ln, id=key, base=lid, label=f"{ln.label} #{n}",
+                                                 port=next_port if ln.port else None, args=list(ln.args), env=dict(ln.env))
+            next_port += 1 if ln.port else 0
+    ports = [ln.port for ln in [*lanes.values(), *instances.values()] if ln.port]
     if len(ports) != len(set(ports)):
         raise ConfigError("two lanes share one port")
     web = raw.get("web") or {}
@@ -196,6 +294,7 @@ def load(home: Path | None = None) -> Config:
     if mode == "header" and not auth.get("header"):
         raise ConfigError("auth.mode header needs auth.header (e.g. Cf-Access-Authenticated-User-Email)")
     project = raw.get("project")
+    engines = _engines(raw.get("engines"), lanes)
     return Config(
         home=home, name=str(raw.get("name") or "Agent Hub"), lang=str(raw.get("lang") or "en"),
         project=(home / project).resolve() if project else None,
@@ -211,6 +310,13 @@ def load(home: Path | None = None) -> Config:
         worktree=worktree,
         stage_table=str(raw.get("stage_table") or ""),
         require_model_lines=bool(raw.get("require_model_lines")),
+        require_line=bool(raw.get("require_line")),
+        engines=engines,
+        light_lanes=int(raw["light_lanes"]) if raw.get("light_lanes") is not None else None,
+        max_instances=max_instances,
+        heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
+        memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
+        instances=instances,
     )
 
 

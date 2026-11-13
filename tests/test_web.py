@@ -69,11 +69,32 @@ class LocalModeTest(unittest.TestCase):
         self.assertEqual(code, 409)
         self.assertIn("already decided", body["error"])
 
-    def test_memo_to_infra_and_hub_only(self) -> None:
-        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "infra"}, POST)[0], 200)
+    def test_board_memos_go_to_the_hub_only(self) -> None:
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "hub"}, POST)[0], 200)
+        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "no to"}, POST)[0], 200)  # the hub is the default
+        code, body, _ = self.b.req("POST", "/api/memo", {"text": "hi", "to": "infra"}, POST)
+        self.assertEqual(code, 409)
+        self.assertIn("ask the hub", body["error"])
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "docs"}, POST)[0], 409)
-        self.assertEqual(len(self.b.s.pending(INFRA)), 1)
+        self.assertEqual(self.b.s.pending(INFRA), [])
+        self.assertEqual(len(self.b.s.pending(HUB)), 2)
+
+    def test_board_has_no_infra_tab_and_every_language_has_the_same_keys(self) -> None:
+        import re
+        from pathlib import Path
+        html = (Path(__file__).resolve().parent.parent / "agent_hub" / "board" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("const TABS = ['hub', 'engine', 'lanes', 'history'];", html)
+        self.assertNotIn('id="v-infra"', html)
+        self.assertIn('id="chat-ta"', html)
+        ui = html[html.index("const UI = {"):html.index("const LANGS =")]
+        blocks = re.split(r"\n  (?=[a-z]{2}: \{\n)", ui)[1:]
+        self.assertEqual(len(blocks), 5)
+
+        def keys(block: str) -> list[str]:  # every key name outside the quoted strings, as a sorted multiset
+            return sorted(re.findall(r"(\w+):", re.sub(r"'(?:[^'\\]|\\.)*'", "''", block.split("\n", 1)[1])))
+        base = keys(blocks[0])
+        for b in blocks[1:]:
+            self.assertEqual(keys(b), base, b[:12])
 
     def test_max_lanes_from_the_board(self) -> None:
         self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"], {"used": 0, "cap": 2, "max": 10})
@@ -169,37 +190,24 @@ class HeaderModeTest(unittest.TestCase):
         self.assertEqual(st["me"], {"name": "ana", "role": "owner"})
 
 
-class GoalsTest(unittest.TestCase):
+class GoalsGoneTest(unittest.TestCase):
     def setUp(self) -> None:
         self.b = Board()
 
     def tearDown(self) -> None:
         self.b.srv.shutdown()
 
-    def test_add_rank_and_finish_goals(self) -> None:
-        for title in ("Ship v2", "Fix login"):
-            code, r, _ = self.b.req("POST", "/api/goals", {"title": title, "detail": "d"}, POST)
-            self.assertEqual(code, 200)
-        self.assertEqual(self.b.req("POST", "/api/goals", {"title": " "}, POST)[0], 409)
-        code, r, _ = self.b.req("POST", "/api/goals/2", {"action": "top"}, POST)
-        self.assertEqual((code, r["goal"]["priority"]), (200, 1))
-        self.b.s.plan_goal(2, ["a", "b", "c", "d"])
-        self.b.s.check_steps(2, [1])
-        _, st, _ = self.b.req("GET", "/api/state")
-        self.assertEqual([g["title"] for g in st["goals"]], ["Fix login", "Ship v2"])
-        self.assertEqual(st["goals"][0]["progress"], 25)
-        self.assertTrue(st["running"] is False)
-        self.b.req("POST", "/api/goals/2", {"action": "done", "note": "shipped"}, POST)
-        _, st, _ = self.b.req("GET", "/api/state")
-        self.assertEqual([(g["title"], g["state"]) for g in st["goals"]], [("Ship v2", "active"), ("Fix login", "done")])
-        self.assertEqual(st["counts"]["goals"], 1)
-        _, h, _ = self.b.req("GET", "/api/history?kind=goals")
-        self.assertEqual(h["rows"][0]["note"], "shipped")
-        self.assertEqual(self.b.req("POST", "/api/goals/1", {"action": "explode"}, POST)[0], 409)
-        news = [m["text"] for m in self.b.s.pending(HUB)]
-        self.assertEqual(len(news), 4)
-        self.assertIn("New goal #1", news[0])
-        self.assertIn("to priority 1", news[2])
+    def test_goal_routes_answer_410_and_state_has_no_goals(self) -> None:
+        for method, path in (("GET", "/api/goals"), ("POST", "/api/goals"), ("POST", "/api/goals/2"),
+                             ("GET", "/api/goals/2")):
+            self.assertEqual(self.b.req(method, path, {"title": "x"} if method == "POST" else None,
+                                        POST if method == "POST" else None)[0], 410, path)
+        self.assertEqual(self.b.req("GET", "/api/history?kind=goals")[0], 410)
+        code, st, _ = self.b.req("GET", "/api/state")
+        self.assertEqual(code, 200)
+        self.assertNotIn("goals", st)
+        self.assertNotIn("goals", st["counts"])
+        self.assertEqual(self.b.s.pending(HUB), [])  # no goal news was queued for the hub
 
 
 class WorkspacesTest(unittest.TestCase):

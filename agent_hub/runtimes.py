@@ -99,7 +99,7 @@ def _git(cfg: Config, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def worktree_branch(lane: Lane) -> str:
-    return f"dah/{lane.id}"
+    return f"dah/{lane.base or lane.id}"
 
 
 def lane_cwd(cfg: Config, lane: Lane) -> Path:
@@ -214,6 +214,14 @@ class Adapter:
     def usage(self, sid: str | None) -> dict[str, Any] | None:
         """Totals for one session: tokens_in (cache included), tokens_out, cost (USD or None), ctx_k."""
         return None
+
+    def ledger(self, sid: str | None) -> dict[str, int | None] | None:
+        """One session's totals split for the task ledger: new (input + cache writes), cache (cache reads), out, turns
+        (None when the runtime does not count them). The default reads usage(): everything counts as new."""
+        u = self.usage(sid)
+        if not u:
+            return None
+        return {"new": int(u.get("tokens_in") or 0), "cache": 0, "out": int(u.get("tokens_out") or 0), "turns": None}
 
     def last_text(self, n: int = 1) -> list[str]:
         return []
@@ -423,6 +431,19 @@ class Claude(Headless):
             if isinstance(e.get("total_cost_usd"), (int, float)):
                 cost = (cost or 0.0) + float(e["total_cost_usd"])
         return {"tokens_in": tin, "tokens_out": tout, "cost": cost, "ctx_k": self.context_k(sid)}
+
+    def ledger(self, sid: str | None) -> dict[str, int | None] | None:
+        runs = [e for e in self._results() if sid and e.get("session_id") == sid]
+        if not runs:
+            return None
+        new = cache = out = turns = 0
+        for e in runs:  # one result event per run of the session (the first and each resume)
+            u = e.get("usage") or {}
+            new += int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
+            cache += int(u.get("cache_read_input_tokens") or 0)
+            out += int(u.get("output_tokens") or 0)
+            turns += int(e.get("num_turns") or 0)
+        return {"new": new, "cache": cache, "out": out, "turns": turns or None}
 
     def last_text(self, n: int = 1) -> list[str]:
         texts = [str(e.get("result") or "").strip() for e in self._results()]
@@ -805,6 +826,9 @@ def _epoch(stamp: str) -> float | None:
     return base + float(m.group(2) or 0)
 
 
+WHOLE_BYTES = 256 * 1024 * 1024  # the ledger reads a transcript whole
+
+
 def _tail(path: str | Path, size: int = 262144) -> list[str]:
     try:
         with open(path, "rb") as f:
@@ -869,12 +893,12 @@ class ClaudeTerm(TerminalSession, Claude):
         base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
         return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
 
-    def _transcript(self) -> list[dict[str, Any]]:
+    def _transcript(self, whole: bool = False) -> list[dict[str, Any]]:
         path = self._transcript_path()
         if not path:
             return []
         out = []
-        for line in _tail(path):
+        for line in _tail(path, WHOLE_BYTES if whole else 262144):
             try:
                 e = json.loads(line)
             except json.JSONDecodeError:
@@ -883,10 +907,10 @@ class ClaudeTerm(TerminalSession, Claude):
                 out.append(e["message"])
         return out
 
-    def _calls(self) -> list[dict[str, Any]]:
+    def _calls(self, whole: bool = False) -> list[dict[str, Any]]:
         """One entry per API call: the transcript's last line for each message id."""
         last: dict[str, dict[str, Any]] = {}
-        for i, m in enumerate(self._transcript()):
+        for i, m in enumerate(self._transcript(whole)):
             last[str(m.get("id") or i)] = m
         return list(last.values())
 
@@ -910,6 +934,19 @@ class ClaudeTerm(TerminalSession, Claude):
                                                      "cache_creation_input_tokens"))
             tout += int(u.get("output_tokens") or 0)
         return {"tokens_in": tin, "tokens_out": tout, "cost": None, "ctx_k": self.context_k(sid)}
+
+    def ledger(self, sid: str | None) -> dict[str, int | None] | None:
+        """The whole transcript (not just its tail): each API call once; a turn is one assistant message."""
+        msgs = self._calls(whole=True)
+        if not msgs:
+            return None
+        new = cache = out = 0
+        for m in msgs:
+            u = m.get("usage") or {}
+            new += int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
+            cache += int(u.get("cache_read_input_tokens") or 0)
+            out += int(u.get("output_tokens") or 0)
+        return {"new": new, "cache": cache, "out": out, "turns": len(msgs)}
 
     def last_text(self, n: int = 1) -> list[str]:
         texts = []
@@ -1079,7 +1116,7 @@ class Runtimes:
     def __init__(self, cfg: Config, store: Store, ext: Extensions | None = None):
         self.cfg = cfg
         ext = ext or registry(cfg.home)
-        self.adapters: dict[str, Adapter] = {lid: adapter_class(ln, ext)(cfg, store, ln) for lid, ln in cfg.lanes.items()}
+        self.adapters: dict[str, Adapter] = {lid: adapter_class(ln, ext)(cfg, store, ln) for lid, ln in cfg.all_lanes.items()}
 
     def _a(self, lane: str) -> Any:
         return self.adapters[lane]
@@ -1097,7 +1134,7 @@ class Runtimes:
         self._a(lane).reply_question(qid, answers)
 
     def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
-        ln = self.cfg.lanes[lane]
+        ln = self.cfg.all_lanes[lane]
         self._a(lane).set_opts(model, effort)  # OpenCode lanes keep their configured model; claude and codex honour these
         if ln.worktree:
             lane_cwd(self.cfg, ln)
@@ -1115,6 +1152,9 @@ class Runtimes:
 
     def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
         return self._a(lane).usage(sid)
+
+    def ledger(self, lane: str, sid: str | None) -> dict[str, int | None] | None:
+        return self._a(lane).ledger(sid)
 
     def last_text(self, lane: str, n: int = 1) -> list[str]:
         return self._a(lane).last_text(n)

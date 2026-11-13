@@ -114,6 +114,16 @@ class CliTest(unittest.TestCase):
         self.assertIn("only infra", self.tower("memo", "forward", "2", lane="hub", ok=False))
         self.assertIn("infra only uses", self.tower("report", "done", "x", lane="infra", ok=False))
 
+    def test_infra_takes_requests_from_the_hub_only(self) -> None:
+        from agent_hub.store import Store
+        s = Store(self.home / ".tower/state/tower.db")
+        self.assertIn("→ infra", self.tower("infra", "add a lane docs", "--approved", "request #7", lane="hub"))
+        self.assertIn("→ infra", self.tower("memo", "send", "infra", "second", lane="hub"))
+        first, second = s.pending("infra")
+        self.assertIn("Approved by the human: request #7", first["text"])
+        self.assertNotIn("Approved", second["text"])
+        self.assertIn("only the hub", self.tower("infra", "x", lane="infra", ok=False))
+
     def test_members_and_discover(self) -> None:
         out = self.tower("member", "add", "ana", "--role", "owner", "--token")
         token = out.split("give it privately): ")[1].strip()
@@ -173,25 +183,14 @@ class CliTest(unittest.TestCase):
         out = self.tower("uninstall", "--yes", "--purge")
         self.assertFalse((self.home / ".tower").exists(), out)
 
-    def test_goals_by_humans_and_the_hub(self) -> None:
-        self.assertIn("goal #1 added at priority 1", self.tower("goal", "add", "Ship v2", "--detail", "public beta"))
-        self.tower("goal", "add", "Fix login", "--priority", "1")
-        self.assertIn("set by humans and the hub", self.tower("goal", "add", "x", lane="docs", ok=False))
-        self.assertTrue(self.tower("goal", "list").startswith("1. #2 [active] Fix login"))
-        self.tower("goal", "plan", "2", "--step", "repro", "--step", "fix", "--step", "test", lane="hub")
-        self.assertIn("33% (1/3)", self.tower("goal", "check", "2", "1", lane="hub"))
-        self.assertIn("task #1 → docs for goal #2", self.tower("task", "docs", "--goal", "2", "--title", "T", "b",
-                                                                lane="hub"))
-        out = self.tower("goal", "show", "2")
-        self.assertIn("1. [x] repro", out)
-        self.assertIn("task #1 docs queued", out)
-        self.assertIn("goals (first priority first)", self.tower("status"))
-        self.tower("goal", "done", "2", "shipped", lane="hub")
-        self.assertIn("not active", self.tower("task", "docs", "--goal", "2", "--title", "T", "b", lane="hub", ok=False))
-        self.assertIn("#2 [done]", self.tower("goal", "list", "--all"))
-        from agent_hub.store import Store
-        news = [m["text"] for m in Store(self.home / ".tower/state/tower.db").pending("hub")]
-        self.assertEqual(len(news), 2)  # the two goals a human added; the hub's own changes are not news to it
+    def test_goals_are_gone_but_task_goal_prints_a_notice(self) -> None:
+        self.assertIn("invalid choice: 'goal'", self.tower("goal", "list", ok=False))
+        out = self.tower("task", "docs", "--goal", "2", "--title", "T", "b", lane="hub")
+        self.assertIn("goals were removed in 0.8.0", out)
+        self.assertIn("task #1 → docs", out)
+        self.assertNotIn("goal #", out)
+        self.assertNotIn("goals", self.tower("status").replace("goals were", ""))
+        self.assertNotIn("serves goal", self.tower("mine", lane="docs"))
 
     def test_guide_and_workspaces(self) -> None:
         self.assertIn("# SETUP.md", self.tower("guide"))

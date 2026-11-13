@@ -1,25 +1,28 @@
 # dongduni-agent-hub
 
-**Stop typing to every agent. Set the goal; the hub runs the lanes.**
+**Run your agents as an engine that gets better, not as five terminals you re-brief.**
 
-How long will you keep five terminals open, re-explaining context to each agent session, spawning subagents by hand, and digging through scrollback to find out who finished what? agent-hub turns that around. You write down what you want done and in which order. One always-on **hub** agent plans it with you, hands the work to agent sessions it controls (**lanes**: OpenCode, Claude Code or Codex, mixed freely), checks what comes back, and reports to a review board on your phone. You only step in for the calls that need a human.
+You run several agent sessions. Each time, you re-explain the context, spawn subagents by hand, dig through scrollback for who finished what, and fix the same kind of mistake again next week. agent-hub turns that into a small production line. One always-on **hub** agent takes your requests, hands the work to agent sessions it controls (**lanes**: OpenCode, Claude Code or Codex, mixed freely), checks what comes back, and reports to a review board on your phone. The lanes of one **engine** share a written method: for each kind of deliverable, a process card with its stages and a pattern card per stage. The board rates every stage by how often its first pass was adopted, so you see which part of the method to fix next. You only step in for the calls that need a human.
 
-![Without agent-hub: you type to every terminal and keep the state in your head. With agent-hub: you set and rank goals on a board; the hub assigns work to lanes and reports back.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/why.svg)
+![Without agent-hub: you type to every terminal and keep the state in your head. With agent-hub: you ask the hub from a board; lanes follow your process and report back.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/why.svg)
 
 ## What you get
 
-- **Goals, not prompts.** Add as many goals as you like, rank them, pause or drop them. The board shows which goal the team is on now and how far each one is (its achievement rate is the share of its agreed steps that are done).
-- **A hub that runs the team.** It agrees a plan with you, splits it into tasks, starts a fresh agent session per task (up to `max_lanes` at once), nudges stalled lanes, reviews results against the real output, and decides what is inside the approved scope.
-- **Lanes that work on their own.** Each lane is your agent as you configured it, with your instruction files, skills, MCP servers, hooks and subagents. It reports `done`, `blocked` or posts a decision; it never waits in chat.
-- **A board instead of chat.** Decisions with options, reviews of artifacts (images, video, text inline), memos to the hub or to infra, history. Built for a phone; translated into English, 한국어, 日本語, 中文 and Español.
+- **An engine, not a prompt pile.** A pattern library lists your deliverable types. Each row names a process card (stages, who does each, which model and effort) and pattern cards (what a good result looks like at that stage). A brief says `Line: #3 … stage 2`, and the lane runs that stage with that card. `dah engine add NAME --from blank|animation|marketing` scaffolds one to edit; several engines can live in one install, each with its own lanes and skills.
+- **Ratings that point at the weak stage.** `dah deliverable` records what the human did with a result; `dah blame` names the stage that should have caught a failure. The Engine tab shows per stage and per process whether it is new, good, best, or needs fixing, how often it was sent back, and what a task cost in tokens. A weekly snapshot lists what changed in lanes, skills and cards.
+- **A hub that runs the team.** It turns a request into tasks, starts a fresh session per task, nudges stalled lanes, reviews results against the real output, and decides what is inside the approved scope. Humans reach infra only through the hub.
+- **Lanes that work on their own.** Each lane is your agent as you configured it, with your instruction files, skills, MCP servers, hooks and subagents. It reports `done`, `blocked` or posts a decision; it never waits in chat. Tasks that declare `paths:` run in parallel when they do not overlap; a memory guard renews bloated sessions when they are idle.
+- **A board instead of chat.** Decisions with options, reviews of artifacts (images, video, text inline), a request box on every tab, per-lane sheets (process, stage now, model, effort, tokens), history. Built for a phone; English, 한국어, 日本語, 中文 and Español.
 - **Your setup, your rules.** Lane instructions, runtimes, models, agents, permissions, notifications, auth and hosting are plain files you (or the infra lane) edit. The tower in the middle is a small Python loop with no LLM in it.
 
-![The loop: you set goals, the hub plans them with you, tasks go to lanes, lanes work and report, the hub reviews and asks you only what needs a human.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/how.svg)
+![The loop: you ask the hub, it turns the request into tasks on process cards, lanes work and report, the hub reviews and asks you only what needs a human, and the Engine tab rates each stage.](https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/how.svg)
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-goals.png" width="300" alt="The board's Hub tab: ranked goals with progress, the goal in progress marked Now">
-  &nbsp;&nbsp;
-  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-decide.png" width="300" alt="A decision on the board: options, recommendation, Decide button">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/port/09-engine-desktop.png" width="760" alt="The board's Engine tab: pipelines with stage ratings, lanes, skills, what changed">
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/twglhk/dongduni-agent-hub/main/docs/images/board-decide.png" width="360" alt="A decision on the board: options, recommendation, Decide button">
 </p>
 
 > **Agents:** asked to install or set up agent-hub / dongduni-agent-hub? Install the package (`uv tool install dongduni-agent-hub`, or `pipx install dongduni-agent-hub`; for one project only, see [Install](#install)), then run `dah guide` and follow that playbook phase by phase. It is also [online](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/guide/SETUP.md).
@@ -45,7 +48,7 @@ Setup is agent-driven, because every team keeps its agents, docs and servers som
 
 > Install dongduni-agent-hub globally.
 
-**In this project**: the agent follows the setup playbook (`dah guide`): it surveys how you work (`dah discover`: agent CLIs, their configs, MCP servers, skills, where your knowledge lives, hosting tools), asks you a handful of questions (which agents run the hub and infra, board language, where your team's memory lives, how your phone should reach the board), writes `.tower/` with lane instructions tailored to your workspace, starts the tower, adds your first goals, and checks the whole loop end to end.
+**In this project**: the agent follows the setup playbook (`dah guide`): it surveys how you work (`dah discover`: agent CLIs, their configs, MCP servers, skills, where your knowledge lives, hosting tools), asks you a handful of questions (which agents run the hub and infra, board language, where your team's memory lives, how your phone should reach the board), writes `.tower/` with lane instructions tailored to your workspace, starts the tower, sends your first request to the hub, and checks the whole loop end to end.
 
 **Globally**: the agent installs the `dah` command for your user and runs `dah skill install`, which adds an `agent-hub-setup` skill (Claude Code, Codex) and command (OpenCode) to your agents after showing you the diff. From then on, "set up agent-hub here" works in any workspace.
 
@@ -57,8 +60,8 @@ If your agent cannot find the playbook, point it at [agent_hub/guide/SETUP.md](h
 cd ~/my-workspace
 dah init --name "My Team" --lang en --hub claude --infra claude   # writes .tower/, picks free ports
 dah start                                                          # tower + board, URL printed
-dah goal add "Launch the public beta" --detail "sign-up open, onboarding under 2 minutes"
-dah status
+dah engine add studio --from blank                                 # optional: a method with cards to edit (dah guide engines)
+dah status                                                         # then send the hub its first request from the board
 ```
 
 ## Update
@@ -94,7 +97,7 @@ agent-hub is a skeleton: build what your team needs on top of it in the workspac
 | --- | --- |
 | `.tower/board/extra.js`, `extra.css` | sections, tabs and styles added to the board (`window.dah.addSection`, `addTab`, `get`, `post`, ...) |
 | `.tower/board/index.html` | your own board instead of the built-in one (`?builtin` always opens the built-in board) |
-| `.tower/ext/*.py` | API routes at `/api/x/<name>`; tower hooks: `on_event` (reports, items, decisions, memos, goals, tasks, lane status), `on_notify` (every push to people, e.g. to another chat) and `on_tick`; new agent runtimes and terminal apps (`runtimes`, `terminals`) |
+| `.tower/ext/*.py` | API routes at `/api/x/<name>`; tower hooks: `on_event` (reports, items, decisions, memos, tasks, lane status), `on_notify` (every push to people, e.g. to another chat) and `on_tick`; new agent runtimes and terminal apps (`runtimes`, `terminals`) |
 
 Built-in routes and the tower's decisions stay the contract; a broken extension is logged and skipped. Updates never touch `.tower/`; when the built-in board changes, `dah update` asks infra to check the workspace's board additions (the guide lists which parts stay stable). To change agent-hub itself, run it from a clone (see Development).
 
@@ -119,15 +122,17 @@ Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 
 | | |
 | --- | --- |
-| **goal** | an outcome you want, ranked against the others. The first active goal is what the team works on now. The hub agrees its steps with you; progress is the share of steps done. Add, rank, pause, finish and drop goals on the board or with `dah goal`. |
-| **hub** | the always-on lane. Turns goals and requests into tasks, reviews results, decides inside approved scope, escalates the rest to people. |
+| **engine** | a set of lanes that share one method: a pattern library (deliverable types), the skills holding each type's process card and pattern cards, and an engine review lane. An install with no `engines` in `tower.json` has one implicit engine, `default`. |
+| **process card** | the stages of one deliverable type: who does each, the model and effort per stage, the gate to leave it. Briefs name it with a `Line:` header. |
+| **pattern card** | what a good result looks like at one stage: the recipe and the checks. Status runs draft, collecting, confirmed, tuned. |
+| **hub** | the always-on lane. Turns requests into tasks, reviews results, decides inside approved scope, escalates the rest to people. |
 | **lane** | a role with its own session: `hub`, `infra`, and any team lanes you add (`dah lane add docs --runtime codex`). A lane is not a new agent: it is a role file (`.tower/lanes/<lane>.md`, edit freely) put on the agent you already use, with your hooks, skills and plugins. Every lane also gets a `/dah-<lane>` shortcut so you can open the role by hand in Claude Code, OpenCode or Codex. |
-| **task** | a brief the hub gives a team lane, usually for one step of a goal. Each task runs in a fresh session; the tower closes it when the lane wraps. |
+| **task** | a brief the hub gives a team lane, usually for one stage of a process card. Each task runs in a fresh session; the tower closes it when the lane wraps. |
 | **item** | something a human or the hub must decide: a `decision` with options or a `review` of an artifact. |
-| **memo** | what people write on the board: to the `hub` (the work, priorities) or to `infra` (the system: lanes, models, access). Each gets a reply on the board. |
-| **infra** | the lane that maintains the tower itself: adds lanes, changes models, sets up access, one memo per fresh session. |
+| **request** | what people write in the box on every board tab: to the hub (the work, priorities). Each gets a reply on the board. Changes to the system itself (lanes, models, access) go through the hub to infra. |
+| **infra** | the lane that maintains the tower itself: adds lanes, changes models, sets up access, one request per fresh session. Only the hub sends it work. |
 
-**Memory is yours.** agent-hub keeps the board's history (goals, decisions, reports, memos) and nothing else. Where your team keeps decisions and notes (a memory MCP, a wiki, a docs folder) is your choice: setup writes it into the lane instructions, and lanes record there the way you normally do.
+**Memory is yours.** agent-hub keeps the board's history (decisions, reports, requests, the ledger of tasks and ratings) and nothing else. Where your team keeps decisions and notes (a memory MCP, a wiki, a docs folder) is your choice: setup writes it into the lane instructions, and lanes record there the way you normally do.
 
 The working rules every lane follows are in [`templates/PROTOCOL.md`](https://github.com/twglhk/dongduni-agent-hub/blob/main/agent_hub/templates/PROTOCOL.md).
 

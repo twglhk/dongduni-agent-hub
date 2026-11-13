@@ -50,7 +50,7 @@ routes = {("GET", "stats"): stats, ("POST", "jira/sync"): sync}
 
 - `("GET", "stats")` answers `GET api/x/stats`; `("POST", "jira/sync")` answers `POST api/x/jira/sync`.
 - `fn(ctx, body)` returns a JSON value (status 200) or `(status, value)`. An exception is a 500 with its message.
-- `ctx`: `cfg` (the workspace config), `store` (the board's state: goals, items, tasks, reports, memos), `me` (who is signed in), `query` (the URL query, one value per key), `log`.
+- `ctx`: `cfg` (the workspace config), `store` (the board's state: items, tasks, reports, memos), `me` (who is signed in), `query` (the URL query, one value per key), `log`.
 - Only signed-in people reach them, with the workspace's own auth. POSTs need the `x-tower: 1` header, as every board POST does (`dah.post` sends it).
 - Another workspace shown on the same board (`/w/<workspace>/`) serves its own routes.
 
@@ -75,8 +75,8 @@ def on_tick(ctx):
   - `item`: a decision or review was posted
   - `decided`: one was decided (`verdict`, `choice`, `note`, `decided_by`)
   - `memo`: someone wrote to the hub or infra on the board
-  - `goal`: a goal was added, ranked, planned, ticked, paused, finished or dropped
-  - `task`: a task was queued, started, closed or cancelled (`lane`, `state`, `title`, `goal_id`, ...)
+  - (`goal` events stopped in 0.8.0 with the goals feature; an extension that listens for them simply never fires)
+  - `task`: a task was queued, started, closed or cancelled (`lane`, `state`, `title`, ...)
   - `lane`: a lane's status changed (`lane`, `status`, `was`, `runtime`, `terminal`; status: closed, idle, busy, asking, unknown)
 - `on_notify(ctx, notes)` for every push the tower sends people (ntfy, Slack, desktop), with the same notes: each has `title` and `lane`, `alert` is true for the tower's own alerts (a lane waiting in its window, a hub that keeps closing), and board items carry the item's fields. Use it for a channel agent-hub does not ship (Discord, Telegram, a pager). Notes are copies: changing them changes nothing.
 - `on_tick(ctx)` once per tick. `ctx`: `cfg`, `store`, `log`, `now`.
@@ -113,6 +113,7 @@ runtimes = {"aider": Aider}
 
 - `runtimes = {"name": cls}`: `cls` subclasses `agent_hub.runtimes.Adapter` (or `Headless`, for CLIs that run once per prompt). It is built as `cls(cfg, store, lane)` and answers `status()` (`closed`, `idle`, `busy`, `asking` or `unknown`), `open(prompt)` (starts a session, returns its id), `send(sid, text)` and `close()`; optionally `owned()`, `questions()`, `reply_question(qid, answers)`, `context_k(sid)`, `usage(sid)`, `last_text(n)`. `self._spawn(argv)` starts a process in the lane's folder (its worktree if it has one) with the lane's environment and log files. Raise `RuntimeFailure` for a failure the tower should log.
 - `terminals = {"name": cls}`: `cls` subclasses `agent_hub.runtimes.Host`, built as `cls(cfg)`: `open(title, launcher, cwd)` runs the launcher script in a new window in `cwd` and returns a handle (a string), `alive(handle)`, `send(handle, text)` (type one line and Enter), `close(handle)`. `alive` raises when the app cannot tell, so the lane shows `unknown` rather than closed. The built-in Claude, Codex and OpenCode window adapters use it as they use tmux.
+- `caps = {"name": fn}`: an optional usage cap for one engine. Put `"cap": "name"` on the engine in `tower.json`; each tick the tower calls `fn(ctx)` before it starts a queued task of that engine (`ctx`: `cfg`, `store`, `log`, `now`, `engine`). Return a reason string to hold the task (it stays queued and the reason is logged), or `None` to let it start. A failing `fn` holds nothing. Built in: `"cap": "tokens-day:2000000"` holds an engine's new tasks once its lanes have used that many tokens (in + out) today. Running sessions are never stopped by a cap.
 - A name in `tower.json` that no extension registers is a config error; if the extension goes away later, its lanes show `unknown` and are never opened.
 - These modules are also loaded by `dah` commands that read `tower.json` when it names an extension's runtime or terminal: keep module-level code free of side effects.
 
@@ -120,7 +121,7 @@ runtimes = {"aider": Aider}
 
 An update replaces the package, never `.tower/`; what can change is what an extension leans on.
 
-- Stable (changed only in a major version): the `.tower/` layout; `dah.addSection`, `addTab`, `onState`, `get`, `post`, `refresh`, `L`, `lang`, `BASE`, `version`; the top-level fields of the server state (`dah.S.data`, `GET api/state`) and the board API routes; `/api/x/<name>` with `fn(ctx, body)`; `on_event` / `on_notify` / `on_tick` with their kinds and the `ctx` keys listed above; `runtimes` and `terminals`, with the `Adapter` and `Host` methods listed above, `Headless.resume_argv`, `_spawn`, `RuntimeFailure`, `lane_env(cfg, lane)` and `lane_cwd(cfg, lane)`. New fields and kinds may be added.
+- Stable (changed only in a major version): the `.tower/` layout; `dah.addSection`, `addTab`, `onState`, `get`, `post`, `refresh`, `L`, `lang`, `BASE`, `version`; the top-level fields of the server state (`dah.S.data`, `GET api/state`) and the board API routes; `/api/x/<name>` with `fn(ctx, body)`; `on_event` / `on_notify` / `on_tick` with their kinds and the `ctx` keys listed above; `runtimes`, `terminals` and `caps`, with the `Adapter` and `Host` methods listed above, `Headless.resume_argv`, `_spawn`, `RuntimeFailure`, `lane_env(cfg, lane)` and `lane_cwd(cfg, lane)`. New fields and kinds may be added.
 - Internal (may change in any release): the board's DOM, CSS classes and variables, the builders (`dah.h`, `svg`, `sec`, `empty`, `toast`) and the rest of `dah.S`; `Store` methods beyond reading through `ctx["store"]`; anything in the package not listed above.
 
 Prefer the stable part. When an update changes the built-in board, `dah update` asks infra to check a workspace's `extra.js` / `extra.css` (or to carry the change over to its own `index.html`).

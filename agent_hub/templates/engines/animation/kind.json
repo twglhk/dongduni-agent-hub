@@ -1,0 +1,7 @@
+{
+  "description": "Story to storyboard to rendered shots.",
+  "lanes": {
+    "story": "Writes storyboards: beats, then frames.",
+    "render": "Renders and checks shots from approved storyboards."
+  }
+}

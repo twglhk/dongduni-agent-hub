@@ -33,6 +33,7 @@
   --t2:22px; --t3:20px; --t4:17px; --t5:15px; --t6:13px;
   --fs:16px; --tap:44px; --col:720px;
   --nav-h:calc(60px + env(safe-area-inset-bottom));
+  --chat-h:68px;
   --shadow:0 -8px 32px rgba(2,32,71,.10);
   --ease:cubic-bezier(.2,.8,.2,1);
 }
@@ -86,7 +87,20 @@ h1,h2,h3,h4,p{margin:0}
 @keyframes beat{50%{opacity:.35}}
 
 /* ---- layout ---- */
-main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--nav-h) + var(--s7))}
+main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--nav-h) + var(--chat-h) + var(--s7))}
+/* ---- pinned chat: the same request box on every tab ---- */
+#chat{position:fixed;left:0;right:0;bottom:var(--nav-h);z-index:19;background:var(--bg);border-top:1px solid var(--line)}
+#chat .in{max-width:var(--col);margin:0 auto;padding:var(--s2) var(--s5);display:grid;gap:var(--s1)}
+#chat-last{display:block;width:100%;text-align:left;font-size:var(--t6);line-height:1.4;color:var(--text-2);background:var(--blue-weak);border-radius:var(--r-s);padding:6px var(--s3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat .row{display:flex;gap:var(--s2);align-items:flex-end}
+#chat textarea{flex:1;min-width:0;height:var(--tap);max-height:120px;border:0;outline:none;resize:none;background:var(--surface);border-radius:var(--r-s);padding:12px var(--s4);font-size:var(--fs);line-height:1.3}
+#chat textarea::placeholder{color:var(--text-4)}
+#chat textarea:focus{box-shadow:inset 0 0 0 1.5px var(--blue)}
+body.has-last{--chat-h:104px}
+.btn-s{height:var(--tap);padding:0 var(--s5);border-radius:var(--r-s);background:var(--blue);color:#fff;font-weight:700;font-size:var(--t5);transition:opacity .15s,transform .12s}
+.btn-s:disabled{opacity:.35;cursor:default}
+.btn-s:active:not(:disabled){transform:scale(.97);background:var(--blue-dn)}
+.note::placeholder,.field::placeholder{color:var(--text-4)}
 #nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 #nav .in{max-width:var(--col);margin:0 auto;display:flex}
 #nav button{flex:1;height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--text-4);font-size:11px;font-weight:600;position:relative;transition:color .15s}
@@ -158,7 +172,31 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .see-all:disabled{color:var(--text-4);cursor:default}
 
 /* ---- lanes / reports / memos ---- */
-.lc{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:6px;align-content:start}
+.kvs{display:grid;gap:4px;margin:var(--s2) 0}
+.kv{display:flex;gap:var(--s3);font-size:var(--t5);line-height:1.5}
+.kv .k{color:var(--text-3);min-width:64px;flex:none}
+.stages{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s2) 0}
+.stg{padding:4px 8px;border-radius:var(--r-xs);background:var(--grey-weak);color:var(--grey-ink);font-size:var(--t6);font-weight:600}
+.seg{display:flex;gap:6px;overflow-x:auto;margin:0 0 var(--s4);padding:0 var(--s1);scrollbar-width:none}
+.seg button{height:36px;padding:0 14px;border-radius:18px;background:var(--surface);color:var(--text-2);font-weight:600;font-size:var(--t5);white-space:nowrap;flex:none}
+.seg button.on{background:var(--blue);color:#fff}
+.chip.rt-green,.stg.rt-green{background:var(--green-weak);color:var(--green-ink)}
+.chip.rt-blue,.stg.rt-blue{background:var(--blue-weak);color:var(--blue-ink)}
+.chip.rt-amber,.stg.rt-amber{background:var(--orange-weak);color:var(--orange-ink)}
+.chip.rt-red,.stg.rt-red{background:var(--red-weak);color:var(--red-ink)}
+.stg.weak{box-shadow:inset 0 0 0 1.5px var(--orange)}
+.pl .stages{margin:0}
+#v-engine .days{margin-bottom:var(--s6)}
+.stg.now{background:var(--blue-weak);color:var(--blue-ink)}
+.days{display:flex;gap:6px;align-items:flex-end;height:96px}
+.day{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:var(--t6);color:var(--text-3)}
+.day .col{flex:1;width:100%;display:flex;align-items:flex-end}
+.day i{display:block;width:100%;min-height:2px;background:var(--blue);border-radius:3px 3px 0 0}
+.day b{font-weight:600;font-size:var(--t6);color:var(--text-2,var(--text));white-space:nowrap;font-variant-numeric:tabular-nums}
+.row.static{cursor:default}
+.sb>.tk{font-size:var(--t5);font-weight:600;line-height:1.45;margin:var(--s2) 0}
+.sb>.tk .id{color:var(--text-3);font-weight:500;margin-right:4px}
+.lc{text-align:left;width:100%;cursor:pointer;background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:6px;align-content:start}
 .lc .hd{display:flex;align-items:center;gap:var(--s2);min-width:0}
 .lc .nm{font-weight:700;font-size:var(--t4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lc .hd .chip:last-child{margin-left:auto}
@@ -182,17 +220,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .clip-h{max-height:8.4em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 60%,transparent);mask-image:linear-gradient(#000 60%,transparent)}
 .more-tog{display:block;min-height:36px;color:var(--text-3);font-size:var(--t6);font-weight:600;margin-top:2px}
 
-/* ---- composer ---- */
-.memo-box{background:var(--surface);border-radius:var(--r-l);padding:var(--s2) var(--s2) var(--s2) var(--s2)}
-.memo-box textarea{display:block;width:100%;min-height:96px;border:0;outline:none;resize:vertical;background:transparent;padding:var(--s3) var(--s3) var(--s2);font-size:var(--fs);line-height:1.5}
-.memo-box textarea::placeholder,.note::placeholder,.field::placeholder{color:var(--text-4)}
-.memo-box .bar{display:flex;justify-content:flex-end}
-.memo-box:focus-within{box-shadow:inset 0 0 0 1.5px var(--blue)}
-.btn-s{height:var(--tap);padding:0 var(--s5);border-radius:var(--r-s);background:var(--blue);color:#fff;font-weight:700;font-size:var(--t5);transition:opacity .15s,transform .12s}
-.btn-s:disabled{opacity:.35;cursor:default}
-.btn-s:active:not(:disabled){transform:scale(.97);background:var(--blue-dn)}
-
-/* ---- sheet ---- */
 #sheet-bd{position:fixed;inset:0;z-index:29;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .25s}
 #sheet-bd.open{opacity:1;pointer-events:auto}
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0 auto;max-width:var(--col);max-height:calc(100vh - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);background:var(--surface);border-radius:var(--r-l) var(--r-l) 0 0;display:flex;flex-direction:column;box-shadow:var(--shadow);transform:translateY(105%);visibility:hidden;transition:transform .32s var(--ease),visibility 0s linear .32s}
@@ -308,7 +335,7 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .field:focus{border-color:var(--blue);background:var(--surface)}
 
 /* ---- toast ---- */
-#toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 16px);transform:translateX(-50%) translateY(8px);z-index:60;background:var(--toast-bg);color:var(--toast-fg);padding:14px 20px;border-radius:var(--r);font-size:var(--t5);font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s var(--ease);max-width:calc(100vw - 40px);width:max-content;text-align:center;line-height:1.4}
+#toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--chat-h) + 16px);transform:translateX(-50%) translateY(8px);z-index:60;background:var(--toast-bg);color:var(--toast-fg);padding:14px 20px;border-radius:var(--r);font-size:var(--t5);font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s var(--ease);max-width:calc(100vw - 40px);width:max-content;text-align:center;line-height:1.4}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.err{background:var(--red);color:#fff}
 body.sheet-open #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
@@ -321,51 +348,7 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 #langbtn{padding:0 var(--s2);color:var(--text-3);font-size:var(--t6);font-weight:700;letter-spacing:.04em;border-radius:var(--r-xs);white-space:nowrap}
 #stopped{flex:none}
 
-/* ---- goals ---- */
-.goals{display:grid;gap:var(--s2)}
-.pbar{flex:1;min-width:48px;height:8px;border-radius:4px;background:var(--surface-3);overflow:hidden}
-.pbar>i{display:block;height:100%;border-radius:4px;background:var(--green);transition:width .4s var(--ease)}
-.pbar.big{height:12px;border-radius:6px;margin-bottom:var(--s5)}
-.pct{font-size:var(--t6);font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;min-width:38px;text-align:right}
-.g-now{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);box-shadow:inset 0 0 0 1.5px var(--blue)}
-.g-now .title{font-size:var(--t4);font-weight:700;line-height:1.4;margin:var(--s2) 0 var(--s3);letter-spacing:-.01em}
-.g-now .prog,.g-row .prog{display:flex;align-items:center;gap:var(--s3)}
-.g-sub{display:flex;flex-wrap:wrap;gap:4px var(--s3);margin-top:var(--s2);font-size:var(--t6);color:var(--text-3)}
-.g-sub .live{color:var(--blue-ink);font-weight:600}
-.g-row{display:flex;align-items:center;gap:var(--s3);background:var(--surface);border-radius:var(--r-l);padding:var(--s3) var(--s4) var(--s3) var(--s5);min-height:64px}
-.g-row .rk{width:26px;height:26px;border-radius:50%;background:var(--grey-weak);color:var(--text-2);font-size:var(--t6);font-weight:700;display:flex;align-items:center;justify-content:center;flex:none;font-variant-numeric:tabular-nums}
-.g-row .body{flex:1;min-width:0}
-.g-row .title{font-weight:600;font-size:var(--t5);line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:6px}
-.g-row .none{font-size:var(--t6);color:var(--text-3)}
-.g-row.muted .title,.g-row.muted .rk{color:var(--text-3)}
-.g-row.muted .pbar>i{background:var(--text-4)}
-.chip.now{background:var(--blue);color:#fff}
-.chip.g-active{background:var(--blue-weak);color:var(--blue-ink)}
-.chip.g-paused{background:var(--orange-weak);color:var(--orange-ink)}
-.chip.g-done{background:var(--green-weak);color:var(--green-ink)}
-.chip.g-dropped{color:var(--text-3)}
-.g-fold{margin-top:var(--s2)}
-.g-add{background:var(--surface);border-radius:var(--r-l);padding:var(--s2);margin-top:var(--s3)}
-.g-add:focus-within{box-shadow:inset 0 0 0 1.5px var(--blue)}
-.g-add .r{display:flex;gap:var(--s2);align-items:center}
-.g-add input{flex:1;min-width:0;height:var(--tap);border:0;outline:none;background:transparent;padding:0 var(--s3);font-size:var(--fs)}
-.g-add textarea{display:block;width:100%;min-height:64px;border:0;border-top:1px solid var(--line);outline:none;resize:vertical;background:transparent;margin-top:var(--s2);padding:var(--s3) var(--s3) var(--s2);font-size:var(--t5);line-height:1.5}
-.g-add input::placeholder,.g-add textarea::placeholder{color:var(--text-4)}
 .hint{font-size:var(--t6);color:var(--text-3);padding:var(--s2) var(--s1) 0;line-height:1.5}
-.big-pct{display:flex;align-items:baseline;gap:var(--s3);margin:0 0 var(--s2)}
-.big-pct b{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--green-ink)}
-.big-pct span{color:var(--text-3);font-size:var(--t5);font-weight:600}
-.steps{list-style:none;margin:0;padding:0;background:var(--surface-3);border-radius:var(--r);overflow:hidden}
-.steps li{display:flex;gap:var(--s3);align-items:flex-start;padding:var(--s3) var(--s4);font-size:var(--t5);line-height:1.5}
-.steps li+li{border-top:1px solid var(--line)}
-.steps .mk{width:20px;height:20px;border-radius:6px;border:2px solid var(--line-2);flex:none;margin-top:1px;display:flex;align-items:center;justify-content:center}
-.steps li.on .mk{background:var(--green);border-color:var(--green)}
-.steps .mk svg{width:12px;height:12px;stroke:#fff;fill:none;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round}
-.steps li.on .tx{color:var(--text-3);text-decoration:line-through}
-.list.in-sheet{background:var(--surface-3)}
-.gtag{font-size:var(--t6);color:var(--blue-ink);margin-top:2px;line-height:1.45}
-.moves{display:flex;gap:var(--s2);margin-bottom:var(--s2)}
-.moves .btn{flex:1;height:44px;font-size:var(--t6)}
 .btn-text.warn{color:var(--red-ink)}
 
 /* ---- menus (language, workspaces) ---- */
@@ -382,17 +365,10 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 .mrow .badge{position:static;flex:none}
 .dot.on{background:var(--green)}
 
-/* ---- infra tip ---- */
-.info{width:var(--tap);height:var(--tap);margin:-8px -10px;display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:50%;color:var(--text-3)}
-.info>span{width:24px;height:24px;border-radius:50%;background:var(--grey-weak);display:flex;align-items:center;justify-content:center;transition:background-color .15s,color .15s}
-.info svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round}
-.info[aria-expanded="true"]{color:var(--blue-ink)}
-.info[aria-expanded="true"]>span{background:var(--blue-weak)}
 .reach{background:var(--orange-weak);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:var(--s2)}
 .reach .k{font-weight:700;font-size:var(--t5);color:var(--orange-ink)}
 .reach .tx{font-size:var(--t5);color:var(--text-2);line-height:1.55}
 .reach .bar{display:flex;justify-content:flex-end}
-.tip{margin:0 0 var(--s3);padding:var(--s3) var(--s4);border-radius:var(--r);background:var(--blue-weak);color:var(--text-2);font-size:var(--t5);line-height:1.55}
 
 /* ---- lane cap stepper ---- */
 .sec-h.wrap{flex-wrap:wrap;row-gap:var(--s2)}
@@ -456,10 +432,11 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 </div></header>
 <main>
   <section id="v-hub"></section>
-  <section id="v-infra" class="hidden"></section>
+  <section id="v-engine" class="hidden"></section>
   <section id="v-lanes" class="hidden"></section>
   <section id="v-history" class="hidden"></section>
 </main>
+<div id="chat" class="hidden"><div class="in"><button id="chat-last" type="button" class="hidden"></button><div class="row"><textarea id="chat-ta" rows="1"></textarea><button id="chat-send" class="btn-s" type="button" disabled></button></div></div></div>
 <nav id="nav"><div id="use" role="status"></div><div class="in"></div></nav>
 <div id="sheet-bd"></div>
 <div id="sheet" role="dialog" aria-modal="true"></div>
@@ -473,243 +450,219 @@ const BASE = location.pathname.replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
-    tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Lanes', history: 'History' },
-    sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', hubReq: 'Ask hub', sentReq: 'Recent requests',
-      infraItems: 'Open items', infraMemo: 'Request to infra', sentMemo: 'Recent requests', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
-      goals: 'Goals', finished: 'Finished {n}', usage: 'Usage today' },
-    empty: { yours: 'Nothing to decide', infra: 'No open items', reqs: 'No requests yet', memos: 'No requests yet', tasks: 'No live tasks',
-      reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all',
-      goals: 'No goals yet. Add the first one below.' },
+    tabs: { hub: 'Hub', engine: 'Engine', lanes: 'Lanes', history: 'History' },
+    sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
+      usage: 'Usage today' },
+    empty: { yours: 'Nothing to decide', reqs: 'No requests yet', tasks: 'No live tasks',
+      reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all' },
     status: { busy: 'Working', asking: 'Asking', idle: 'Idle', closed: 'Closed', unknown: 'No response' },
     task: { queued: 'Queued', running: 'Running', wrapping: 'Wrapping up', closed: 'Closed', cancelled: 'Cancelled' },
     report: { done: 'Done', blocked: 'Blocked', note: 'Note', handoff: 'Handoff', wrapped: 'Wrapped' },
     kind: { decision: 'Decision', review: 'Review', ask: 'Question' },
     verdict: { ok: 'Decided', okReview: 'Approved', no: 'Rejected', hold: 'On hold', answer: 'Answered', merged: 'Merged' },
-    hist: { decided: 'Decided', goals: 'Goals', reports: 'Reports', closed: 'Closed', memos: 'Infra requests', requests: 'Hub requests' },
+    hist: { decided: 'Decided', reports: 'Reports', closed: 'Closed', memos: 'Infra requests', requests: 'Hub requests' },
     memo: { wait: 'Waiting', delivered: 'Delivered', replied: 'Replied' },
+    chat: { title: 'Request to the hub', open: 'Open the thread' },
     label: { why: 'Why it came to you', question: 'Question', options: 'Options', pickMany: 'Pick any', note: 'Note', answer: 'Answer',
       attachments: 'Attachments', noTask: 'No task', cap: '{u}/{c} busy', paused: 'Paused', reply: 'Reply', hubSide: 'Hub', ctx: 'ctx' },
-    ph: { answer: 'Your answer or a note', review: 'Leave empty to approve', hub: 'What should hub do?', infra: 'What should change?', token: 'Access token' },
+    ph: { answer: 'Your answer or a note', review: 'Leave empty to approve', token: 'Access token' },
     btn: { decide: 'Decide', answer: 'Answer myself', hold: 'Hold', done: 'Done reviewing', send: 'Send', more: 'More', less: 'Less',
       close: 'Close', prev: 'Previous', next: 'Next', login: 'Sign in', logout: 'Sign out', open: 'Open' },
-    msg: { decided: 'Decided', held: 'Put on hold', answered: 'Answer sent', reviewed: 'Review done', sent: 'Sent', fail: 'Couldn’t send',
+    msg: { saved: 'Saved', decided: 'Decided', held: 'Put on hold', answered: 'Answer sent', reviewed: 'Review done', sent: 'Sent', fail: 'Couldn’t send',
       net: 'Offline', badToken: 'Wrong token', notFound: 'Not found', stopped: 'Tower stopped' },
     time: { now: 'now', m: '{n}m', h: '{n}h' },
     login: { title: 'Sign in' },
-    goal: { now: 'Now', rank: 'Priority {n}', steps: '{d}/{n} steps', noPlan: 'No plan yet', live: '{n} tasks running', add: 'New goal',
-      addBtn: 'Add', ph: 'What should the team achieve?', phDetail: 'What does done look like? (optional)',
-      hint: 'The hub plans it with you and reports progress here.', summary: '{n} active · {p}%', stepsH: 'Steps', tasksH: 'Tasks',
-      by: 'Added by {who}', again: 'Tap again to confirm', top: 'Move to top', up: 'Up', down: 'Down', pause: 'Pause', resume: 'Resume',
-      done: 'Mark done', drop: 'Drop', reopen: 'Reopen', added: 'Goal added', saved: 'Saved', tag: 'Goal' },
-    gstate: { active: 'Active', paused: 'Paused', done: 'Done', dropped: 'Dropped' },
     ws: { title: 'Workspaces', local: 'Local only', running: 'Running', stopped: 'Stopped' },
     lang: { title: 'Language', note: 'Changes the board’s buttons on this device. Agents keep writing in the workspace language.' },
-    reach: { title: 'Only this computer can open the board', body: 'Your phone can’t reach it yet. Infra can set up Wi-Fi sign-in, Tailscale, Cloudflare or a server for you.', ask: 'Ask infra to set it up',
-      memo: 'Make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick.' },
-    tip: { show: 'Tip', infra: 'This board grows as far as you take it. Need a feature or a tool for your work? Ask infra and have it built in.' },
+    reach: { title: 'Only this computer can open the board', body: 'Your phone can’t reach it yet. The hub can have infra set up Wi-Fi sign-in, Tailscale, Cloudflare or a server for you.', ask: 'Ask the hub to set it up',
+      memo: 'Have infra make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick.' },
     lane: { add: 'Add a lane', id: 'Lane ID', idPh: 'e.g. docs', idHelp: 'Letters, numbers, - and _. Used in commands and file names.',
       idBad: 'Use letters, numbers, - and _ only', idDup: 'A lane with this ID already exists', runtime: 'Runtime',
       label: 'Display name (optional)', labelPh: 'e.g. Docs', role: 'Role',
       rolePh: 'What it owns, the files it works on, when it is done, what it must not touch',
-      model: 'Model (optional)', agent: 'Agent (optional)', optPh: 'Empty uses the default', send: 'Ask infra to add it', sent: 'Sent to infra',
-      hint: 'Infra creates the lane, fills in its role file and replies on the Infra tab.',
-      memo: 'Add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
+      model: 'Model (optional)', agent: 'Agent (optional)', optPh: 'Empty uses the default', send: 'Ask the hub to add it', sent: 'Sent to the hub',
+      hint: 'The hub has infra create the lane and fill in its role file, then answers in the chat.',
+      memo: 'Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
-    use: { day: 'Today', io: '{i} / {o}', today: 'Today {i} in · {o} out',
+    lv: { skills: 'Skills', noSkills: 'No skills named in its role file', process: 'Process', stage: 'Stage', stageN: 'stage {n}', noProc: 'No process yet', fixing: 'Fixing', fixBy: { 'send-back': 'Send-back', blame: 'Blamed stage' }, model: 'Model', tokens: 'Tokens', week: 'Last 7 days', recent: 'Recent tasks', engine: 'Engine', missing: 'folder not found', none: 'Nothing yet' },
+    eg: { engines: 'Engines', lanes: 'Lanes', pipes: 'Pipelines', skills: 'Skills', shared: 'Shared', tools: 'Tools', exps: 'Experiments', changes: 'What changed', since: 'Since {d}', same: 'Nothing changed since then', noSnap: 'No snapshot yet; the tower writes one within the hour', usage: 'Tokens, last 7 days', noLib: 'No pattern library yet', rated: '{n} rated', unrated: 'not rated', process: 'Process', noCard: 'no card', files: 'files', s_new: 'new', s_best: 'best', s_good: 'good', s_fix: 'needs fixing', s_rework: 'needs rework', c_lane_added: 'Lane {name} added', c_lane_removed: 'Lane {name} removed', c_skill_changed: 'Skill {name} edited', c_skill_added: 'Skill {name} added', c_skill_removed: 'Skill {name} removed', c_row_added: 'Process {name} added', c_row_removed: 'Process {name} removed', c_process: '{name}: {a} → {b}', c_card: '{name} card: {a} → {b}', none: 'none', empty: 'No engines', noRows: 'No library rows', fixedN: 'fixed {n}x', open: 'Open the lane sheet' },
+    use: { day: 'Today', io: '{i} / {o}', task: 'Task {n} new · {c} cache · {o} out · {t} turns',
+      today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
     x: { err: 'Extension error' },
   },
   ko: {
-    tabs: { hub: '허브', infra: '인프라', lanes: '레인', history: '기록' },
-    sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', hubReq: '허브에 요청', sentReq: '최근 요청',
-      infraItems: '열린 항목', infraMemo: '인프라에 요청', sentMemo: '최근 요청', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
-      goals: '목표', finished: '끝난 목표 {n}', usage: '오늘 사용량' },
-    empty: { yours: '정할 게 없어요', infra: '열린 항목이 없어요', reqs: '보낸 요청이 없어요', memos: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
-      reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요',
-      goals: '아직 목표가 없어요. 아래에서 첫 목표를 추가해 보세요.' },
+    tabs: { hub: '허브', engine: '엔진', lanes: '레인', history: '기록' },
+    sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
+      usage: '오늘 사용량' },
+    empty: { yours: '정할 게 없어요', reqs: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
+      reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요' },
     status: { busy: '작업 중', asking: '질문 중', idle: '쉬는 중', closed: '닫힘', unknown: '응답 없음' },
     task: { queued: '대기', running: '진행 중', wrapping: '정리 중', closed: '끝남', cancelled: '취소됨' },
     report: { done: '완료', blocked: '막힘', note: '알림', handoff: '인계', wrapped: '정리 완료' },
     kind: { decision: '결정', review: '검수', ask: '질문' },
     verdict: { ok: '결정함', okReview: '승인', no: '반려', hold: '보류', answer: '직접 답', merged: '합침' },
-    hist: { decided: '결정', goals: '목표', reports: '보고', closed: '작업', memos: '인프라 요청', requests: '허브 요청' },
+    hist: { decided: '결정', reports: '보고', closed: '작업', memos: '인프라 요청', requests: '허브 요청' },
     memo: { wait: '대기', delivered: '전달됨', replied: '답 옴' },
+    chat: { title: '허브에 요청', open: '대화 열기' },
     label: { why: '나에게 온 이유', question: '질문', options: '선택지', pickMany: '여러 개 선택', note: '메모', answer: '내 답',
       attachments: '첨부', noTask: '맡은 작업 없음', cap: '{u}/{c} 사용 중', paused: '일시 정지', reply: '답', hubSide: '허브', ctx: '컨텍스트' },
-    ph: { answer: '직접 답하거나 메모를 남겨 주세요', review: '비우면 승인돼요', hub: '허브에 맡길 일을 적어 주세요', infra: '바꿀 점을 적어 주세요', token: '토큰' },
+    ph: { answer: '직접 답하거나 메모를 남겨 주세요', review: '비우면 승인돼요', token: '토큰' },
     btn: { decide: '결정', answer: '직접 답', hold: '보류', done: '검수 완료', send: '보내기', more: '더 보기', less: '접기',
       close: '닫기', prev: '이전', next: '다음', login: '로그인', logout: '로그아웃', open: '열기' },
-    msg: { decided: '결정했어요', held: '보류했어요', answered: '답을 보냈어요', reviewed: '검수를 마쳤어요', sent: '보냈어요', fail: '보내지 못했어요',
+    msg: { saved: '반영했어요', decided: '결정했어요', held: '보류했어요', answered: '답을 보냈어요', reviewed: '검수를 마쳤어요', sent: '보냈어요', fail: '보내지 못했어요',
       net: '연결 끊김', badToken: '토큰이 맞지 않아요', notFound: '찾을 수 없어요', stopped: 'tower 멈춤' },
     time: { now: '방금', m: '{n}분 전', h: '{n}시간 전' },
     login: { title: '로그인' },
-    goal: { now: '지금', rank: '우선순위 {n}', steps: '{d}/{n} 단계', noPlan: '계획 전', live: '작업 {n}개 진행 중', add: '새 목표',
-      addBtn: '추가', ph: '팀이 이룰 목표를 적어 주세요', phDetail: '어떻게 되면 완료인가요? (선택)',
-      hint: '허브가 함께 계획을 세우고 진행 상황을 여기에 보고해요.', summary: '진행 중 {n}개 · {p}%', stepsH: '단계', tasksH: '작업',
-      by: '{who} 님이 추가', again: '한 번 더 누르면 확정돼요', top: '맨 위로', up: '위로', down: '아래로', pause: '일시정지', resume: '다시 시작',
-      done: '완료 처리', drop: '중단', reopen: '다시 열기', added: '목표를 추가했어요', saved: '반영했어요', tag: '목표' },
-    gstate: { active: '진행 중', paused: '일시정지', done: '완료', dropped: '중단' },
     ws: { title: '워크스페이스', local: '로컬 전용', running: '실행 중', stopped: '멈춤' },
     lang: { title: '언어', note: '이 기기에서 보드 버튼 언어만 바뀌어요. 에이전트는 워크스페이스 언어로 계속 써요.' },
-    reach: { title: '보드가 이 컴퓨터에서만 열려요', body: '아직 폰에서는 들어올 수 없어요. 같은 Wi-Fi 로그인, Tailscale, Cloudflare, 서버 중 맞는 방법을 인프라가 설정해 줄 수 있어요.', ask: '인프라에 설정 요청',
-      memo: '폰에서 보드를 열 수 있게 해 주세요. 이 컴퓨터에 맞는 방법(`dah guide lan`, `tailscale`, `cloudflare`, `aws`)을 비교해서 추천과 함께 결정 항목으로 올려 주고, 제가 고른 방법으로 설정해 주세요.' },
-    tip: { show: '도움말', infra: '이 서비스는 쓰는 역량만큼 마음껏 발전시킬 수 있어요. 업무에 필요한 기능이나 도구가 있으면 인프라에 요청해서 적극적으로 넣어 보세요.' },
+    reach: { title: '보드가 이 컴퓨터에서만 열려요', body: '아직 폰에서는 들어올 수 없어요. 같은 Wi-Fi 로그인, Tailscale, Cloudflare, 서버 중 맞는 방법을 허브가 인프라에 맡겨 설정해 줄 수 있어요.', ask: '허브에 설정 요청',
+      memo: '인프라가 폰에서 보드를 열 수 있게 해 주세요. 이 컴퓨터에 맞는 방법(`dah guide lan`, `tailscale`, `cloudflare`, `aws`)을 비교해서 추천과 함께 결정 항목으로 올려 주고, 제가 고른 방법으로 설정해 주세요.' },
     lane: { add: '레인 추가', id: '레인 ID', idPh: '예: docs', idHelp: '영문, 숫자, -, _만 써요. 명령어와 파일 이름에 쓰여요.',
       idBad: '영문, 숫자, -, _만 쓸 수 있어요', idDup: '이미 있는 레인 ID예요', runtime: '런타임',
       label: '표시 이름 (선택)', labelPh: '예: 문서', role: '역할',
       rolePh: '맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것',
-      model: '모델 (선택)', agent: '에이전트 (선택)', optPh: '비우면 기본값을 써요', send: '인프라에 추가 요청', sent: '인프라에 요청했어요',
-      hint: '인프라가 레인을 만들고 역할 파일을 채운 뒤 답을 남겨요.',
-      memo: '레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
+      model: '모델 (선택)', agent: '에이전트 (선택)', optPh: '비우면 기본값을 써요', send: '허브에 추가 요청', sent: '허브에 요청했어요',
+      hint: '허브가 인프라에 맡겨 레인을 만들고 역할 파일을 채운 뒤 채팅으로 답해요.',
+      memo: '인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
-    use: { day: '오늘', io: '{i} / {o}', today: '오늘 {i} 입력 · {o} 출력',
+    lv: { skills: '스킬', noSkills: '역할 파일에 적힌 스킬이 없어요', process: '공정', stage: '단계', stageN: '{n}단계', noProc: '아직 공정이 없어요', fixing: '고치는 중', fixBy: { 'send-back': '되돌려 받음', blame: '지목된 단계' }, model: '모델', tokens: '토큰', week: '최근 7일', recent: '최근 작업', engine: '엔진', missing: '폴더를 찾지 못했어요', none: '아직 없어요' },
+    eg: { engines: '엔진', lanes: '레인', pipes: '파이프라인', skills: '스킬', shared: '공유', tools: '도구', exps: '실험', changes: '바뀐 것', since: '{d} 이후', same: '그 뒤로 바뀐 게 없어요', noSnap: '아직 스냅숏이 없어요. 관제가 한 시간 안에 만들어요', usage: '토큰, 최근 7일', noLib: '아직 패턴 라이브러리가 없어요', rated: '{n}건 평가', unrated: '평가 전', process: '공정', noCard: '카드 없음', files: '파일', s_new: '신규', s_best: '최적', s_good: '양호', s_fix: '보완 필요', s_rework: '리팩토링 필요', c_lane_added: '레인 {name} 추가', c_lane_removed: '레인 {name} 삭제', c_skill_changed: '스킬 {name} 수정', c_skill_added: '스킬 {name} 추가', c_skill_removed: '스킬 {name} 삭제', c_row_added: '공정 {name} 추가', c_row_removed: '공정 {name} 삭제', c_process: '{name}: {a} → {b}', c_card: '{name} 카드: {a} → {b}', none: '없음', empty: '엔진이 없어요', noRows: '라이브러리 행이 없어요', fixedN: '{n}번 고침', open: '레인 시트 열기' },
+    use: { day: '오늘', io: '{i} / {o}', task: '작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴',
+      today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
     x: { err: '확장 기능 오류' },
   },
   ja: {
-    tabs: { hub: 'ハブ', infra: 'インフラ', lanes: 'レーン', history: '履歴' },
-    sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', hubReq: 'ハブに依頼', sentReq: '最近の依頼',
-      infraItems: '未対応の項目', infraMemo: 'インフラに依頼', sentMemo: '最近の依頼', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
-      goals: '目標', finished: '終わった目標 {n}', usage: '今日の使用量' },
-    empty: { yours: '決めることはありません', infra: '未対応の項目はありません', reqs: 'まだ依頼はありません', memos: 'まだ依頼はありません',
+    tabs: { hub: 'ハブ', engine: 'エンジン', lanes: 'レーン', history: '履歴' },
+    sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
+      usage: '今日の使用量' },
+    empty: { yours: '決めることはありません', reqs: 'まだ依頼はありません',
       tasks: '進行中の作業はありません', reports: 'まだ報告はありません', lanes: 'レーンがありません', hist: 'まだありません', loading: '読み込み中',
-      end: 'ここまでです', goals: 'まだ目標がありません。下から最初の目標を追加してください。' },
+      end: 'ここまでです' },
     status: { busy: '作業中', asking: '質問中', idle: '待機中', closed: '停止', unknown: '応答なし' },
     task: { queued: '待ち', running: '進行中', wrapping: '片付け中', closed: '完了', cancelled: '取り消し' },
     report: { done: '完了', blocked: '停滞', note: 'お知らせ', handoff: '引き継ぎ', wrapped: '片付け完了' },
     kind: { decision: '決定', review: '確認', ask: '質問' },
     verdict: { ok: '決定済み', okReview: '承認', no: '差し戻し', hold: '保留', answer: '自分で回答', merged: '統合' },
-    hist: { decided: '決定', goals: '目標', reports: '報告', closed: '作業', memos: 'インフラへの依頼', requests: 'ハブへの依頼' },
+    hist: { decided: '決定', reports: '報告', closed: '作業', memos: 'インフラへの依頼', requests: 'ハブへの依頼' },
     memo: { wait: '待ち', delivered: '届いた', replied: '返信あり' },
+    chat: { title: 'ハブに依頼', open: 'やり取りを開く' },
     label: { why: 'あなたに来た理由', question: '質問', options: '選択肢', pickMany: '複数選択可', note: 'メモ', answer: '回答',
       attachments: '添付', noTask: '担当作業なし', cap: '{u}/{c} 使用中', paused: '一時停止', reply: '返信', hubSide: 'ハブ', ctx: 'コンテキスト' },
-    ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', hub: 'ハブに任せたいことを書いてください',
-      infra: '変えたい点を書いてください', token: 'トークン' },
+    ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', token: 'トークン' },
     btn: { decide: '決定', answer: '自分で回答', hold: '保留', done: '確認完了', send: '送信', more: 'もっと見る', less: '閉じる',
       close: '閉じる', prev: '前へ', next: '次へ', login: 'ログイン', logout: 'ログアウト', open: '開く' },
-    msg: { decided: '決定しました', held: '保留しました', answered: '回答を送りました', reviewed: '確認しました', sent: '送信しました',
+    msg: { saved: '反映しました', decided: '決定しました', held: '保留しました', answered: '回答を送りました', reviewed: '確認しました', sent: '送信しました',
       fail: '送信できませんでした', net: 'オフライン', badToken: 'トークンが違います', notFound: '見つかりません', stopped: 'tower 停止中' },
     time: { now: 'たった今', m: '{n}分前', h: '{n}時間前' },
     login: { title: 'ログイン' },
-    goal: { now: '今', rank: '優先度 {n}', steps: '{d}/{n} ステップ', noPlan: '計画はまだ', live: '作業 {n}件 進行中', add: '新しい目標',
-      addBtn: '追加', ph: 'チームが達成したいことは?', phDetail: '完了の条件(任意)',
-      hint: 'ハブが一緒に計画を立て、進み具合をここに報告します。', summary: '進行中 {n}件 · {p}%', stepsH: 'ステップ', tasksH: '作業',
-      by: '{who} が追加', again: 'もう一度押して確定', top: '一番上へ', up: '上へ', down: '下へ', pause: '一時停止', resume: '再開',
-      done: '完了にする', drop: 'やめる', reopen: '再開する', added: '目標を追加しました', saved: '反映しました', tag: '目標' },
-    gstate: { active: '進行中', paused: '一時停止', done: '完了', dropped: '中止' },
     ws: { title: 'ワークスペース', local: 'ローカル専用', running: '稼働中', stopped: '停止中' },
     lang: { title: '言語', note: 'この端末のボタン表示だけが変わります。エージェントはワークスペースの言語で書き続けます。' },
-    reach: { title: 'ボードはこのパソコンでしか開けません', body: 'まだスマホからは入れません。同じ Wi-Fi でのログイン、Tailscale、Cloudflare、サーバーのうち合う方法をインフラが設定できます。', ask: 'インフラに設定を依頼',
-      memo: 'スマホからボードを開けるようにしてください。このパソコンに合う方法(`dah guide lan`、`tailscale`、`cloudflare`、`aws`)を比べ、おすすめ付きで決定項目を出し、私が選んだ方法で設定してください。' },
-    tip: { show: 'ヒント', infra: 'このサービスは、使いこなす力しだいでどこまでも育てられます。仕事に必要な機能やツールがあれば、インフラに依頼してどんどん取り入れてみてください。' },
+    reach: { title: 'ボードはこのパソコンでしか開けません', body: 'まだスマホからは入れません。同じ Wi-Fi でのログイン、Tailscale、Cloudflare、サーバーのうち合う方法をハブがインフラに頼んで設定できます。', ask: 'ハブに設定を依頼',
+      memo: 'インフラで、スマホからボードを開けるようにしてください。このパソコンに合う方法(`dah guide lan`、`tailscale`、`cloudflare`、`aws`)を比べ、おすすめ付きで決定項目を出し、私が選んだ方法で設定してください。' },
     lane: { add: 'レーンを追加', id: 'レーン ID', idPh: '例: docs', idHelp: '英数字と - _ だけ使えます。コマンドとファイル名に使われます。',
       idBad: '英数字と - _ だけ使えます', idDup: 'この ID のレーンはすでにあります', runtime: 'ランタイム',
       label: '表示名(任意)', labelPh: '例: ドキュメント', role: '役割',
       rolePh: '担当範囲、扱うファイル、完了の条件、触れてはいけないもの',
-      model: 'モデル(任意)', agent: 'エージェント(任意)', optPh: '空欄なら既定値を使います', send: 'インフラに追加を依頼', sent: 'インフラに依頼しました',
-      hint: 'インフラがレーンを作り、役割ファイルを埋めてからインフラタブで返信します。',
-      memo: 'レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
+      model: 'モデル(任意)', agent: 'エージェント(任意)', optPh: '空欄なら既定値を使います', send: 'ハブに追加を依頼', sent: 'ハブに依頼しました',
+      hint: 'ハブがインフラに頼んでレーンを作り、役割ファイルを埋めてからチャットで返信します。',
+      memo: 'インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
-    use: { day: '今日', io: '{i} / {o}', today: '今日 入力 {i} · 出力 {o}',
+    lv: { skills: 'スキル', noSkills: '役割ファイルにスキルの記載がありません', process: '工程', stage: 'ステージ', stageN: 'ステージ {n}', noProc: 'まだ工程がありません', fixing: '修正中', fixBy: { 'send-back': '差し戻し', blame: '指摘されたステージ' }, model: 'モデル', tokens: 'トークン', week: '直近7日', recent: '最近の作業', engine: 'エンジン', missing: 'フォルダが見つかりません', none: 'まだありません' },
+    eg: { engines: 'エンジン', lanes: 'レーン', pipes: 'パイプライン', skills: 'スキル', shared: '共有', tools: 'ツール', exps: '実験', changes: '変更点', since: '{d} 以降', same: 'それ以降の変更はありません', noSnap: 'スナップショットはまだありません。タワーが1時間以内に作ります', usage: 'トークン、直近7日', noLib: 'パターンライブラリはまだありません', rated: '{n}件 評価', unrated: '未評価', process: '工程', noCard: 'カードなし', files: 'ファイル', s_new: '新規', s_best: '最適', s_good: '良好', s_fix: '要改善', s_rework: '再設計が必要', c_lane_added: 'レーン {name} を追加', c_lane_removed: 'レーン {name} を削除', c_skill_changed: 'スキル {name} を編集', c_skill_added: 'スキル {name} を追加', c_skill_removed: 'スキル {name} を削除', c_row_added: '工程 {name} を追加', c_row_removed: '工程 {name} を削除', c_process: '{name}: {a} → {b}', c_card: '{name} カード: {a} → {b}', none: 'なし', empty: 'エンジンがありません', noRows: 'ライブラリの行がありません', fixedN: '改訂 {n}回', open: 'レーンシートを開く' },
+    use: { day: '今日', io: '{i} / {o}', task: 'タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン',
+      today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
     x: { err: '拡張機能のエラー' },
   },
   zh: {
-    tabs: { hub: '中枢', infra: '基础设施', lanes: '通道', history: '记录' },
-    sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', hubReq: '交给中枢', sentReq: '最近的请求',
-      infraItems: '待处理事项', infraMemo: '向基础设施提请求', sentMemo: '最近的请求', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
-      goals: '目标', finished: '已结束的目标 {n}', usage: '今日用量' },
-    empty: { yours: '没有待决定的事', infra: '没有待处理事项', reqs: '还没有请求', memos: '还没有请求', tasks: '没有进行中的任务',
-      reports: '还没有报告', lanes: '没有通道', hist: '暂无内容', loading: '加载中', end: '就这些', goals: '还没有目标。在下面添加第一个。' },
+    tabs: { hub: '中枢', engine: '引擎', lanes: '通道', history: '记录' },
+    sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
+      usage: '今日用量' },
+    empty: { yours: '没有待决定的事', reqs: '还没有请求', tasks: '没有进行中的任务',
+      reports: '还没有报告', lanes: '没有通道', hist: '暂无内容', loading: '加载中', end: '就这些' },
     status: { busy: '工作中', asking: '提问中', idle: '空闲', closed: '已关闭', unknown: '无响应' },
     task: { queued: '排队中', running: '进行中', wrapping: '收尾中', closed: '已完成', cancelled: '已取消' },
     report: { done: '完成', blocked: '受阻', note: '通知', handoff: '交接', wrapped: '已收尾' },
     kind: { decision: '决定', review: '审核', ask: '问题' },
     verdict: { ok: '已决定', okReview: '已批准', no: '已驳回', hold: '暂缓', answer: '自行回答', merged: '已合并' },
-    hist: { decided: '决定', goals: '目标', reports: '报告', closed: '任务', memos: '基础设施请求', requests: '中枢请求' },
+    hist: { decided: '决定', reports: '报告', closed: '任务', memos: '基础设施请求', requests: '中枢请求' },
     memo: { wait: '等待中', delivered: '已送达', replied: '已回复' },
+    chat: { title: '向中枢提请求', open: '打开对话' },
     label: { why: '为什么交给你', question: '问题', options: '选项', pickMany: '可多选', note: '备注', answer: '回答',
       attachments: '附件', noTask: '暂无任务', cap: '{u}/{c} 使用中', paused: '已暂停', reply: '回复', hubSide: '中枢', ctx: '上下文' },
-    ph: { answer: '写下你的回答或备注', review: '留空即批准', hub: '想让中枢做什么?', infra: '想改什么?', token: '访问令牌' },
+    ph: { answer: '写下你的回答或备注', review: '留空即批准', token: '访问令牌' },
     btn: { decide: '决定', answer: '自己回答', hold: '暂缓', done: '审核完成', send: '发送', more: '更多', less: '收起',
       close: '关闭', prev: '上一张', next: '下一张', login: '登录', logout: '退出', open: '打开' },
-    msg: { decided: '已决定', held: '已暂缓', answered: '回答已发送', reviewed: '审核完成', sent: '已发送', fail: '发送失败',
+    msg: { saved: '已更新', decided: '已决定', held: '已暂缓', answered: '回答已发送', reviewed: '审核完成', sent: '已发送', fail: '发送失败',
       net: '离线', badToken: '令牌不正确', notFound: '找不到', stopped: 'tower 已停止' },
     time: { now: '刚刚', m: '{n} 分钟前', h: '{n} 小时前' },
     login: { title: '登录' },
-    goal: { now: '当前', rank: '优先级 {n}', steps: '{d}/{n} 步', noPlan: '尚无计划', live: '{n} 个任务进行中', add: '新目标',
-      addBtn: '添加', ph: '团队要达成什么?', phDetail: '怎样算完成(可选)',
-      hint: '中枢会和你一起制定计划,并在这里汇报进度。', summary: '{n} 个进行中 · {p}%', stepsH: '步骤', tasksH: '任务',
-      by: '{who} 添加', again: '再点一次确认', top: '移到最前', up: '上移', down: '下移', pause: '暂停', resume: '继续',
-      done: '标为完成', drop: '放弃', reopen: '重新打开', added: '目标已添加', saved: '已更新', tag: '目标' },
-    gstate: { active: '进行中', paused: '已暂停', done: '已完成', dropped: '已放弃' },
     ws: { title: '工作区', local: '仅限本机', running: '运行中', stopped: '已停止' },
     lang: { title: '语言', note: '只改变本设备上看板的按钮语言。代理仍用工作区的语言写作。' },
-    reach: { title: '看板只能在这台电脑上打开', body: '手机还进不来。基础设施可以帮你设置同一 Wi-Fi 登录、Tailscale、Cloudflare 或服务器。', ask: '请基础设施设置',
-      memo: '让我能在手机上打开看板。比较适合这台电脑的方式(`dah guide lan`、`tailscale`、`cloudflare`、`aws`),附上推荐发一个决定项,然后按我选的方式设置。' },
-    tip: { show: '提示', infra: '这个服务你用得多深,就能发展得多远。工作中需要什么功能或工具,就向基础设施提请求,积极把它加进来吧。' },
+    reach: { title: '看板只能在这台电脑上打开', body: '手机还进不来。中枢可以让基础设施帮你设置同一 Wi-Fi 登录、Tailscale、Cloudflare 或服务器。', ask: '请中枢设置',
+      memo: '请基础设施让我能在手机上打开看板。比较适合这台电脑的方式(`dah guide lan`、`tailscale`、`cloudflare`、`aws`),附上推荐发一个决定项,然后按我选的方式设置。' },
     lane: { add: '添加通道', id: '通道 ID', idPh: '例如 docs', idHelp: '只能用字母、数字、- 和 _,会用在命令和文件名里。',
       idBad: '只能用字母、数字、- 和 _', idDup: '已有这个 ID 的通道', runtime: '运行时',
       label: '显示名称(可选)', labelPh: '例如 文档', role: '职责',
       rolePh: '负责什么、处理哪些文件、怎样算完成、不能碰什么',
-      model: '模型(可选)', agent: '代理(可选)', optPh: '留空则用默认值', send: '请基础设施添加', sent: '已发给基础设施',
-      hint: '基础设施会创建通道、填好职责文件,然后在基础设施页回复。',
-      memo: '添加通道请求: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
+      model: '模型(可选)', agent: '代理(可选)', optPh: '留空则用默认值', send: '请中枢添加', sent: '已发给中枢',
+      hint: '中枢会让基础设施创建通道、填好职责文件,然后在聊天里回复。',
+      memo: '请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
-    use: { day: '今天', io: '{i} / {o}', today: '今天 输入 {i} · 输出 {o}',
+    lv: { skills: '技能', noSkills: '职责文件里没有写技能', process: '流程', stage: '阶段', stageN: '第 {n} 阶段', noProc: '还没有流程', fixing: '修正中', fixBy: { 'send-back': '被退回', blame: '被点名的阶段' }, model: '模型', tokens: '令牌', week: '最近 7 天', recent: '最近的任务', engine: '引擎', missing: '找不到文件夹', none: '暂无' },
+    eg: { engines: '引擎', lanes: '通道', pipes: '流水线', skills: '技能', shared: '共享', tools: '工具', exps: '实验', changes: '变更', since: '自 {d} 起', same: '此后没有变化', noSnap: '还没有快照,塔会在一小时内生成', usage: '令牌,最近 7 天', noLib: '还没有模式库', rated: '已评 {n} 项', unrated: '未评级', process: '流程', noCard: '无卡片', files: '文件', s_new: '新建', s_best: '最佳', s_good: '良好', s_fix: '需改进', s_rework: '需要重构', c_lane_added: '新增通道 {name}', c_lane_removed: '删除通道 {name}', c_skill_changed: '修改技能 {name}', c_skill_added: '新增技能 {name}', c_skill_removed: '删除技能 {name}', c_row_added: '新增流程 {name}', c_row_removed: '删除流程 {name}', c_process: '{name}: {a} → {b}', c_card: '{name} 卡片: {a} → {b}', none: '无', empty: '没有引擎', noRows: '没有库条目', fixedN: '已修订 {n} 次', open: '打开通道详情' },
+    use: { day: '今天', io: '{i} / {o}', task: '任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮',
+      today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
     x: { err: '扩展出错' },
   },
   es: {
-    tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Carriles', history: 'Historial' },
-    sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', hubReq: 'Pedir al hub', sentReq: 'Peticiones recientes',
-      infraItems: 'Elementos abiertos', infraMemo: 'Petición a infra', sentMemo: 'Peticiones recientes', lanes: 'Carriles', tasks: 'Tareas en curso',
-      reports: 'Informes recientes', goals: 'Objetivos', finished: 'Terminados {n}', usage: 'Uso de hoy' },
-    empty: { yours: 'Nada que decidir', infra: 'Sin elementos abiertos', reqs: 'Aún no hay peticiones', memos: 'Aún no hay peticiones',
+    tabs: { hub: 'Hub', engine: 'Motor', lanes: 'Carriles', history: 'Historial' },
+    sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', lanes: 'Carriles', tasks: 'Tareas en curso',
+      reports: 'Informes recientes', usage: 'Uso de hoy' },
+    empty: { yours: 'Nada que decidir', reqs: 'Aún no hay peticiones',
       tasks: 'No hay tareas en curso', reports: 'Aún no hay informes', lanes: 'Sin carriles', hist: 'Aún no hay nada', loading: 'Cargando',
-      end: 'Eso es todo', goals: 'Aún no hay objetivos. Añade el primero abajo.' },
+      end: 'Eso es todo' },
     status: { busy: 'Trabajando', asking: 'Preguntando', idle: 'Libre', closed: 'Cerrado', unknown: 'Sin respuesta' },
     task: { queued: 'En cola', running: 'En curso', wrapping: 'Cerrando', closed: 'Cerrada', cancelled: 'Cancelada' },
     report: { done: 'Hecho', blocked: 'Bloqueado', note: 'Aviso', handoff: 'Relevo', wrapped: 'Cerrado' },
     kind: { decision: 'Decisión', review: 'Revisión', ask: 'Pregunta' },
     verdict: { ok: 'Decidido', okReview: 'Aprobado', no: 'Rechazado', hold: 'En espera', answer: 'Respondido', merged: 'Unido' },
-    hist: { decided: 'Decididos', goals: 'Objetivos', reports: 'Informes', closed: 'Tareas', memos: 'Peticiones a infra', requests: 'Peticiones al hub' },
+    hist: { decided: 'Decididos', reports: 'Informes', closed: 'Tareas', memos: 'Peticiones a infra', requests: 'Peticiones al hub' },
     memo: { wait: 'Esperando', delivered: 'Entregada', replied: 'Respondida' },
+    chat: { title: 'Petición al hub', open: 'Abrir la conversación' },
     label: { why: 'Por qué te llega', question: 'Pregunta', options: 'Opciones', pickMany: 'Varias posibles', note: 'Nota', answer: 'Respuesta',
       attachments: 'Adjuntos', noTask: 'Sin tarea', cap: '{u}/{c} ocupados', paused: 'En pausa', reply: 'Respuesta', hubSide: 'Hub', ctx: 'contexto' },
-    ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', hub: '¿Qué debe hacer el hub?', infra: '¿Qué debe cambiar?',
-      token: 'Token de acceso' },
+    ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', token: 'Token de acceso' },
     btn: { decide: 'Decidir', answer: 'Responder yo', hold: 'Esperar', done: 'Revisión hecha', send: 'Enviar', more: 'Más', less: 'Menos',
       close: 'Cerrar', prev: 'Anterior', next: 'Siguiente', login: 'Entrar', logout: 'Salir', open: 'Abrir' },
-    msg: { decided: 'Decidido', held: 'Puesto en espera', answered: 'Respuesta enviada', reviewed: 'Revisión hecha', sent: 'Enviado',
+    msg: { saved: 'Guardado', decided: 'Decidido', held: 'Puesto en espera', answered: 'Respuesta enviada', reviewed: 'Revisión hecha', sent: 'Enviado',
       fail: 'No se pudo enviar', net: 'Sin conexión', badToken: 'Token incorrecto', notFound: 'No encontrado', stopped: 'Torre detenida' },
     time: { now: 'ahora', m: 'hace {n} min', h: 'hace {n} h' },
     login: { title: 'Entrar' },
-    goal: { now: 'Ahora', rank: 'Prioridad {n}', steps: '{d}/{n} pasos', noPlan: 'Sin plan aún', live: '{n} tareas en curso', add: 'Nuevo objetivo',
-      addBtn: 'Añadir', ph: '¿Qué debe lograr el equipo?', phDetail: '¿Cómo sabremos que está hecho? (opcional)',
-      hint: 'El hub lo planifica contigo e informa aquí del avance.', summary: '{n} activos · {p}%', stepsH: 'Pasos', tasksH: 'Tareas',
-      by: 'Añadido por {who}', again: 'Toca otra vez para confirmar', top: 'Al principio', up: 'Subir', down: 'Bajar', pause: 'Pausar',
-      resume: 'Reanudar', done: 'Marcar hecho', drop: 'Descartar', reopen: 'Reabrir', added: 'Objetivo añadido', saved: 'Guardado', tag: 'Objetivo' },
-    gstate: { active: 'Activo', paused: 'En pausa', done: 'Hecho', dropped: 'Descartado' },
     ws: { title: 'Espacios de trabajo', local: 'Solo local', running: 'En marcha', stopped: 'Detenido' },
     lang: { title: 'Idioma', note: 'Cambia solo los botones del tablero en este dispositivo. Los agentes siguen escribiendo en el idioma del espacio.' },
-    reach: { title: 'Solo este ordenador abre el tablero', body: 'Tu móvil aún no llega. Infra puede configurarte acceso por Wi-Fi, Tailscale, Cloudflare o un servidor.', ask: 'Pedir a infra que lo configure',
-      memo: 'Haz que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija.' },
-    tip: { show: 'Consejo', infra: 'Este tablero crece tanto como tú lo lleves. ¿Necesitas una función o una herramienta para tu trabajo? Pídesela a infra y que la incorpore.' },
+    reach: { title: 'Solo este ordenador abre el tablero', body: 'Tu móvil aún no llega. El hub puede encargar a infra que te configure acceso por Wi-Fi, Tailscale, Cloudflare o un servidor.', ask: 'Pedir al hub que lo configure',
+      memo: 'Que infra haga que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija.' },
     lane: { add: 'Añadir un carril', id: 'ID del carril', idPh: 'p. ej. docs', idHelp: 'Letras, números, - y _. Se usa en comandos y nombres de archivo.',
       idBad: 'Usa solo letras, números, - y _', idDup: 'Ya existe un carril con este ID', runtime: 'Runtime',
       label: 'Nombre visible (opcional)', labelPh: 'p. ej. Docs', role: 'Rol',
       rolePh: 'Qué le toca, con qué archivos trabaja, cuándo está hecho, qué no debe tocar',
-      model: 'Modelo (opcional)', agent: 'Agente (opcional)', optPh: 'Vacío usa el valor por defecto', send: 'Pedir a infra que lo añada',
-      sent: 'Enviado a infra', hint: 'Infra crea el carril, rellena su archivo de rol y responde en la pestaña Infra.',
-      memo: 'Añadir un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
+      model: 'Modelo (opcional)', agent: 'Agente (opcional)', optPh: 'Vacío usa el valor por defecto', send: 'Pedir al hub que lo añada',
+      sent: 'Enviado al hub', hint: 'El hub encarga a infra crear el carril y rellenar su archivo de rol, y responde en el chat.',
+      memo: 'Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
+    lv: { skills: 'Habilidades', noSkills: 'Su archivo de rol no nombra ninguna', process: 'Proceso', stage: 'Etapa', stageN: 'etapa {n}', noProc: 'Aún sin proceso', fixing: 'Corrigiendo', fixBy: { 'send-back': 'Devuelto', blame: 'Etapa señalada' }, model: 'Modelo', tokens: 'Tokens', week: 'Últimos 7 días', recent: 'Tareas recientes', engine: 'Motor', missing: 'carpeta no encontrada', none: 'Aún nada' },
+    eg: { engines: 'Motores', lanes: 'Carriles', pipes: 'Pipelines', skills: 'Habilidades', shared: 'Compartidas', tools: 'Herramientas', exps: 'Experimentos', changes: 'Qué cambió', since: 'Desde {d}', same: 'Nada cambió desde entonces', noSnap: 'Aún no hay instantánea; la torre la escribe en una hora', usage: 'Tokens, últimos 7 días', noLib: 'Aún sin biblioteca de patrones', rated: '{n} valorados', unrated: 'sin valorar', process: 'Proceso', noCard: 'sin tarjeta', files: 'archivos', s_new: 'nuevo', s_best: 'óptimo', s_good: 'bueno', s_fix: 'a corregir', s_rework: 'a rehacer', c_lane_added: 'Carril {name} añadido', c_lane_removed: 'Carril {name} eliminado', c_skill_changed: 'Habilidad {name} editada', c_skill_added: 'Habilidad {name} añadida', c_skill_removed: 'Habilidad {name} eliminada', c_row_added: 'Proceso {name} añadido', c_row_removed: 'Proceso {name} eliminado', c_process: '{name}: {a} → {b}', c_card: 'Tarjeta {name}: {a} → {b}', none: 'ninguno', empty: 'No hay motores', noRows: 'Sin filas en la biblioteca', fixedN: 'corregido {n} veces', open: 'Abrir la hoja del carril' },
     use: { day: 'Hoy', io: '{i} / {o}',
+      task: 'Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
     x: { err: 'Error de la extensión' },
   },
@@ -718,14 +671,14 @@ const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', e
 // Product names stay as they are in every language.
 const RUNTIMES = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
 const LANE_ID = /^[A-Za-z0-9_-]+$/;
-const TABS = ['hub', 'infra', 'lanes', 'history'];
-const HIST_KINDS = ['decided', 'goals', 'reports', 'closed', 'memos', 'requests'];
+const TABS = ['hub', 'engine', 'lanes', 'history'];
+const HIST_KINDS = ['decided', 'reports', 'closed', 'memos', 'requests'];
 const WS_MS = 30000;
 const POLL_MS = 5000;
 const IMG = /\.(png|jpe?g|gif|webp|avif|svg)$/i, VID = /\.(mp4|webm|mov|m4v)$/i, TXT = /\.(md|txt|json|log)$/i;
 const ICON = {
   hub: 'M3 12l2-7h14l2 7v7H3zM3 12h5l2 3h4l2-3h5',
-  infra: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6',
+  engine: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
   lanes: 'M4 5h16v5H4zM4 14h16v5H4z',
   history: 'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   chev: 'M9 5l7 7-7 7', prev: 'M15 5l-7 7 7 7', next: 'M9 5l7 7-7 7',
@@ -763,8 +716,8 @@ function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? '
 // ---------- state ----------
 const S = {
   data: null, raw: '', ok: null, loading: false, auth: false,
-  view: 'hub', item: null, goal: null, menu: null, pushed: false, sheetKey: '', sheetId: null,
-  drafts: {}, busy: {}, extra: {}, gx: {}, tried: {}, open: {}, hubOpen: false, goalsOpen: false, laneAdd: false, capFocus: 0, confirm: null, ws: [],
+  view: 'hub', eng: null, engs: null, engsRaw: '', maps: {}, engBusy: false, item: null, lane: null, laneData: {}, menu: null, pushed: false, sheetKey: '', sheetId: null,
+  drafts: {}, busy: {}, extra: {}, tried: {}, open: {}, hubOpen: false, laneAdd: false, capFocus: 0, ws: [],
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
 };
@@ -855,13 +808,9 @@ const forHuman = it => isOpen(it) && it.audience === 'human';
 const newest = (a, b) => (b.created || 0) - (a.created || 0);
 function asksFirst(list) { return [...list.filter(x => x.question).sort(newest), ...list.filter(x => !x.question).sort(newest)]; }
 function itemById(id) { return (S.data ? S.data.items.find(x => x.id === id) : null) || S.extra[id]; }
-function goalById(id) { return (S.data ? S.data.goals.find(g => g.id === id) : null) || S.gx[id]; }
-const isRanked = g => g.state === 'active' || g.state === 'paused';
-const liveFor = g => ((S.data && S.data.goal_tasks[String(g.id)]) || {}).live || 0;
 function normalize(j) {
-  for (const k of ['items', 'tasks', 'reports', 'lanes', 'goals']) if (!Array.isArray(j[k])) j[k] = [];
-  j.goal_tasks = j.goal_tasks || {};
-  j.memos = { infra: [], hub: [], ...(j.memos || {}) };
+  for (const k of ['items', 'tasks', 'reports', 'lanes']) if (!Array.isArray(j[k])) j[k] = [];
+  j.memos = { hub: [], ...(j.memos || {}) };
   j.counts = j.counts || {};
   return j;
 }
@@ -890,11 +839,12 @@ async function load() {
     const j = normalize(await get(BASE + 'api/state'));
     S.ok = true; fresh = true;
     const raw = JSON.stringify(j);
-    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); }
+    if (raw !== S.raw) { S.raw = raw; S.data = j; setLang(pickLang(j.lang)); if (S.lane) loadLane(S.lane); }
   } catch (e) { if (e.status !== 401) S.ok = false; }
   S.loading = false;
   render();
   if (fresh) xLoaded();
+  if (fresh && S.view === 'engine') loadEngine();
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
@@ -912,16 +862,19 @@ async function loadWs() {
 // ---------- routing ----------
 function route() {
   const hs = location.hash.replace(/^#/, '');
-  const m = /^item-(\d+)$/.exec(hs), g = /^goal-(\d+)$/.exec(hs), prev = S.view;
-  S.item = m ? Number(m[1]) : null; S.goal = g ? Number(g[1]) : null; S.menu = null; S.confirm = null;
-  if (!m && !g) { S.pushed = false; S.view = TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
+  const mi = /^item-(\d+)$/.exec(hs), ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs), me = /^engine-([A-Za-z0-9_-]+)$/.exec(hs), m = mi || ml, prev = S.view;
+  if (me) S.eng = me[1];
+  S.item = mi ? Number(mi[1]) : null; S.lane = ml ? ml[1] : null; S.menu = null;
+  if (ml) loadLane(ml[1]);
+  if (!m) { S.pushed = false; S.view = me ? 'engine' : TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
+  if (S.view === 'engine') loadEngine();
   if (S.view === 'history' && prev !== 'history') resetHist(S.hist.kind);
   render();
-  if (!m && !g && prev !== S.view) window.scrollTo(0, 0);
+  if (!m && prev !== S.view) window.scrollTo(0, 0);
 }
 function go(view) { location.hash = view; }
 function openItem(id) { S.pushed = true; location.hash = 'item-' + id; }
-function openGoal(id) { S.pushed = true; location.hash = 'goal-' + id; }
+function openLane(id) { S.pushed = true; location.hash = 'lane-' + id; }
 function openMenu(kind) { S.menu = kind; if (kind === 'ws') loadWs(); renderSheet(true); }
 function closeSheet() {
   if (S.menu) { S.menu = null; renderSheet(true); return; }
@@ -933,12 +886,12 @@ function closeSheet() {
 function render() {
   const xt = xTab(S.view), builtin = TABS.includes(S.view);
   if (!builtin && !xt && X.ready) S.view = 'hub';  // an extension tab this workspace no longer has
-  renderTop(); renderNav();
+  renderTop(); renderNav(); renderChat();
   const v = viewEl(S.view);
   for (const el of [...TABS.map(t => $('#v-' + t)), ...[...X.tabs.values()].map(t => t.el), X.wait]) if (el) el.classList.toggle('hidden', el !== v);
   if (!S.data || !TABS.includes(S.view) && !xt) { v._lang = null; paint(v, 'loading' + LANG, () => h('div', { class: 'empty' }, L.empty.loading)); }
   else if (xt) xPaint(v, xt.id, xt.render);
-  else { ({ hub: viewHub, infra: viewInfra, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
+  else { ({ hub: viewHub, engine: viewEngine, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
   renderSheet();
 }
 function viewEl(view) {
@@ -950,7 +903,7 @@ function viewEl(view) {
 }
 function counts() {
   const items = S.data ? S.data.items.filter(forHuman) : [];
-  return { hub: items.filter(it => it.lane !== 'infra').length, infra: items.filter(it => it.lane === 'infra').length };
+  return { hub: items.length };
 }
 function renderTop() {
   const d = D(), name = d ? d.title : '', many = S.ws.length > 1;
@@ -960,7 +913,7 @@ function renderTop() {
     : name);
   const lb = $('#langbtn'); lb.textContent = LANG.toUpperCase(); lb.setAttribute('aria-label', L.lang.title);
   const stop = $('#stopped'); stop.textContent = L.msg.stopped; stop.classList.toggle('hidden', !(d && d.running === false));
-  const n = counts(), total = n.hub + n.infra;
+  const n = counts(), total = n.hub;
   document.title = (total ? `(${total}) ` : '') + (d ? d.title : '');
   $('#me').textContent = d && d.me ? d.me.name : '';
   const so = $('#signout');
@@ -974,7 +927,7 @@ function renderNav() {
   renderUse();
   const n = counts(), nav = $('#nav .in'), xt = [...X.tabs.values()];
   const btn = (view, icon, label, badge) => h('button', {
-    class: S.view === view ? 'on' : '', 'aria-current': S.view === view ? 'page' : null, onclick: () => go(view) },
+    class: S.view === view ? 'on' : '', 'aria-current': S.view === view ? 'page' : null, onclick: () => go(view === 'engine' && S.eng ? 'engine-' + S.eng : view) },
     icon, h('span', null, label), badge ? h('span', { class: 'badge' }, badge) : null);
   nav.classList.toggle('x', xt.length > 0);
   paint(nav, LANG + S.view + JSON.stringify(n) + X.gen, () => [TABS.map(t => btn(t, svg(ICON[t]), L.tabs[t], n[t])),
@@ -1017,28 +970,30 @@ function cardList(list, emptyText) {
   return list.length ? h('div', { class: 'stack' }, list.map(itemCard)) : empty(emptyText);
 }
 
-// ---------- composer + memos ----------
-function composer(to, title, ph, tip) {
-  const ta = h('textarea', { placeholder: ph, 'aria-label': title, rows: '3' });
-  const btn = h('button', { class: 'btn-s', type: 'button', disabled: true }, L.btn.send);
-  ta.addEventListener('input', () => { btn.disabled = !ta.value.trim(); });
+// ---------- pinned chat ----------
+// One request box fixed above the nav on every tab; it writes to the hub. The textarea lives in the page, not in a view, so typing survives repaints.
+const chatLast = () => { const m = ((S.data && S.data.memos.hub) || []).find(x => (x.replies || []).length); return m ? m.replies[m.replies.length - 1].text : ''; };
+function renderChat() {
+  const box = $('#chat'), ta = $('#chat-ta'), last = $('#chat-last'), txt = S.data ? chatLast().replace(/\s+/g, ' ').trim() : '';
+  box.classList.toggle('hidden', !S.data);
+  ta.placeholder = L.chat.title; ta.setAttribute('aria-label', L.chat.title);
+  $('#chat-send').textContent = L.btn.send;
+  last.textContent = txt; last.classList.toggle('hidden', !txt);
+  last.setAttribute('aria-label', `${L.chat.open}: ${txt}`);
+  document.body.classList.toggle('has-last', !!txt);
+}
+function initChat() {
+  const ta = $('#chat-ta'), btn = $('#chat-send');
+  ta.addEventListener('input', () => { btn.disabled = !ta.value.trim(); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; });
   btn.addEventListener('click', async () => {
     const text = ta.value.trim();
     if (!text || btn.disabled) return;
     btn.disabled = true;
-    try { await post(BASE + 'api/memo', { to, text }); ta.value = ''; toast(L.msg.sent); refresh(); }
+    try { await post(BASE + 'api/memo', { to: 'hub', text }); ta.value = ''; ta.style.height = ''; toast(L.msg.sent); refresh(); }
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     btn.disabled = !ta.value.trim();
   });
-  const box = h('div', { class: 'memo-box' }, ta, h('div', { class: 'bar' }, btn));
-  if (!tip) return sec(title, null, box);
-  // A tap-to-open tip under the header (works on touch; open state lives in S so a repaint keeps it).
-  const key = 'tip:' + to, on = () => !!S.open[key];
-  const note = h('div', { class: 'tip' + (on() ? '' : ' hidden'), id: 'tip-' + to }, tip);
-  const ib = h('button', { class: 'info', type: 'button', 'aria-label': L.tip.show, 'aria-controls': 'tip-' + to, 'aria-expanded': String(on()),
-    onclick: () => { S.open[key] = !on(); note.classList.toggle('hidden', !on()); ib.setAttribute('aria-expanded', String(on())); } },
-    h('span', null, svg(ICON.info)));
-  return h('section', { class: 'sec' }, h('div', { class: 'sec-h' }, h('h2', null, title), ib), note, box);
+  $('#chat-last').addEventListener('click', () => openMenu('thread'));
 }
 function clampToggle(key, el) {
   const long = el.textContent.length > 220 || el.textContent.split('\n').length > 5;
@@ -1060,18 +1015,12 @@ function memoRow(m) {
     reps.map((r, i) => h('div', { class: 'reply' }, h('div', { class: 'meta' }, h('span', null, L.label.reply), when(r.created)),
       clampToggle(`r${m.id}.${i}`, md(r.text)))));
 }
-function memoSec(title, list, emptyText) {
-  return sec(title, null, list.length ? h('div', { class: 'sent' }, list.map(memoRow)) : empty(emptyText));
-}
-
 // ---------- hub tab ----------
 function viewHub() {
   const v = $('#v-hub'), d = D(), K = tick();
-  shell(v, () => [h('section', { class: 'sec' }, h('div', { id: 'hub-goals' }), goalComposer()),
-    h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
-    composer('hub', L.sec.hubReq, L.ph.hub), h('div', { id: 'hub-sent' })]);
-  paint($('#hub-goals'), K + S.goalsOpen + JSON.stringify([d.goals, d.goal_tasks]), () => goalsBlock(d));
-  const mine = d.items.filter(it => forHuman(it) && it.lane !== 'infra');
+  shell(v, () => [h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
+    h('div', { id: 'hub-reach' })]);
+  const mine = d.items.filter(forHuman);
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
   const hub = lanes().find(l => l.lane === 'hub');
   paint($('#hub-doing'), K + JSON.stringify(hub), () => hub ? doingCard(hub) : null);
@@ -1079,142 +1028,15 @@ function viewHub() {
   paint($('#hub-items'), K + JSON.stringify(rest), () => sec(L.sec.yours, rest.length, cardList(rest, L.empty.yours)));
   const side = d.items.filter(it => isOpen(it) && it.audience === 'hub').sort(newest);
   paint($('#hub-handling'), K + S.hubOpen + JSON.stringify(side), () => side.length ? handling(side) : null);
-  paint($('#hub-sent'), K + JSON.stringify(d.memos.hub), () => memoSec(L.sec.sentReq, d.memos.hub, L.empty.reqs));
+  paint($('#hub-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
 }
-// ---------- goals ----------
-function pbar(p, big) {
-  return h('div', { class: 'pbar' + (big ? ' big' : ''), role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(p) },
-    h('i', { style: `width:${Math.max(0, Math.min(100, p))}%` }));
-}
-function stepsText(g) { return g.steps.length ? fmt(L.goal.steps, { d: g.steps_done, n: g.steps.length }) : L.goal.noPlan; }
-function gChip(g) { return h('span', { class: 'chip g-' + g.state }, L.gstate[g.state] || g.state); }
-function goalsBlock(d) {
-  const ranked = d.goals.filter(isRanked).sort((a, b) => a.priority - b.priority);
-  const active = ranked.filter(g => g.state === 'active'), now = active[0];
-  const fin = d.goals.filter(g => !isRanked(g));
-  const avg = active.length ? Math.round(active.reduce((s, g) => s + g.progress, 0) / active.length) : 0;
-  return [
-    h('div', { class: 'sec-h' }, h('h2', null, L.sec.goals),
-      active.length ? h('span', { class: 'ext' }, h('span', { class: 'cap' }, fmt(L.goal.summary, { n: active.length, p: avg }))) : null),
-    ranked.length ? h('div', { class: 'goals' }, ranked.map(g => g === now ? goalNow(g) : goalRow(g))) : empty(L.empty.goals),
-    fin.length ? goalFold(fin) : null];
-}
-function goalNow(g) {
-  const live = liveFor(g);
-  return pressable('g-now', () => openGoal(g.id),
-    h('div', { class: 'meta' }, h('span', { class: 'chip now' }, L.goal.now), h('span', null, fmt(L.goal.rank, { n: g.priority })), when(g.updated)),
-    h('div', { class: 'title' }, g.title),
-    g.steps.length ? h('div', { class: 'prog' }, pbar(g.progress), h('span', { class: 'pct' }, g.progress + '%')) : null,
-    h('div', { class: 'g-sub' }, h('span', null, stepsText(g)), live ? h('span', { class: 'live' }, fmt(L.goal.live, { n: live })) : null));
-}
-function goalRow(g) {
-  const live = liveFor(g), paused = g.state === 'paused';
-  return pressable('g-row' + (paused ? ' muted' : ''), () => openGoal(g.id),
-    h('span', { class: 'rk' }, g.priority),
-    h('div', { class: 'body' }, h('div', { class: 'title' }, g.title),
-      h('div', { class: 'prog' },
-        paused ? gChip(g) : null,
-        g.steps.length ? [pbar(g.progress), h('span', { class: 'pct' }, g.progress + '%')] : h('span', { class: 'none' }, L.goal.noPlan),
-        live ? h('span', { class: 'none' }, fmt(L.goal.live, { n: live })) : null)),
-    svg(ICON.chev, 'chev'));
-}
-function goalFinRow(g) {
-  return pressable('row', () => openGoal(g.id), gChip(g),
-    h('div', { class: 'body' }, h('div', { class: 'title' }, g.title),
-      h('div', { class: 'sub' }, [g.progress + '%', stepsText(g), fmtT(g.closed)].filter(Boolean).join(' · '))),
-    svg(ICON.chev, 'chev'));
-}
-function goalFold(list) {
-  const tog = h('button', { class: 'fold', type: 'button', 'aria-expanded': String(S.goalsOpen), onclick: () => { S.goalsOpen = !S.goalsOpen; render(); } },
-    h('span', { class: 'nm' }, fmt(L.sec.finished, { n: list.length })), svg(ICON.chev, 'chev' + (S.goalsOpen ? ' up' : '')));
-  return h('div', { class: 'list g-fold' }, tog, S.goalsOpen ? list.map(goalFinRow) : null);
-}
-function goalComposer() {
-  const inp = h('input', { type: 'text', maxlength: '200', placeholder: L.goal.ph, 'aria-label': L.goal.add, enterkeyhint: 'done' });
-  const ta = h('textarea', { class: 'hidden', rows: '2', maxlength: '4000', placeholder: L.goal.phDetail, 'aria-label': L.goal.phDetail });
-  const btn = h('button', { class: 'btn-s', type: 'button', disabled: true }, L.goal.addBtn);
-  const sync = () => { btn.disabled = !inp.value.trim(); ta.classList.toggle('hidden', !inp.value.trim() && !ta.value.trim()); };
-  async function send() {
-    const title = inp.value.trim();
-    if (!title || btn.disabled) return;
-    btn.disabled = true;
-    try {
-      await post(BASE + 'api/goals', { title, detail: ta.value.trim() });
-      inp.value = ''; ta.value = ''; toast(L.goal.added); refresh();
-    } catch (e) { if (e.status !== 401) toast(e.message, true); }
-    sync();
-  }
-  inp.addEventListener('input', sync);
-  inp.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); send(); } });
-  btn.addEventListener('click', send);
-  return h('div', null, h('div', { class: 'g-add' }, h('div', { class: 'r' }, inp, btn), ta), h('div', { class: 'hint' }, L.goal.hint));
-}
-function goalHead(g) {
-  return h('div', { class: 'sh' }, h('span', { class: 'grab' }),
-    h('div', { class: 'meta' }, gChip(g), isRanked(g) ? h('span', null, fmt(L.goal.rank, { n: g.priority })) : null,
-      h('span', null, '#' + g.id), when(g.updated)),
-    h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
-}
-function goalTasks(g) { return S.data ? S.data.tasks.filter(t => t.goal_id === g.id) : []; }
-function goalBody(g) {
-  const tasks = goalTasks(g);
-  const out = [h('h2', { class: 'd-title' }, g.title),
-    h('div', { class: 'big-pct' }, h('b', null, g.progress + '%'), h('span', null, stepsText(g))), pbar(g.progress, true)];
-  if (g.detail) out.push(md(g.detail));
-  if (g.steps.length) out.push(h('div', { class: 'h3' }, L.goal.stepsH, h('span', { class: 'n' }, `${g.steps_done}/${g.steps.length}`)),
-    h('ul', { class: 'steps' }, g.steps.map(s => h('li', { class: s.done ? 'on' : '' },
-      h('span', { class: 'mk' }, s.done ? svg(ICON.check) : null), h('span', { class: 'tx' }, s.text)))));
-  if (tasks.length) out.push(h('div', { class: 'h3' }, L.goal.tasksH, h('span', { class: 'n' }, tasks.length)),
-    h('div', { class: 'list in-sheet' }, tasks.map(x => taskRow(x, true))));
-  if (g.note) out.push(h('div', { class: 'h3' }, L.label.note), h('div', { class: 'quote' }, md(g.note)));
-  out.push(h('div', { class: 'meta', style: 'margin-top:var(--s5)' }, h('span', null, fmt(L.goal.by, { who: g.created_by })), when(g.created)));
-  return { body: out, cta: goalCta(g) };
-}
-function goalCta(g) {
-  const busy = !!S.busy['g' + g.id], act = a => () => goalAct(g, a);
-  const b = (cls, a, label, icon) => h('button', { class: cls, type: 'button', disabled: busy, onclick: act(a) }, icon ? svg(icon) : null, label);
-  if (!isRanked(g)) return h('div', { class: 'acts one' }, b('btn primary', 'reopen', L.goal.reopen));
-  const ranked = S.data ? S.data.goals.filter(isRanked).length : g.priority;
-  const conf = S.confirm && S.confirm.id === g.id ? S.confirm.a : '';
-  const moves = [g.priority > 1 && ['top', L.goal.top], g.priority > 2 && ['up', L.goal.up], g.priority < ranked && ['down', L.goal.down]].filter(Boolean);
-  return h('div', null,
-    moves.length ? h('div', { class: 'moves' }, moves.map(([a, label]) => b('btn', a, label))) : null,
-    h('div', { class: 'acts' },
-      g.state === 'paused' ? b('btn', 'resume', L.goal.resume) : b('btn', 'pause', L.goal.pause),
-      b('btn primary', 'done', conf === 'done' ? L.goal.again : L.goal.done, ICON.check),
-      b('btn-text warn', 'drop', conf === 'drop' ? L.goal.again : L.goal.drop)));
-}
-async function goalAct(g, action) {
-  const key = 'g' + g.id;
-  if (S.busy[key]) return;
-  if ((action === 'done' || action === 'drop') && !(S.confirm && S.confirm.id === g.id && S.confirm.a === action)) {
-    S.confirm = { id: g.id, a: action };
-    clearTimeout(goalAct.tm);
-    goalAct.tm = setTimeout(() => { S.confirm = null; renderSheet(true); }, 4000);
-    renderSheet(true);
-    return;
-  }
-  S.confirm = null; S.busy[key] = true; renderSheet(true);
-  try {
-    const j = await post(BASE + `api/goals/${g.id}`, { action });
-    if (j && j.goal) S.gx[g.id] = j.goal;
-    S.busy[key] = false;
-    toast(L.goal.saved);
-    if (action === 'done' || action === 'drop') closeSheet();
-    refresh();
-  } catch (e) {
-    S.busy[key] = false;
-    if (e.status !== 401) toast(e.message, true);
-    renderSheet(true);
-  }
-}
-
 // ---------- menus ----------
 function menuHead(title) {
   return h('div', { class: 'sh' }, h('span', { class: 'grab' }), h('span', { class: 'ttl' }, title),
     h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
 }
 function menuBody() {
+  if (S.menu === 'thread') { const list = S.data.memos.hub; return list.length ? [h('div', { class: 'sent' }, list.map(memoRow))] : [empty(L.empty.reqs)]; }
   if (S.menu === 'lang') return [h('div', { class: 'menu', role: 'listbox' }, Object.entries(LANGS).map(([c, nm]) =>
     h('button', { class: 'mrow' + (c === LANG ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': String(c === LANG), lang: c, onclick: () => chooseLang(c) },
       h('div', { class: 'body' }, h('div', { class: 'nm' }, nm), h('div', { class: 'sub' }, c.toUpperCase())), c === LANG ? svg(ICON.check, 'ck') : null))),
@@ -1223,7 +1045,7 @@ function menuBody() {
     'aria-current': w.current ? 'page' : null, onclick: w.href && !w.current ? () => { location.href = w.href; } : closeSheet },
     h('i', { class: 'dot ' + (w.running ? 'on' : 'closed') }),
     h('div', { class: 'body' }, h('div', { class: 'nm' }, w.name),
-      h('div', { class: 'sub' }, w.href ? [w.running ? L.ws.running : L.ws.stopped, w.goal].filter(Boolean).join(' · ') : L.ws.local)),
+      h('div', { class: 'sub' }, w.href ? w.running ? L.ws.running : L.ws.stopped : L.ws.local)),
     w.open ? h('span', { class: 'badge' }, w.open) : null,
     w.current ? svg(ICON.check, 'ck') : null)))];
 }
@@ -1240,21 +1062,11 @@ function handling(list) {
   return h('section', { class: 'sec' }, h('div', { class: 'list' }, tog, S.hubOpen ? list.map(itemRow) : null));
 }
 
-// ---------- infra tab ----------
-function viewInfra() {
-  const v = $('#v-infra'), d = D(), K = tick();
-  shell(v, () => [h('div', { id: 'inf-reach' }), h('div', { id: 'inf-items' }), composer('infra', L.sec.infraMemo, L.ph.infra, L.tip.infra), h('div', { id: 'inf-sent' })]);
-  const items = asksFirst(d.items.filter(it => isOpen(it) && it.lane === 'infra'));
-  paint($('#inf-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
-  paint($('#inf-items'), K + JSON.stringify(items), () => sec(L.sec.infraItems, items.length, cardList(items, L.empty.infra)));
-  paint($('#inf-sent'), K + JSON.stringify(d.memos.infra), () => memoSec(L.sec.sentMemo, d.memos.infra, L.empty.memos));
-}
-
 function reachCard() {
   const btn = h('button', { class: 'btn-s', type: 'button', disabled: !!S.busy.reach, onclick: async () => {
     if (S.busy.reach) return;
     S.busy.reach = true; render();
-    try { await post(BASE + 'api/memo', { to: 'infra', text: L.reach.memo }); toast(L.msg.sent); }
+    try { await post(BASE + 'api/memo', { to: 'hub', text: L.reach.memo }); toast(L.msg.sent); }
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     S.busy.reach = false; refresh();
   } }, L.reach.ask);
@@ -1282,13 +1094,130 @@ function viewLanes() {
   paint($('#ln-reps'), K + JSON.stringify(d.reports), () => sec(L.sec.reports, null, d.reports.length ? h('div', { class: 'stack' }, d.reports.map(repCard)) : empty(L.empty.reports)));
 }
 function laneCard(l) {
-  return h('div', { class: 'lc' },
+  const mdl = [l.model, l.effort].filter(Boolean).join(' · ');
+  const proc = l.process ? [l.process, l.stage ? fmt(L.lv.stageN, { n: l.stage }) : ''].filter(Boolean).join(' · ') : '';
+  return h('button', { class: 'lc', type: 'button', onclick: () => openLane(l.lane) },
     h('div', { class: 'hd' }, h('span', { class: 'nm' }, l.label || l.lane), l.runtime ? h('span', { class: 'chip' }, l.runtime) : null, statusChip(l.status)),
     l.task_id ? h('div', { class: 'tk' }, h('span', { class: 'id' }, '#' + l.task_id), l.task_title || '')
       : l.doing ? null : h('div', { class: 'tk none' }, L.label.noTask),
     l.doing ? h('div', { class: l.task_id ? 'dg' : 'tk' }, l.doing) : null,
+    proc || mdl || l.fixing ? h('div', { class: 'meta' }, proc ? h('span', null, proc) : null, mdl ? h('span', { class: 'chip' }, mdl) : null,
+      l.fixing ? h('span', { class: 'chip st-asking' }, L.lv.fixing) : null) : null,
     l.ctx_k > 0 ? h('div', { class: 'meta' }, `${L.label.ctx} ${l.ctx_k}K`) : null,
+    taskTokLine(l.task_tokens),
     useLine(l.usage));
+}
+// ---------- AI Engine tab ----------
+function curEng() { const l = S.engs || []; return (l.find(e => e.id === S.eng) || l[0] || {}).id || null; }
+function pickEngine(id) { S.eng = id; location.hash = 'engine-' + id; }
+async function loadEngine() {
+  if (S.auth || S.engBusy) return;
+  S.engBusy = true;
+  try {
+    const j = await get(BASE + 'api/engines'), raw = JSON.stringify(j.engines);
+    if (raw !== S.engsRaw) { S.engsRaw = raw; S.engs = j.engines; }
+    const id = curEng(), old = id && S.maps[id];
+    if (id) {
+      const r = await fetch(BASE + 'api/engines/' + encodeURIComponent(id) + '/map', { cache: 'no-store', headers: old ? { 'if-none-match': old.tag } : {} });
+      if (r.status === 401) needLogin();
+      else if (r.status === 200) S.maps[id] = { tag: r.headers.get('etag') || String(Date.now()), data: await r.json() };
+    }
+  } catch (e) { /* the next poll tries again */ }
+  S.engBusy = false;
+  if (S.view === 'engine') render();
+}
+function rtChip(color, text, title) { return h('span', { class: 'chip rt-' + (color || 'none'), title: title || null }, text); }
+function cardColor(word) { return ['confirmed', 'tuned'].includes(word) ? 'green' : ['collecting', 'draft', 'reviewed'].includes(word) ? 'amber' : 'none'; }
+function pipeCard(p) {
+  const r = p.rating, E = L.eg;
+  return h('div', { class: 'lc pl' },
+    h('div', { class: 'hd' }, h('span', { class: 'nm' }, '#' + p.row + ' ' + p.type),
+      r && r.n ? rtChip(r.color, r.pct + '% · ' + (E['s_' + r.state] || r.state)) : rtChip('none', E.unrated)),
+    h('div', { class: 'meta' }, p.lane ? h('span', { class: 'chip lane' }, laneLabel(p.lane)) : null,
+      rtChip(cardColor(p.process_status), E.process + ' ' + (p.version ? 'v' + p.version + ' ' : '') + (p.process_status || '—')),
+      p.pattern_status ? rtChip(cardColor(p.pattern_status), p.pattern_status) : null,
+      p.model ? h('span', { class: 'chip' }, p.model) : null),
+    p.stages.length ? h('div', { class: 'stages' }, p.stages.map(s => {
+      const g = s.rating, c = s.card;
+      return h('span', { class: 'stg rt-' + (g && g.n ? g.color : 'none') + (s.weakest ? ' weak' : ''),
+        title: [s.by, c ? (c.version ? 'v' + c.version + ' ' : '') + c.status : E.noCard, g && g.n ? fmt(E.rated, { n: g.n }) : E.unrated].filter(Boolean).join(' · ') },
+        s.n + ' ' + s.name + (g && g.n ? ' ' + g.pct + '%' : ''));
+    })) : null,
+    r && r.fixes ? h('div', { class: 'meta' }, fmt(E.fixedN, { n: r.fixes })) : null);
+}
+function changeLine(c) {
+  const E = L.eg;
+  return fmt(E['c_' + c.kind] || '{name}', { name: c.name, a: c.from || E.none, b: c.to || E.none });
+}
+function engineBody(d) {
+  const E = L.eg, out = [], max = Math.max(1, ...d.usage.map(x => x.tokens_in + x.tokens_out));
+  out.push(h('div', { class: 'sec-h wrap' }, h('h2', null, d.label)));
+  if (d.notes) out.push(h('div', { class: 'hint' }, d.notes));
+  out.push(h('div', { class: 'h3' }, E.usage));
+  out.push(h('div', { class: 'days' }, d.usage.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
+    h('b', null, fmtTok(x.tokens_in + x.tokens_out)), h('div', { class: 'col' }, h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` })), h('span', null, x.day.slice(8))))));
+  out.push(sec(E.pipes, d.pipelines.length, d.pipelines.length ? h('div', { class: 'grid' }, d.pipelines.map(pipeCard)) : empty(E.noRows)));
+  const ch = d.changes;
+  out.push(sec(E.changes, ch.items.length || null, !ch.since ? empty(E.noSnap) : h('div', { class: 'stack' },
+    h('div', { class: 'hint' }, fmt(E.since, { d: fmtT(ch.since) })),
+    ch.items.length ? h('div', { class: 'list' }, ch.items.map(c => h('div', { class: 'row static' }, h('div', { class: 'body' }, h('div', { class: 'title' }, changeLine(c)))))) : empty(E.same))));
+  out.push(sec(E.lanes, d.lanes.length, d.lanes.length ? h('div', { class: 'grid' }, d.lanes.map(l => h('button', { class: 'lc', type: 'button', title: E.open, onclick: () => openLane(l.lane) },
+    h('div', { class: 'hd' }, h('span', { class: 'nm' }, l.label), statusChip(l.status)),
+    l.process ? h('div', { class: 'meta' }, l.process) : null,
+    l.skills.length ? h('div', { class: 'meta' }, l.skills.map(s => h('span', { class: 'chip' + (s.found ? '' : ' st-asking') }, s.name))) : null))) : empty(L.empty.lanes)));
+  const skillChips = xs => h('div', { class: 'meta' }, xs.map(s => h('span', { class: 'chip', title: s.files + ' ' + E.files + (s.lanes.length ? ' · ' + s.lanes.map(laneLabel).join(', ') : '') }, s.name)));
+  const ownSk = d.skills.filter(s => !s.shared), sharedSk = d.skills.filter(s => s.shared);
+  out.push(sec(E.skills, d.skills.length, d.skills.length ? h('div', { class: 'stack' }, ownSk.length ? skillChips(ownSk) : null,
+    sharedSk.length ? h('div', { class: 'stack' }, h('div', { class: 'hint' }, E.shared), skillChips(sharedSk)) : null) : empty(L.lv.none)));
+  if (d.tools.length) out.push(sec(E.tools, d.tools.length, h('div', { class: 'list' }, d.tools.map(x => h('div', { class: 'row static' }, h('div', { class: 'body' }, h('div', { class: 'title' }, x.name), x.note ? h('div', { class: 'sub' }, x.note) : null))))));
+  if (d.experiments.length) out.push(sec(E.exps, d.experiments.length, h('div', { class: 'list' }, d.experiments.map(x => h('div', { class: 'row static' }, h('div', { class: 'body' },
+    h('div', { class: 'title' }, x.name + (x.status ? ' · ' + x.status : '')), x.note ? h('div', { class: 'sub' }, x.note) : null))))));
+  return out;
+}
+function viewEngine() {
+  const v = $('#v-engine');
+  shell(v, () => [h('div', { id: 'eg-sw' }), h('div', { id: 'eg-body' })]);
+  const engs = S.engs || [], cur = curEng(), m = cur && S.maps[cur];
+  paint($('#eg-sw'), LANG + JSON.stringify([engs.map(e => [e.id, e.label]), cur]), () => engs.length > 1
+    ? h('div', { class: 'seg', role: 'tablist' }, engs.map(e => h('button', { type: 'button', role: 'tab', class: e.id === cur ? 'on' : '', 'aria-selected': String(e.id === cur), onclick: () => pickEngine(e.id) }, e.label)))
+    : null);
+  paint($('#eg-body'), LANG + (m ? m.tag : S.engs ? 'e' : 'l'), () => !S.engs || (cur && !m) ? empty(L.empty.loading) : !cur ? empty(L.eg.empty) : engineBody(m.data));
+}
+async function loadLane(id) {
+  try { const j = await get(BASE + 'api/lanes/' + encodeURIComponent(id)); S.laneData[id] = j; if (S.lane === id) renderSheet(); }
+  catch (e) { if (e.status === 404) { toast(L.msg.notFound, true); if (S.lane === id) closeSheet(); } }
+}
+function kv(k, v) { return v === null || v === undefined || v === '' ? null : h('div', { class: 'kv' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v)); }
+function tokSum(k) { return k && ((k.new || 0) + (k.cache || 0) + (k.out || 0)) ? fmt(L.use.task, { n: fmtTok(k.new), c: fmtTok(k.cache), o: fmtTok(k.out), t: k.turns || 0 }) : null; }
+function laneSheet(d) {
+  const t = d.task, p = d.process, f = d.fixing, out = [];
+  out.push(h('div', { class: 'meta' }, h('span', { class: 'chip' }, rtName(d.runtime)), statusChip(d.status), d.engine ? h('span', { class: 'chip' }, L.lv.engine + ' ' + d.engine) : null));
+  if (t) out.push(h('div', { class: 'tk' }, h('span', { class: 'id' }, '#' + t.id), t.title));
+  const mdl = t ? [t.model, t.effort].filter(Boolean).join(' · ') : '';
+  out.push(h('div', { class: 'kvs' }, kv(L.lv.model, mdl || d.model), kv(L.lv.tokens, t && tokSum(t.tokens))));
+  out.push(h('div', { class: 'h3' }, L.lv.process));
+  if (p) {
+    out.push(h('div', { class: 'tk' }, p.type + (p.version ? ' v' + p.version : ''), ' ', h('span', { class: 'chip' }, p.status || '—')));
+    out.push(h('div', { class: 'stages' }, p.stages.map(s => h('span', { class: 'stg' + (String(s.n) === String(p.now) ? ' now' : ''), title: L.lv.stage + ' ' + s.n }, s.n + ' ' + s.name))));
+    if (p.now) out.push(h('div', { class: 'meta' }, L.lv.stage + ' ' + p.now));
+  } else out.push(empty(L.lv.noProc));
+  if (f) out.push(h('div', { class: 'h3' }, L.lv.fixing), h('div', { class: 'box esc' },
+    [L.lv.fixBy[f.by] || f.by, f.type, f.stage ? fmt(L.lv.stageN, { n: f.stage }) : '', '#' + f.task_id].filter(Boolean).join(' · ')));
+  out.push(h('div', { class: 'h3' }, L.lv.skills));
+  out.push(d.skills.length ? h('div', { class: 'meta' }, d.skills.map(s => h('span', { class: 'chip' + (s.found ? '' : ' st-asking'), title: s.found ? '' : L.lv.missing }, s.name))) : empty(L.lv.noSkills));
+  out.push(h('div', { class: 'h3' }, L.lv.week));
+  const max = Math.max(1, ...d.days.map(x => x.tokens_in + x.tokens_out));
+  out.push(h('div', { class: 'days' }, d.days.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
+    h('b', null, fmtTok(x.tokens_in + x.tokens_out)), h('div', { class: 'col' }, h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` })), h('span', null, x.day.slice(8))))));
+  out.push(h('div', { class: 'h3' }, L.lv.recent));
+  out.push(d.recent.length ? h('div', { class: 'list' }, d.recent.map(r => h('div', { class: 'row static' }, h('div', { class: 'body' },
+    h('div', { class: 'title' }, '#' + r.id + ' ' + r.title),
+    h('div', { class: 'sub' }, [L.task && L.task[r.state] || r.state, [r.model, r.effort].filter(Boolean).join(' · '), tokSum(r.tokens)].filter(Boolean).join(' · ')))))) : empty(L.lv.none));
+  return out;
+}
+function taskTokLine(k) {
+  if (!k || !((k.new || 0) + (k.cache || 0) + (k.out || 0))) return null;
+  return h('div', { class: 'meta' }, fmt(L.use.task, { n: fmtTok(k.new), c: fmtTok(k.cache), o: fmtTok(k.out), t: k.turns || 0 }));
 }
 function useLine(u) {
   if (!u || !((u.tokens_in || 0) + (u.tokens_out || 0))) return null;
@@ -1322,7 +1251,7 @@ function capStepper(cap) {
 async function setCap(n, dir) {
   if (S.busy.cap) return;
   S.busy.cap = true; S.capFocus = dir; render();
-  try { await post(BASE + 'api/settings', { max_lanes: n }); toast(L.goal.saved); }
+  try { await post(BASE + 'api/settings', { max_lanes: n }); toast(L.msg.saved); }
   catch (e) { if (e.status !== 401) toast(e.message, true); }
   S.busy.cap = false; refresh();
 }
@@ -1383,7 +1312,7 @@ function laneAdd() {
     const text = memoText();
     st.busy = true; sync();
     try {
-      await post(BASE + 'api/memo', { to: 'infra', text });
+      await post(BASE + 'api/memo', { to: 'hub', text });
       for (const el of [id, lbl, model, agent, role]) el.value = '';
       st.rt = def; expand(false); tog.focus(); toast(L.lane.sent); refresh();
     } catch (e) { if (e.status !== 401) toast(e.message, true); }
@@ -1393,12 +1322,10 @@ function laneAdd() {
   sync();
   return h('div', { class: 'list la-wrap' }, tog, body);
 }
-function taskRow(t, inGoal) {
-  const g = !inGoal && t.goal_id ? goalById(t.goal_id) : null;
+function taskRow(t) {
   return h('div', { class: 'row' }, h('span', { class: 'chip t-' + t.state }, L.task[t.state] || t.state),
     h('div', { class: 'body' }, h('div', { class: 'title' }, '#' + t.id, ' ', t.title),
-      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created)),
-      g ? h('div', { class: 'gtag' }, `${L.goal.tag} · ${g.title}`) : null));
+      h('div', { class: 'sub' }, laneLabel(t.lane), ' · ', rel(t.closed || t.started || t.created))));
 }
 function repCard(r) {
   const key = 'rep' + r.id, atts = r.attachments || [], imgs = atts.filter(p => IMG.test(p));
@@ -1472,17 +1399,14 @@ function closeSheetDom() {
 }
 function sheetView() {
   if (S.menu) {
-    const title = S.menu === 'lang' ? L.lang.title : L.ws.title;
-    return { id: 'm-' + S.menu, key: [S.menu, S.menu === 'ws' ? S.ws : LANG], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
+    const title = S.menu === 'lang' ? L.lang.title : S.menu === 'thread' ? L.chat.title : L.ws.title;
+    const dep = S.menu === 'ws' ? S.ws : S.menu === 'thread' ? S.data && S.data.memos.hub : LANG;
+    return { id: 'm-' + S.menu, key: [S.menu, dep], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
   }
-  if (S.goal !== null) {
-    const g = goalById(S.goal);
-    if (!g) {
-      if (S.data) { toast(L.msg.notFound, true); closeSheet(); }
-      return null;
-    }
-    return { id: 'g' + g.id, key: [g, goalTasks(g), !!S.busy['g' + g.id], S.confirm, S.data && S.data.goals.filter(isRanked).length],
-      label: g.title, head: () => goalHead(g), build: () => goalBody(g) };
+  if (S.lane) {
+    const ld = S.laneData[S.lane];
+    if (!ld) return { id: 'l' + S.lane, key: [null], label: S.lane, head: () => menuHead(laneLabel(S.lane)), build: () => ({ body: [empty(L.empty.loading)], cta: null }) };
+    return { id: 'l' + ld.lane, key: [ld], label: ld.label, head: () => menuHead(ld.label), build: () => ({ body: laneSheet(ld), cta: null }) };
   }
   const it = S.item !== null ? itemById(S.item) : null;
   if (S.item !== null && !it && S.data) fetchItem(S.item);
@@ -1632,7 +1556,6 @@ function viewHistory() {
 }
 function histRow(kind, r) {
   if (kind === 'decided') return decidedRow(r);
-  if (kind === 'goals') return goalFinRow(r);
   if (kind === 'reports') return repCard(r);
   if (kind === 'closed') return taskRow(r);
   return memoRow(r);
@@ -1642,7 +1565,7 @@ function paintHist() {
   if (!body) return;
   paint(body, tick() + H.kind + H.rows.length + H.loaded, () => {
     if (!H.rows.length) return H.loaded ? empty(L.empty.hist) : empty(L.empty.loading);
-    const cls = { decided: 'list', goals: 'list', closed: 'list', reports: 'stack', memos: 'sent', requests: 'sent' }[H.kind];
+    const cls = { decided: 'list', closed: 'list', reports: 'stack', memos: 'sent', requests: 'sent' }[H.kind];
     return h('div', { class: cls }, H.rows.map(r => histRow(H.kind, r)));
   });
   paint(foot, LANG + H.kind + H.rows.length + H.more + H.loading + H.loaded, () => !H.loaded || !H.rows.length ? null : H.more
@@ -1658,7 +1581,6 @@ async function loadHist() {
     if (S.hist !== H) return;  // switched kind meanwhile
     const rows = (j && j.rows) || [];
     if (H.kind === 'decided') for (const it of rows) S.extra[it.id] = it;
-    if (H.kind === 'goals') for (const g of rows) S.gx[g.id] = g;
     H.rows.push(...rows); H.more = !!(j && j.more); H.loaded = true;
   } catch (e) {
     if (S.hist !== H) return;
@@ -1729,7 +1651,7 @@ function paintLb() {
 // A workspace extends this board from .tower/: the server reports extensions.{css,js} in api/state and serves the
 // files at x/<path>, its routes at api/x/<name>. After the first state load the board adds x/extra.css and
 // x/extra.js (once); extra.js talks to the board only through window.dah:
-//   dah.addSection(tab, id, render)  tab: 'hub' | 'infra' | 'lanes' | 'history'; painted after that tab's own sections
+//   dah.addSection(tab, id, render)  tab: 'hub' | 'lanes' | 'history'; painted after that tab's own sections
 //   dah.addTab(id, label, icon, render)  a nav tab after the built-in ones, opened at #x-<id>
 //   dah.onState(fn)  fn(state) after every state load (and once right after registering)
 // render(state) returns a Node, a string (shown as text), an array of those, or null. The board calls it on every
@@ -1867,7 +1789,7 @@ window.dah = {
       return;
     }
     const typing = document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName);
-    if (e.key === 'Escape' && (S.item !== null || S.goal !== null || S.menu) && !typing) closeSheet();
+    if (e.key === 'Escape' && (S.item !== null || S.lane || S.menu) && !typing) closeSheet();
   });
   $('#sheet-bd').addEventListener('click', closeSheet);
   $('#signout').addEventListener('click', logout);
@@ -1877,6 +1799,7 @@ window.dah = {
   setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
   setInterval(() => { if (!document.hidden) loadWs(); }, WS_MS);
 })();
+initChat();
 setLang(pickLang(''));
 route();
 load().then(loadWs);

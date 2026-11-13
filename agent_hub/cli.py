@@ -6,7 +6,6 @@ Who is calling comes from TOWER_LANE (set in sessions the tower opens) or `--as 
 from __future__ import annotations
 
 import argparse
-import getpass
 import json
 import os
 import re
@@ -19,12 +18,13 @@ from pathlib import Path
 from typing import Any
 
 from . import config as config_mod
-from . import procs
+from . import procs, stats
 from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
-from .engine import VERDICT_WORD, Engine, clip
+from .engine import VERDICT_WORD, Engine, clip, conflict_of
+from .memwatch import MemWatch
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
 from .notify import notifier
-from .store import GOAL_RANKED, GOAL_STATES, HUMAN, Store, StoreError
+from .store import HUMAN, Store, StoreError
 
 TICK_SECONDS = 4
 TUNNEL_RETRY = 30
@@ -46,7 +46,7 @@ def who(args: argparse.Namespace, c: Config) -> str:
     me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
     if not me:
         raise TowerError("Unknown caller. Sessions the tower opens have TOWER_LANE; by hand, add --as LANE.")
-    if me not in c.lanes:
+    if me not in c.all_lanes:
         raise TowerError(f"unknown lane {me} (lanes: {', '.join(c.lanes)})")
     return me
 
@@ -110,8 +110,6 @@ def cmd_mine(args: argparse.Namespace) -> None:
         print("No task right now.")
         return
     print(f"task #{task['id']} \"{task['title']}\" ({task['state']})\n{task['brief']}\n")
-    if task.get("goal_id"):
-        print(f"serves goal: {goal_line(s.goal(task['goal_id']))}\n")
     for it in s.items(lane=me):
         if it["task_id"] == task["id"]:
             print(f"#{it['id']} [{verdict_text(it)}] {it['title']}" + (f" — {it['note']}" if it.get("note") else ""))
@@ -189,7 +187,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     atts = check_paths(c, args.attach)
     if args.kind == "handoff" and not task:
         raise TowerError("no task to hand off")
-    s.add_report(tid, me, args.kind, args.text, atts)
+    text, retro = stats.split_retro(args.text) if args.kind == "wrapped" else (args.text, None)
+    s.add_report(tid, me, args.kind, text, atts)
+    if retro:
+        s.add_retro(tid, me, text, retro["cost"], retro["corrected"], retro["rule"], retro["raw"])
     s.signal(tid)
     tag = me + (f" task #{tid} \"{task['title']}\"" if task else "")
     if args.kind == "handoff" and task:
@@ -219,80 +220,35 @@ def cmd_task(args: argparse.Namespace) -> None:
         from .stagemodel import missing_lines
         if gap := missing_lines(args.brief):
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
+    from . import engines as engines_mod
+    if c.require_line:
+        eng = c.engines.get(c.lanes[args.lane].engine)
+        if eng and eng.library:
+            try:
+                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, c.home / (eng.skills or engines_mod.SKILLS_DEFAULT)))
+            except ValueError as e:
+                raise TowerError(str(e))
     s = store(c)
-    if args.goal is not None and s.goal(args.goal)["state"] != "active":
-        raise TowerError(f"goal #{args.goal} is not active")
-    tid = s.add_task(args.lane, args.title, args.brief, args.goal)
+    if args.goal is not None:
+        print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
+    try:
+        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable)
+    except StoreError as e:
+        raise TowerError(str(e))
+    s.update_task(tid, **engines_mod.line_fields(args.brief))
     live = s.live_task(args.lane)
-    print(f"task #{tid} → {args.lane}" + (f" for goal #{args.goal}" if args.goal is not None else "")
+    print(f"task #{tid} → {args.lane}"
           + (f" (after task #{live['id']} wraps)" if live else ""))
 
 
-# ---------------------------------------------------------------- goals
-
-def goal_line(g: dict[str, Any]) -> str:
-    plan = f" · {g['progress']}% ({g['steps_done']}/{len(g['steps'])})" if g["steps"] else " · no plan yet"
-    rank = f"{g['priority']}. " if g["state"] in GOAL_RANKED else ""
-    return f"{rank}#{g['id']} [{g['state']}] {g['title']}{plan if g['state'] != 'done' else ' · done'}"
-
-
-def goal_actor(args: argparse.Namespace) -> str:
-    me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
-    if not me:
-        return getpass.getuser()
-    if me != HUB:
-        raise TowerError("goals are set by humans and the hub; report to the hub instead")
-    return me
-
-
-def cmd_goal(args: argparse.Namespace) -> None:
+def cmd_stage(args: argparse.Namespace) -> None:
     c = cfg()
-    s = store(c)
-    if args.sub == "list":
-        goals = s.goals(GOAL_STATES if args.all else GOAL_RANKED)
-        print("\n".join(goal_line(g) for g in goals) if goals else "No goals. `dah goal add \"title\"`")
-        return
-    if args.sub == "show":
-        g = s.goal(args.id)
-        print(goal_line(g) + f"\nby {g['created_by']} · {hhmm(g['created'])}")
-        if g["detail"]:
-            print(f"\n{g['detail']}")
-        for i, st in enumerate(g["steps"], 1):
-            print(f"  {i}. [{'x' if st.get('done') else ' '}] {st['text']}")
-        if g.get("note"):
-            print(f"\nnote: {g['note']}")
-        for t in s.tasks(limit=500):
-            if t["goal_id"] == g["id"]:
-                print(f"  task #{t['id']} {t['lane']} {t['state']} \"{t['title']}\"")
-        return
-    me = goal_actor(args)
-    if args.sub == "add":
-        gid = s.add_goal(args.title, args.detail or "", me)
-        if args.priority:
-            s.move_goal(gid, args.priority)
-        g = s.goal(gid)
-        news = f"New goal #{gid} (priority {g['priority']}) from {me}: \"{g['title']}\"" + (
-            f" — {g['detail']}" if g["detail"] else "") + ". Agree a plan with the humans, then `dah goal plan`."
-        print(f"goal #{gid} added at priority {g['priority']}")
-    elif args.sub == "priority":
-        order = s.move_goal(args.id, args.position)
-        news = f"{me} moved goal #{args.id} to priority {args.position}. Order now: " + ", ".join(f"#{i}" for i in order)
-        print(f"order: {' '.join('#' + str(i) for i in order)}")
-    elif args.sub == "plan":
-        g = s.plan_goal(args.id, args.step)
-        news = f"{me} set the plan of goal #{args.id}: " + "; ".join(st["text"] for st in g["steps"])
-        print(goal_line(g))
-    elif args.sub in ("check", "uncheck"):
-        g = s.check_steps(args.id, args.steps, args.sub == "check")
-        news = f"{me} {args.sub}ed step(s) {', '.join(map(str, args.steps))} of goal #{args.id}: now {g['progress']}%"
-        print(goal_line(g))
-    else:
-        state = {"done": "done", "drop": "dropped", "pause": "paused", "resume": "active"}[args.sub]
-        g = s.set_goal_state(args.id, state, args.note or "")
-        news = f"{me} marked goal #{args.id} \"{g['title']}\" {state}" + (f": {args.note}" if args.note else "")
-        print(goal_line(g))
-    if me != HUB:
-        s.push(HUB, me, "goal", news)
+    me = who(args, c)
+    task = store(c).live_task(me)
+    if not task:
+        raise TowerError(f"{me} has no running task")
+    store(c).update_task(task["id"], stage_now=clip(args.stage, 40))
+    print(f"task #{task['id']} is on stage {args.stage}")
 
 
 def cmd_doing(args: argparse.Namespace) -> None:
@@ -380,14 +336,153 @@ def cmd_memo(args: argparse.Namespace) -> None:
             s.reply_memo(args.id, "Passed to the hub.", INFRA)
             print(f"memo #{args.id} → hub")
         else:
-            if me != HUB or args.target != INFRA or INFRA not in c.lanes:
-                raise TowerError("only the hub sends memos, to infra")
-            print(f"memo #{s.push(INFRA, HUB, 'memo', args.text)} → infra")
+            send_infra(c, s, me, args.text, args.approved)
+    except StoreError as e:
+        raise TowerError(str(e))
+
+
+def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None) -> None:
+    """Infra runs only on a hub request; the human's approval, when there is one, travels with it."""
+    if me != HUB or INFRA not in c.lanes:
+        raise TowerError("only the hub sends requests to infra; humans ask the hub")
+    if approved and approved.strip():
+        text = f"{text}\n\nApproved by the human: {approved.strip()}"
+    print(f"memo #{s.push(INFRA, HUB, 'memo', text)} → infra")
+
+
+def cmd_infra(args: argparse.Namespace) -> None:
+    c = cfg()
+    try:
+        send_infra(c, store(c), need(args, c, HUB, INFRA), args.text, args.approved)
     except StoreError as e:
         raise TowerError(str(e))
 
 
 # ---------------------------------------------------------------- reading
+
+def lane_markers(c: Config, s: Store) -> dict[str, list[str]]:
+    """What each lane's session process carries on its command line (memwatch): its session id, or its OpenCode port."""
+    out: dict[str, list[str]] = {}
+    for lid, ln in c.all_lanes.items():
+        sid = s.lane(lid).get("session")
+        if sid:
+            out[lid] = [str(sid), f"--port {ln.port}" if ln.runtime == "opencode" and ln.port else ""]
+    return out
+
+
+def day_arg(day: str | None) -> float:
+    if not day:
+        return 0.0
+    try:
+        return stats.day_start(day)
+    except ValueError:
+        raise TowerError("--since takes a day as YYYY-MM-DD")
+
+
+def cmd_stats(args: argparse.Namespace) -> None:
+    """The task ledger: tokens, turns and rework per lane, engine, model, effort or week."""
+    s = store(cfg())
+    tasks = stats.collect(s, args.lane, day_arg(args.since))
+    print(stats.render(stats.summarize(tasks, args.by), args.lane, args.since))
+
+
+def cmd_blame(args: argparse.Namespace) -> None:
+    """Lane: name the stage that should have caught this task's failure. Hub: --confirm --task N [STAGE] confirms or changes it."""
+    from . import rating
+    c = cfg()
+    me = who(args, c)
+    s = store(c)
+    stage = rating.blame_stage(args.stage) if args.stage else None
+    cause = clip(" ".join((args.cause or "").split()), 200)
+    try:
+        if args.confirm:
+            need(args, c, HUB)
+            if not args.task:
+                raise TowerError("--confirm needs --task N")
+            s.task(args.task)
+            s.confirm_blame(args.task, me, stage, cause)
+            cur = s.blames()[args.task]
+            print(f"task #{args.task} blame confirmed: stage {cur['effective']}"
+                  + (f" (the lane wrote {cur['stage']})" if cur["stage"] != cur["effective"] else ""))
+            return
+        if not stage:
+            raise TowerError("name the stage, e.g. `dah blame 3 --cause 'one line'`")
+        if me == HUB:
+            if not args.task:
+                raise TowerError("the hub gives --task N (to confirm use --confirm)")
+            tid = args.task
+        else:
+            need_team(c, me)
+            live = s.live_task(me)
+            tid = args.task or (live["id"] if live else None)
+            if not tid:
+                raise TowerError(f"{me} has no running task; give --task N")
+            if s.task(tid)["lane"] != me:
+                raise TowerError("that is not your task")
+        s.task(tid)
+        s.add_blame(tid, stage, cause, me)
+    except StoreError as e:
+        raise TowerError(str(e))
+    print(f"task #{tid} blame: stage {stage}" + (f" · {cause}" if cause else "") + " (the hub confirms or changes it with `dah blame --confirm --task N`)")
+
+
+def cmd_deliverable(args: argparse.Namespace) -> None:
+    """Hub or infra: record the human's result for a deliverable. With no result: its lineage of tasks, items and results."""
+    c = cfg()
+    s = store(c)
+    try:
+        if args.outcome:
+            me = need(args, c, HUB, INFRA)
+            if args.outcome == "redirected" and not (args.note or "").strip():
+                raise TowerError("a redirected result needs --note with the human's own words")
+            s.add_outcome(args.key, args.outcome, me, args.note or "")
+            print(f"{args.key} -> {args.outcome}")
+            return
+        with s.conn() as con:
+            tasks = [dict(r) for r in con.execute("SELECT * FROM tasks WHERE deliverable=? ORDER BY id", (args.key,))]
+            items = [dict(r) for r in con.execute(
+                "SELECT i.* FROM items i JOIN tasks t ON t.id=i.task_id WHERE t.deliverable=? ORDER BY i.id", (args.key,))]
+        events = s.outcome_events(args.key)
+    except StoreError as e:
+        raise TowerError(str(e))
+    if not (tasks or events):
+        raise TowerError(f"no task carries the key {args.key}")
+    last = events[-1]["outcome"] if events else "in progress"
+    tok = lambda f: stats.mtok(sum(t[f] or 0 for t in tasks))  # noqa: E731
+    print(f"{args.key} · {last} · {len(tasks)} task(s) · new {tok('tok_new')} · cache read {tok('tok_cache')} · out {tok('tok_out')} "
+          f"· turns {sum(t['turns'] or 0 for t in tasks)}")
+    for t in tasks:
+        print(f"  task #{t['id']:<5} {t['state']:9} {clip(t['title'], 40)} {hhmm(t['created'])}"
+              + (f" · row {t['line_row']} stage {t['line_stage']} {t['line_mode']}" if t["line_row"] else ""))
+    for it in items:
+        print(f"  item #{it['id']:<5} {it['state'] if it['state'] == 'open' else it['verdict']:9} {clip(it['title'], 40)} {hhmm(it['created'])}")
+    for e in events:
+        print(f"  result {hhmm(e['created'])} {e['outcome']} ({e['by']})" + (f" - {e['note']}" if e["note"] else ""))
+
+
+def cmd_ratings(args: argparse.Namespace) -> None:
+    """First-pass rate per stage and per process, per engine: bars, tokens per attempt and per adopted deliverable."""
+    from . import engines as engines_mod
+    from . import rating
+    c = cfg()
+    rows: dict[str, list[dict[str, Any]]] = {}
+    skills: dict[str, Path] = {}
+    for eid, e in c.engines.items():
+        if (args.engine and eid != args.engine) or not e.library:
+            continue
+        skills[eid] = c.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+        rows[eid] = engines_mod.build(c.home / e.library, skills[eid])
+    if args.engine and args.engine not in c.engines:
+        raise TowerError(f"no engine {args.engine} (`dah engine list`)")
+    rated = rating.attach(rows, store(c), c.home, skills)
+    if args.lane:
+        rated = [r for r in rated if r["lane"] == args.lane]
+    print(rating.render(rated, lang=c.lang.split("-")[0], weak=args.weak))
+
+
+def cmd_retros(args: argparse.Namespace) -> None:
+    print(stats.render_retros(store(cfg()).retros(args.lane, day_arg(args.since))))
+
 
 def cmd_status(_args: argparse.Namespace) -> None:
     c = cfg()
@@ -398,30 +493,33 @@ def cmd_status(_args: argparse.Namespace) -> None:
           + (f" · {c.public_url}" if c.public_url else ""))
     if c.local_only and not os.environ.get("TOWER_LANE"):  # people, not the hub polling its status
         print(REACH_HINT)
-    for lid, ln in c.lanes.items():
+    all_queued = s.tasks(("queued",), 500)
+    for lid, ln in c.all_lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid)
-        queued = sum(1 for t in s.tasks(("queued",), 500) if t["lane"] == lid)
+        queued = sorted((t for t in all_queued if t["lane"] == lid), key=lambda t: t["id"])
+        if ln.base and not (task or queued or row.get("session")):
+            continue  # a parallel session shows only while it is in use
         runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}") + ("·wt" if ln.worktree else "")
         line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
             line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\""
         if queued:
-            line += f" · {queued} queued"
+            line += f" · {len(queued)} queued"
         opened = sum(1 for it in s.items(state="open", lane=lid))
         if opened:
             line += f" · {opened} open items"
         print(line)
+        for t in queued:  # why a queued task is not starting (the engine uses the same rule)
+            why = conflict_of(s, t) if not ln.base else None
+            if why:
+                print(f"  #{t['id']} waits: {why}")
     terms = {ln.terminal for ln in c.lanes.values()}
     if "tmux" in terms:
         from .runtimes import tmux_session
         print(f"lane windows: tmux attach -t {tmux_session(c)}")
     if "orca" in terms:
         print("lane windows: Orca terminal tabs in this workspace")
-    goals = s.goals()
-    print("\ngoals (first priority first):" if goals else "\ngoals: none yet")
-    for g in goals:
-        print(f"  {goal_line(g)}")
     hub_items = s.items(state="open", audience=HUB)
     print(f"\nopen for the hub: {len(hub_items)} · for humans: {len(s.items(state='open', audience=HUMAN))}")
     for it in hub_items[:20]:
@@ -494,7 +592,7 @@ def cmd_log(args: argparse.Namespace) -> None:
 def cmd_last(args: argparse.Namespace) -> None:
     from .runtimes import Runtimes
     c = cfg()
-    if args.lane not in c.lanes:
+    if args.lane not in c.all_lanes:
         raise TowerError(f"unknown lane {args.lane}")
     texts = Runtimes(c, store(c)).last_text(args.lane, args.n)
     print("\n\n---\n\n".join(texts) if texts else "(nothing yet)")
@@ -509,8 +607,8 @@ def say(text: str) -> None:
 def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
     """A live session belongs to the adapter that started it: when tower.json changes a lane's runtime or terminal,
     close it the old way, or the new adapter would start a second agent beside it."""
-    for lid, ln in old.lanes.items():
-        nl = new.lanes.get(lid)
+    for lid, ln in old.all_lanes.items():
+        nl = new.all_lanes.get(lid)
         if nl and (nl.runtime, nl.terminal, nl.worktree) != (ln.runtime, ln.terminal, ln.worktree) \
                 and rt.status(lid) != "closed":
             rt.close(lid)
@@ -537,6 +635,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     cfg_path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
     mtime = cfg_path.stat().st_mtime
     engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+    memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
     tunnel: subprocess.Popen[bytes] | None = None
     tunnel_at = 0.0
 
@@ -558,6 +657,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     close_changed(engine.rt, c, c2, say)
                     c = c2
                     engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+                    memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
                     say("tower.json reloaded")
             except (ConfigError, OSError) as e:
                 say(f"tower.json not reloaded: {e}")
@@ -566,6 +666,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                 say(f"tunnel started: {c.tunnel}")
             try:
                 if not (c.state_dir / "paused").exists():
+                    memwatch.poll()
+                    engine.heavy = memwatch.heavy
                     engine.tick()
             except Exception as e:  # the loop never dies; the next tick looks again
                 say(f"tick failed: {e!r}")
@@ -744,6 +846,10 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
                       ("config", "tower.json"), ("shortcuts", "added")):
         for line in report[key]:
             print(f"  {what}: {line}")
+    if before and before != version or not before and report["updated"]:
+        from .install import migration_notes
+        for line in migration_notes(c, report):
+            print(f"  note: {line}")
     requests: list[tuple[str, str, Path | None]] = []  # (what infra should do, request text, patch backup)
     if report["merge"]:
         files = ", ".join(f"`{f}`" for f in report["merge"])
@@ -873,7 +979,7 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    top = {"setup": "SETUP.md", "extend": "EXTEND.md"}
+    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md"}
     path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
         names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
@@ -907,7 +1013,8 @@ def cmd_lane(args: argparse.Namespace) -> None:
     c = cfg()
     if args.sub == "list":
         for lid, ln in c.lanes.items():
-            print(f"{lid:<10} {ln.kind:<6} {ln.runtime:<8} {ln.label}" + (f" :{ln.port}" if ln.port else ""))
+            print(f"{lid:<10} {ln.kind:<6} {ln.runtime:<8} {ln.label}" + (f" :{ln.port}" if ln.port else "")
+                  + (f" [{ln.engine}]" if ln.engine else ""))
         return
     if args.id in (HUB, INFRA) and args.sub == "remove":
         raise TowerError("hub and infra are built in")
@@ -925,6 +1032,10 @@ def cmd_lane(args: argparse.Namespace) -> None:
             if args.runtime == "codex":
                 raise TowerError("codex has no agents; set \"args\": [\"--profile\", NAME] in tower.json instead")
             entry["agent"] = args.agent
+        if args.engine:
+            if args.engine not in c.engines or c.engines[args.engine].implicit:
+                raise TowerError(f"--engine: no engine {args.engine} (`dah engine list`; `dah engine add NAME`)")
+            entry["engine"] = args.engine
         edit_config(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
         c = config_mod.load(c.home)
         path = c.instructions(args.id)
@@ -934,6 +1045,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
         wrote: list[str] = []
         write_shims(c, list(c.lanes), False, wrote)  # a new runtime gets every lane's shortcut, too
         print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "")
+              + (f", engine {args.engine}" if args.engine else "")
               + (", in its own git worktree" if args.worktree else "") + "). "
               f"Fill in {path.relative_to(c.home)}: what it owns and its done criteria. "
               f"Open it by hand with /{SHIM_PREFIX}{args.id}.")
@@ -945,6 +1057,76 @@ def cmd_lane(args: argparse.Namespace) -> None:
     edit_config(c.home, lambda d: d["lanes"].pop(args.id))
     remove_shims(c, args.id)
     print(f"lane {args.id} removed (its instruction file is kept)")
+
+
+def cmd_engine(args: argparse.Namespace) -> None:
+    c = cfg()
+    if args.sub == "list":
+        for eid, e in c.engines.items():
+            print(f"{eid:<12} lanes={len(e.lanes)}  {e.label}" + ("  (implicit)" if e.implicit else "")
+                  + (f"  {', '.join(e.lanes)}" if e.lanes else ""))
+        return
+    if args.sub == "show":
+        if args.id not in c.engines:
+            raise TowerError(f"no engine {args.id} (`dah engine list`)")
+        e = c.engines[args.id]
+        print(f"{e.id}: {e.label}" + (" (implicit: every team lane without an engine)" if e.implicit else ""))
+        for key in ("dir", "library", "skills", "map"):
+            print(f"  {key + ':':<9} {getattr(e, key) or '-'}")
+        print(f"  lanes:    {', '.join(e.lanes) or '-'}")
+        if e.library:
+            from . import engines as engines_mod
+            print("pipelines:")
+            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, c.home / (e.skills or engines_mod.SKILLS_DEFAULT))))
+        return
+    if not args.id.replace("-", "").replace("_", "").isalnum():
+        raise TowerError("engine id: use letters, digits, - and _")
+    if args.id in c.engines and not c.engines[args.id].implicit:
+        raise TowerError(f"engine {args.id} exists")
+    if args.template:
+        return scaffold_engine_cmd(c, args)
+    entry = {k: v for k, v in (("label", args.label), ("dir", args.dir), ("library", args.library),
+                               ("skills", args.skills), ("map", args.map), ("cap", args.cap)) if v}
+    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
+    before = path.read_text(encoding="utf-8")
+    edit_config(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
+    try:
+        config_mod.load(c.home)
+    except config_mod.ConfigError as e:
+        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
+        raise TowerError(str(e))
+    print(f"engine {args.id} added. Put lanes in it with `dah lane add ID --runtime R --engine {args.id}`.")
+
+
+def scaffold_engine_cmd(c: Any, args: argparse.Namespace) -> None:
+    from .install import scaffold_engine
+    if args.runtime not in RUNTIMES and args.runtime not in config_mod.ext_names(c.home, "runtimes"):
+        raise TowerError(f"--runtime: one of {', '.join(RUNTIMES)}, or one an extension in .tower/ext/ registers")
+    try:
+        made = scaffold_engine(c, args.id, args.template, args.label or args.id.replace("-", " ").title(), args.runtime,
+                               args.skills or "", args.cap or "")
+    except ValueError as e:
+        raise TowerError(str(e))
+    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
+    before = path.read_text(encoding="utf-8")
+
+    def add(d: dict[str, Any]) -> None:
+        d.setdefault("engines", {})[args.id] = made["entry"]
+        d["lanes"].update(made["lanes"])
+
+    edit_config(c.home, add)
+    try:
+        c2 = config_mod.load(c.home)
+    except config_mod.ConfigError as e:
+        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
+        raise TowerError(str(e))
+    for f, text in made["files"].items():
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    write_shims(c2, list(c2.lanes), False, [])
+    print(f"engine {args.id} added from {args.template}: {len(made['files'])} files, lanes {', '.join(made['lanes'])}. "
+          f"Everything starts as draft: `dah engine show {args.id}`, then edit the cards in {made['entry']['skills']} "
+          f"(`dah guide engines`).")
 
 
 def cmd_member(args: argparse.Namespace) -> None:
@@ -1000,10 +1182,26 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("task", help="hub: queue a task for a team lane")
     p.add_argument("lane")
     p.add_argument("--title", required=True)
-    p.add_argument("--goal", type=int, metavar="GOAL_ID", help="the goal this task serves")
+    p.add_argument("--goal", type=int, metavar="GOAL_ID", help="removed in 0.8.0; ignored with a notice")
+    p.add_argument("--deliverable", metavar="KEY", help="deliverable key (e.g. ui:shop): ties the tasks that rework the same deliverable together")
     p.add_argument("brief")
+    p = sub.add_parser("blame", help="lane: name the stage that should have caught this task's failure; hub: --confirm [STAGE]")
+    p.add_argument("stage", nargs="?", help="stage number or name, e.g. 3")
+    p.add_argument("--task", type=int)
+    p.add_argument("--cause", help="one line")
+    p.add_argument("--confirm", action="store_true", help="hub: confirm (or change to STAGE) the lane's blame on --task")
+    p = sub.add_parser("deliverable", help="hub/infra: record the human's result (adopted|redirected|dropped); with no result, the lineage")
+    p.add_argument("key")
+    p.add_argument("outcome", nargs="?", choices=("adopted", "redirected", "dropped"))
+    p.add_argument("--note", help="redirected: the human's own words")
+    p = sub.add_parser("ratings", help="first-pass rate per stage and process, bars, token cost per attempt and per adopted deliverable")
+    p.add_argument("--engine")
+    p.add_argument("--lane")
+    p.add_argument("--weak", action="store_true", help="only rows that need fixing or rework")
     p = sub.add_parser("doing", help="hub: one line shown on the board")
     p.add_argument("text")
+    p = sub.add_parser("stage", help="lane: name the stage of your process card you are on now (shown on the board)")
+    p.add_argument("stage", help="stage number or name, e.g. 3")
     p = sub.add_parser("tell", help="hub: message a running task")
     p.add_argument("lane")
     p.add_argument("text")
@@ -1032,33 +1230,19 @@ def build_parser() -> argparse.ArgumentParser:
     q = msub.add_parser("send")
     q.add_argument("target", choices=(INFRA,))
     q.add_argument("text")
+    q.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
+    p = sub.add_parser("infra", help="hub: ask infra to do something (infra runs only on a hub request)")
+    p.add_argument("text")
+    p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
 
-    p = sub.add_parser("goal", help="goals the team works toward: add, rank, plan, tick steps, finish")
-    gsub = p.add_subparsers(dest="sub", required=True)
-    q = gsub.add_parser("add", help="a new goal (last priority unless --priority)")
-    q.add_argument("title")
-    q.add_argument("--detail", help="what done looks like, constraints")
-    q.add_argument("--priority", type=int, metavar="N", help="1 = first")
-    q = gsub.add_parser("list")
-    q.add_argument("--all", action="store_true", help="also done and dropped goals")
-    q = gsub.add_parser("show")
-    q.add_argument("id", type=int)
-    q = gsub.add_parser("priority", help="move a goal to position N (1 = first)")
-    q.add_argument("id", type=int)
-    q.add_argument("position", type=int)
-    q = gsub.add_parser("plan", help="set the goal's steps (replaces the list; unchanged steps keep their tick)")
-    q.add_argument("id", type=int)
-    q.add_argument("--step", action="append", required=True, metavar="TEXT")
-    for name in ("check", "uncheck"):
-        q = gsub.add_parser(name, help=f"{name} steps by number")
-        q.add_argument("id", type=int)
-        q.add_argument("steps", type=int, nargs="+")
-    for name in ("done", "pause", "resume", "drop"):
-        q = gsub.add_parser(name)
-        q.add_argument("id", type=int)
-        q.add_argument("note", nargs="?", default="")
-
-    sub.add_parser("status", help="goals, lanes, tasks and open items")
+    sub.add_parser("status", help="lanes, tasks and open items")
+    p = sub.add_parser("stats", help="the task ledger: tokens, turns and rework per lane, engine, model, effort or week")
+    p.add_argument("--by", choices=stats.BY, default="lane")
+    p.add_argument("--lane")
+    p.add_argument("--since", metavar="YYYY-MM-DD")
+    p = sub.add_parser("retros", help="what lanes noted when they wrapped (cost, corrected, rule)")
+    p.add_argument("--lane")
+    p.add_argument("--since", metavar="YYYY-MM-DD")
     p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
     p.add_argument("payload", nargs="*")
     p = sub.add_parser("show", help="one board item")
@@ -1130,11 +1314,28 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--runtime", required=True, help=f"{', '.join(RUNTIMES)}, or one an extension registers")
     q.add_argument("--worktree", action="store_true", help="work in a git worktree of its own (branch dah/ID)")
     q.add_argument("--label")
+    q.add_argument("--engine", help="the engine this lane belongs to (`dah engine list`); default: the implicit one")
     q.add_argument("--model")
     q.add_argument("--agent", help="run the role on one of your own agents (an OpenCode agent or a Claude --agent "
                                    "name); default: the agent you normally get")
     q = lsub.add_parser("remove")
     q.add_argument("id")
+    p = sub.add_parser("engine", help="list, show or add engines (a set of lanes with its own skills and process)")
+    gsub = p.add_subparsers(dest="sub", required=True)
+    gsub.add_parser("list")
+    q = gsub.add_parser("show")
+    q.add_argument("id")
+    q = gsub.add_parser("add")
+    q.add_argument("id")
+    q.add_argument("--label")
+    q.add_argument("--dir", help="engine folder inside the workspace")
+    q.add_argument("--library", help="pattern library markdown, path inside the workspace")
+    q.add_argument("--skills", help="skills folder inside the workspace")
+    q.add_argument("--map", help="hand-written engine.json, path inside the workspace")
+    q.add_argument("--cap", help='usage cap: "tokens-day:N", or a name an extension registers in `caps`')
+    q.add_argument("--from", dest="template", metavar="KIND", help="scaffold the engine from a template: blank, animation or marketing "
+                   "(creates its library, skills with draft process and pattern cards, lanes and an engine review lane)")
+    q.add_argument("--runtime", default="claude", help="runtime of the scaffolded lanes (with --from; default claude)")
     p = sub.add_parser("member", help="people who use the board")
     esub = p.add_subparsers(dest="sub", required=True)
     esub.add_parser("list")
@@ -1149,11 +1350,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "tell": cmd_tell,
-    "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
-    "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
+    "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
+    "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

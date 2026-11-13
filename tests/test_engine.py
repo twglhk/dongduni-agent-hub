@@ -1,7 +1,9 @@
 import unittest
 
-from agent_hub.engine import (BATCH_SECONDS, GOAL_IDLE_SECONDS, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
-                              RESPAWN_LIMIT, Engine)
+from agent_hub.config import base_lane
+from agent_hub.engine import (BATCH_SECONDS, CHAIN_CONTEXT_K, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
+                              RESPAWN_LIMIT, SETTLE_SECONDS, Engine, conflict_of, paths_overlap, task_paths)
+from agent_hub.memwatch import POLL_SECONDS, MemWatch, Proc, parse_ps
 from agent_hub.store import HUB, HUMAN, INFRA, Store
 from tests.helpers import Clock, FakeRuntime, make_home
 
@@ -104,42 +106,20 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.s.items(state="open", audience=HUMAN), [])
         self.assertEqual(self.rt.sent, [])  # nothing was forced into the busy session
 
-    def test_idle_hub_is_told_goals_once_per_change(self) -> None:
+    def test_idle_hub_is_never_prompted_without_news(self) -> None:
         self.s.set_lane(HUB, enabled=1)
         self.e.tick()
         self.rt.st[HUB] = "idle"
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(self.rt.sent, [])  # no goals, nothing to say
-        g1 = self.s.add_goal("Ship v2", "", "ana")
-        g2 = self.s.add_goal("Fix login", "", "ana")
-        self.s.move_goal(g2, 1)
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)
-        text = self.rt.sent[0][2]
-        self.assertLess(text.index(f"goal #{g2}"), text.index(f"goal #{g1}"))
-        self.assertIn("no plan yet", text)
-        self.rt.st[HUB] = "idle"
-        self.run_ticks(5, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)  # unchanged goals: left alone
-        self.s.plan_goal(g2, ["repro", "fix"])
-        self.s.check_steps(g2, [1])
-        t = self.s.add_task("docs", "fix", "b", goal_id=g2)
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 1)  # a task is in flight
-        self.s.update_task(t, state="closed")
-        self.rt.st[HUB] = "idle"
-        self.run_ticks(3, step=GOAL_IDLE_SECONDS)
-        self.assertEqual(len(self.rt.sent), 2)
-        self.assertIn("1/2 steps · next: fix", self.rt.sent[1][2])
+        self.run_ticks(5, step=60)
+        self.assertEqual(self.rt.sent, [])  # nothing queued, nothing to say: the hub is left alone
 
-    def test_follow_up_task_keeps_its_goal(self) -> None:
-        g = self.s.add_goal("Docs site", "", "ana")
-        t = self.s.add_task("docs", "A", "b", goal_id=g)
+    def test_follow_up_task_is_queued_without_goal_state(self) -> None:
+        t = self.s.add_task("docs", "A", "b")
         self.e.tick()
         self.s.decide(self.item("docs", t), "ok", HUB, basis="in scope")
         self.e.tick()
         follow = [x for x in self.s.tasks() if x["id"] != t][0]
-        self.assertEqual(follow["goal_id"], g)
+        self.assertIsNone(follow["goal_id"])
 
     # ----- team lanes -----
 
@@ -317,6 +297,238 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.assertEqual(self.rt.replies[0][1], "q9")
         self.assertIn("dah item add", self.rt.replies[0][2][0][0])
+
+
+# ----- P4: scheduler -----
+
+LANES = {"hub": {"runtime": "opencode"}, "infra": {"runtime": "opencode"},
+         "docs": {"runtime": "claude"}, "web": {"runtime": "claude"}}
+
+
+class Base(unittest.TestCase):
+    def build(self, **extra):
+        self.cfg = make_home(LANES, **extra)
+        self.clock = Clock()
+        self.s = Store(self.cfg.db, clock=self.clock)
+        self.rt = FakeRuntime(self.s)
+        self.e = Engine(self.cfg, self.s, self.rt, lambda n: None, clock=self.clock, log=lambda _: None)
+
+    def tick(self, n: int = 1, step: float = 5) -> None:
+        for _ in range(n):
+            self.e.tick()
+            self.clock.tick(step)
+
+    def started(self) -> list[str]:
+        return [lane for lane, _ in self.rt.opened if lane not in ("hub", "infra")]
+
+
+class PathsTest(unittest.TestCase):
+    def test_paths_line_parsing_and_overlap(self) -> None:
+        self.assertEqual(task_paths({"brief": "x\npaths: `src/a/`, docs\ny"}), ["src/a", "docs"])
+        self.assertIsNone(task_paths({"brief": "no line"}))
+        self.assertTrue(paths_overlap(["src"], ["src/a"]))
+        self.assertFalse(paths_overlap(["src/a"], ["src/ab"]))
+
+    def test_base_lane(self) -> None:
+        self.assertEqual((base_lane("docs#2"), base_lane("docs")), ("docs", "docs"))
+
+
+class ConflictTest(Base):
+    def test_overlap_and_missing_paths_block_beside_a_live_task_of_the_lane(self) -> None:
+        self.build(max_lanes=3, max_instances=2)
+        a = self.s.add_task("docs", "A", "paths: src/a")
+        self.s.claim_task(a)
+        ok = {"id": 90, "lane": "docs", "brief": "paths: src/b"}
+        self.assertIsNone(conflict_of(self.s, ok))
+        self.assertIn("overlap", conflict_of(self.s, {"id": 91, "lane": "docs", "brief": "paths: src/a/x"}) or "")
+        self.assertIn("no paths", conflict_of(self.s, {"id": 92, "lane": "docs", "brief": "no line"}) or "")
+        self.assertIsNone(conflict_of(self.s, {"id": 93, "lane": "web", "brief": "no line"}))  # another lane
+
+    def test_after_waits_for_the_named_task_unless_it_does_not_exist(self) -> None:
+        self.build()
+        a = self.s.add_task("web", "A", "x")
+        self.assertIn("after", conflict_of(self.s, {"id": 9, "lane": "docs", "brief": f"after: #{a}"}) or "")
+        self.assertIsNone(conflict_of(self.s, {"id": 9, "lane": "docs", "brief": "after: 4242"}))
+        self.s.update_task(a, state="closed")
+        self.assertIsNone(conflict_of(self.s, {"id": 9, "lane": "docs", "brief": f"after: {a}"}))
+
+    def test_blocked_task_stays_queued_and_a_later_one_starts_on_a_parallel_session(self) -> None:
+        self.build(max_lanes=3, max_instances=2)
+        a = self.s.add_task("docs", "A", "paths: src/a")
+        b = self.s.add_task("docs", "B", "paths: src/a/deep")  # overlaps A
+        c = self.s.add_task("docs", "C", "paths: src/c")       # does not
+        self.tick()
+        self.assertEqual(self.started(), ["docs"])
+        self.assertEqual(self.s.task(a)["state"], "running")
+        self.tick()
+        self.assertEqual(self.started(), ["docs", "docs#2"])
+        self.assertEqual((self.s.task(b)["state"], self.s.task(b)["lane"]), ("queued", "docs"))
+        self.assertEqual((self.s.task(c)["state"], self.s.task(c)["lane"]), ("running", "docs#2"))
+        self.tick(3)
+        self.assertEqual(len(self.started()), 2)  # B keeps waiting while A runs
+        self.s.update_task(a, state="closed")
+        self.s.set_lane("docs", closing=1)
+        self.rt.st["docs"] = "idle"
+        self.tick(2)
+        self.assertEqual(self.s.task(b)["state"], "running")  # A finished, the overlap is gone
+
+    def test_without_max_instances_nothing_runs_beside_a_lane(self) -> None:
+        self.build(max_lanes=3)
+        self.s.add_task("docs", "A", "paths: a")
+        self.s.add_task("docs", "B", "paths: b")
+        self.tick(3)
+        self.assertEqual(self.started(), ["docs"])
+        self.assertEqual(self.cfg.instances, {})
+
+    def test_instance_config_copies_the_lane(self) -> None:
+        self.build(max_instances=3)
+        self.assertEqual(sorted(self.cfg.instances), ["docs#2", "docs#3", "web#2", "web#3"])
+        ln = self.cfg.instances["docs#2"]
+        self.assertEqual((ln.base, ln.runtime, ln.instructions), ("docs", "claude", self.cfg.lanes["docs"].instructions))
+
+    def test_head_of_line_skip_on_a_free_lane(self) -> None:
+        self.build(max_lanes=3)
+        dep = self.s.add_task("web", "dep", "x")
+        first = self.s.add_task("docs", "first", f"after: {dep}")
+        second = self.s.add_task("docs", "second", "x")
+        self.tick()
+        self.assertEqual(self.s.task(first)["state"], "queued")  # still waiting for dep
+        self.assertEqual(self.s.task(second)["state"], "running")  # ... and does not hold the lane up
+
+    def test_lowering_max_instances_sends_queued_work_back_to_the_base_lane(self) -> None:
+        self.build(max_lanes=3, max_instances=2)
+        t = self.s.add_task("docs", "A", "x")
+        self.s.update_task(t, lane="docs#3")
+        self.tick()
+        self.assertNotEqual(self.s.task(t)["lane"], "docs#3")
+
+
+class SlotTest(Base):
+    def test_light_tasks_have_their_own_slots(self) -> None:
+        self.build(max_lanes=1, light_lanes=1, heavy_paths=["game"])
+        h1 = self.s.add_task("docs", "h1", "paths: game/a")
+        h2 = self.s.add_task("web", "h2", "paths: game/b")
+        self.tick()
+        self.assertEqual([self.s.task(h1)["state"], self.s.task(h2)["state"]], ["running", "queued"])
+        light = self.s.add_task("web", "l", "paths: notes")
+        self.s.update_task(h2, state="cancelled")
+        self.tick()
+        self.assertEqual(self.s.task(light)["state"], "running")  # the light slot, while the heavy one is full
+
+    def test_without_light_lanes_one_pool(self) -> None:
+        self.build(max_lanes=1, heavy_paths=["game"])
+        self.s.add_task("docs", "a", "paths: notes")
+        b = self.s.add_task("web", "b", "paths: more")
+        self.tick()
+        self.assertEqual(self.s.task(b)["state"], "queued")
+
+
+class ChainTest(Base):
+    def wrap(self, lane: str, tid: int) -> None:
+        self.s.update_task(tid, state="closed", closed=self.clock())
+        self.s.set_lane(lane, closing=1)
+        self.rt.st[lane] = "idle"
+
+    def test_linked_task_goes_into_the_same_session(self) -> None:
+        self.build(max_lanes=2)
+        a = self.s.add_task("docs", "A", "x")
+        b = self.s.add_task("docs", "B", f"after: #{a}")
+        self.tick()
+        sid = self.s.task(a)["session"]
+        self.wrap("docs", a)
+        self.tick()
+        self.assertEqual(self.rt.closed, [])
+        self.assertEqual(self.rt.sent[-1][:2], ("docs", sid))
+        self.assertIn(f"task #{b}", self.rt.sent[-1][2])
+        t = self.s.task(b)
+        self.assertEqual((t["state"], t["session"]), ("running", sid))
+
+    def test_a_long_context_or_an_unlinked_task_opens_fresh(self) -> None:
+        self.build(max_lanes=2)
+        a = self.s.add_task("docs", "A", "x")
+        b = self.s.add_task("docs", "B", f"after: {a}")
+        self.tick()
+        self.rt.ctx["docs"] = CHAIN_CONTEXT_K
+        self.wrap("docs", a)
+        self.tick(2)
+        self.assertIn("docs", self.rt.closed)
+        self.assertEqual(self.s.task(b)["state"], "running")
+        self.assertEqual(len([o for o in self.rt.opened if o[0] == "docs"]), 2)
+
+
+class MemoryGuardTest(Base):
+    def test_fat_session_is_asked_for_a_handoff_once_then_renewed(self) -> None:
+        self.build(max_lanes=2, memory_limit_mb=1000)
+        t = self.s.add_task("docs", "A", "x")
+        self.tick()
+        self.rt.st["docs"] = "idle"
+        self.e.heavy = {"docs": 2048}
+        self.tick(2, step=SETTLE_SECONDS + 1)
+        asks = [m for m in self.s.pending("docs") if m["kind"] == "rotate"] + [x for x in self.rt.sent if "2048 MB" in x[2]]
+        self.assertEqual(len(asks), 1)
+        self.rt.st["docs"] = "idle"
+        self.tick(2, step=SETTLE_SECONDS + 1)
+        self.assertEqual(len([x for x in self.rt.sent if "2048 MB" in x[2]]), 1)  # asked once
+        self.s.update_task(t, handoff="[now] x", rotate_ready=self.clock())
+        self.rt.st["docs"] = "idle"
+        self.tick()
+        self.assertIn("docs", self.rt.closed)
+        self.assertEqual(len([o for o in self.rt.opened if o[0] == "docs"]), 2)
+        self.assertNotIn("docs", self.e.heavy)
+
+    def test_a_fat_idle_session_without_a_task_is_closed(self) -> None:
+        self.build(max_lanes=2)
+        self.rt.st["docs"] = "idle"
+        self.e.heavy = {"docs": 5000}
+        self.tick(2, step=SETTLE_SECONDS + 1)
+        self.assertIn("docs", self.rt.closed)
+
+    def test_a_fat_session_is_not_chained(self) -> None:
+        self.build(max_lanes=2)
+        a = self.s.add_task("docs", "A", "x")
+        b = self.s.add_task("docs", "B", f"after: {a}")
+        self.tick()
+        self.e.heavy = {"docs": 5000}
+        self.s.update_task(a, state="closed", closed=self.clock())
+        self.s.set_lane("docs", closing=1)
+        self.rt.st["docs"] = "idle"
+        self.tick()
+        self.assertIn("docs", self.rt.closed)
+        self.assertEqual(self.s.task(b)["state"], "running")
+
+
+class MemWatchTest(unittest.TestCase):
+    def test_parse_ps(self) -> None:
+        procs = parse_ps("  12  2048 /bin/claude --session-id s1 hi\nbad line\n  13  10 x\n")
+        self.assertEqual([(p.pid, p.rss_mb) for p in procs], [(12, 2), (13, 0)])
+
+    def test_heavy_lanes_by_marker_polled_once_a_minute(self) -> None:
+        clock = Clock(0.0)
+        table = [Proc(1, 5000, "claude --session-id s-docs"), Proc(2, 100, "claude --session-id s-web"),
+                 Proc(3, 4000, "opencode serve --port 4301")]
+        calls = []
+
+        def ps() -> list[Proc]:
+            calls.append(1)
+            return table
+
+        logs: list[str] = []
+        w = MemWatch(1000, lambda: {"docs": ["s-docs"], "web": ["s-web"], "hub": ["", "--port 4301"]}, logs.append, ps, clock)
+        w.poll()
+        self.assertEqual(w.heavy, {"docs": 5000, "hub": 4000})
+        self.assertEqual(len(logs), 2)
+        w.poll()
+        self.assertEqual(len(calls), 1)  # inside the minute: no second read
+        table[0] = Proc(1, 10, "claude --session-id s-docs")
+        clock.t += POLL_SECONDS
+        w.poll()
+        self.assertEqual(w.heavy, {"hub": 4000})
+        self.assertEqual(len(logs), 2)  # hub was already announced
+
+    def test_limit_zero_is_off(self) -> None:
+        w = MemWatch(0, lambda: {"docs": ["s"]}, ps=lambda: [Proc(1, 9999, "s")])
+        w.poll()
+        self.assertEqual(w.heavy, {})
 
 
 if __name__ == "__main__":
