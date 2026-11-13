@@ -283,6 +283,28 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
     return report
 
 
+def migration_notes(cfg: Config, report: dict[str, list[str]]) -> list[str]:
+    """What a workspace coming from before 0.8.0 should know, judged from the workspace itself (nothing is changed here)."""
+    import sqlite3
+    notes = []
+    try:
+        with sqlite3.connect(cfg.db) as con:
+            n = con.execute("SELECT count(*) FROM goals").fetchone()[0]
+    except (sqlite3.Error, OSError):
+        n = 0
+    if n:
+        notes.append(f"goals are gone: the {n} goal row(s) stay in the database, unread. Send that work as requests; "
+                     f"/api/goals answers 410 and `goal` events no longer fire.")
+    hub = cfg.instructions(HUB).relative_to(cfg.home).as_posix()
+    if any(f == hub for f in report["merge"] + report["pending"]):
+        notes.append(f"the board has no Infra tab now and the hub is the only door to infra: until `{hub}.new` is merged "
+                     f"into `{hub}`, the hub does not forward infra work.")
+    if not any(e.implicit is False for e in cfg.engines.values()):
+        notes.append("engines: tower.json declares none, so the team lanes run as one engine `default`; nothing to change. "
+                     "`dah engine add NAME --from blank|animation|marketing` starts a method with cards (`dah guide engines`).")
+    return notes
+
+
 # ---------- package files changed in place (kept across upgrades) ----------
 
 PATCHES_DIR = "patches"

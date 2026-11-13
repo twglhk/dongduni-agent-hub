@@ -189,7 +189,7 @@ class StoreError(Exception):
 
 
 def valid_key(key: str) -> str:
-    """A deliverable key is one short word without spaces (`ui:shop`, `hero:sketch-3`); `T12` and `#12` shapes are refused."""
+    """A deliverable key is one short word without spaces (`ui:shop`, `post:sketch-3`); `T12` and `#12` shapes are refused."""
     key = key.strip()
     if not re.fullmatch(r"\S{1,60}", key) or re.fullmatch(r"[Tt]\d+|#?\d+", key):
         raise StoreError(f"a deliverable key is a word of at most 60 characters without spaces (e.g. ui:shop): {key!r}")

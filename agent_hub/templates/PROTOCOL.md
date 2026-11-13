@@ -29,9 +29,14 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 | hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
 | hub | `dah memo reply ID "text"` · `dah infra "text" --approved "request #N"` | answer a human request · hand tower work to infra (humans reach infra only through you) |
 | infra | `dah memo reply ID "text"` · `dah memo forward ID` · `dah report wrapped "text"` | answer a memo · pass it to the hub · finish |
+| team lane | `dah blame STAGE [--cause "one line"]` | after a failure, name the stage of the card that should have caught it |
 | anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` | read |
 
 Attachments are paths inside the project. The board shows images and video inline and opens text files.
+
+## Sending work back
+
+A defect inside a deliverable goes back to the lane that made it, in the same task and the same session: `dah tell LANE "fix: stage N <what is wrong and what it should be>"`. Start with `fix:` and name the stage of the process card the defect belongs to (the number the brief's `Line:` header and `dah stage` use). The tower counts every `fix:` tell as a send-back of that task, and the Engine tab shows which stages get sent back most. A tell without `fix:` is a normal message and is not counted. If the lane finds the fault was an earlier stage's to catch, it names that with `dah blame STAGE`; the hub confirms or changes it (`dah blame --confirm [STAGE] --task ID`).
 
 ## Writing a board item
 

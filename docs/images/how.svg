@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 312" width="880" height="312" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
   <title id="t">How agent-hub works</title>
-  <desc id="d">Five steps: you set goals; the hub plans the steps with you; tasks go to lanes, each in a fresh session; lanes work, call their own subagents and report back; the hub reviews and you decide only what needs a human. Goal progress shows on the board from 0 to 100 percent.</desc>
+  <desc id="d">Five steps: you send a request; the hub turns it into tasks; tasks go to lanes, each in a fresh session; lanes work, call their own subagents and report back; the hub reviews and you decide only what needs a human. The Engine tab rates each process stage by how often its first pass was adopted.</desc>
   <defs>
     <linearGradient id="pg" x1="0" x2="1" y1="0" y2="0">
       <stop offset="0" stop-color="#9be3c2"/><stop offset="1" stop-color="#03b26c"/>
@@ -15,9 +15,9 @@
     <circle cx="48" cy="80" r="12" fill="#3182f6"/><text x="48" y="85" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">1</text>
     <rect x="128" y="70" width="26" height="42" rx="6" fill="none" stroke="#3182f6" stroke-width="2"/>
     <rect x="133" y="80" width="16" height="4" rx="2" fill="#03b26c"/><rect x="133" y="90" width="11" height="4" rx="2" fill="#03b26c"/>
-    <text x="38" y="150" font-weight="700">You set goals</text>
-    <text x="38" y="170" fill="#4e5968">and rank them</text>
-    <text x="38" y="190" fill="#4e5968">on the board</text>
+    <text x="38" y="150" font-weight="700">You send a request</text>
+    <text x="38" y="170" fill="#4e5968">to the hub from</text>
+    <text x="38" y="190" fill="#4e5968">the board</text>
 
     <!-- 2 -->
     <rect x="192" y="56" width="156" height="152" rx="16" fill="#ffffff" stroke="#e5e8eb"/>
@@ -27,9 +27,9 @@
       <path d="M296 92 l4 4 7-8"/><path d="M314 93 h16"/>
       <rect x="296" y="103" width="10" height="10" rx="2"/><path d="M314 109 h16"/>
     </g>
-    <text x="206" y="150" font-weight="700">Hub plans</text>
-    <text x="206" y="170" fill="#4e5968">the steps with you</text>
-    <text x="206" y="190" fill="#4e5968">(you approve them)</text>
+    <text x="206" y="150" font-weight="700">Hub splits it</text>
+    <text x="206" y="170" fill="#4e5968">into tasks, each</text>
+    <text x="206" y="190" fill="#4e5968">on a process card</text>
 
     <!-- 3 -->
     <rect x="360" y="56" width="156" height="152" rx="16" fill="#ffffff" stroke="#e5e8eb"/>
@@ -69,10 +69,10 @@
     <path d="M182 128 l8 4 -8 4 z"/><path d="M350 128 l8 4 -8 4 z"/><path d="M518 128 l8 4 -8 4 z"/><path d="M686 128 l8 4 -8 4 z"/>
   </g>
 
-  <text x="24" y="242" font-size="13" font-weight="600" fill="#4e5968">Progress shows on the board as each goal's steps are done</text>
+  <text x="24" y="242" font-size="13" font-weight="600" fill="#4e5968">The Engine tab rates every stage by how often its first pass is adopted</text>
   <rect x="24" y="252" width="828" height="10" rx="5" fill="#e5e8eb"/>
   <rect x="24" y="252" width="828" height="10" rx="5" fill="url(#pg)"/>
-  <text x="24" y="280" font-size="12" font-weight="700" fill="#4e5968">0%</text>
-  <text x="852" y="280" text-anchor="end" font-size="12" font-weight="700" fill="#028a54">100%</text>
+  <text x="24" y="280" font-size="12" font-weight="700" fill="#4e5968">needs rework</text>
+  <text x="852" y="280" text-anchor="end" font-size="12" font-weight="700" fill="#028a54">best</text>
   <text x="440" y="298" text-anchor="middle" font-size="12" fill="#8b95a1">Works with OpenCode, Claude Code and Codex: your own agents, skills, MCP servers and hooks.</text>
 </svg>

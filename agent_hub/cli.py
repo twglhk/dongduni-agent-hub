@@ -846,6 +846,10 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
                       ("config", "tower.json"), ("shortcuts", "added")):
         for line in report[key]:
             print(f"  {what}: {line}")
+    if before and before != version or not before and report["updated"]:
+        from .install import migration_notes
+        for line in migration_notes(c, report):
+            print(f"  note: {line}")
     requests: list[tuple[str, str, Path | None]] = []  # (what infra should do, request text, patch backup)
     if report["merge"]:
         files = ", ".join(f"`{f}`" for f in report["merge"])

@@ -1,6 +1,6 @@
 # SETUP.md — agent playbook
 
-You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first goal is on it, and you have watched one memo go round trip.
+You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first request has gone through the hub, and you have watched one request to infra go round trip.
 
 `dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws` prints the guides for reaching the board.
 
@@ -61,6 +61,8 @@ Only what is still open, for example:
 6. If their agent has a place for project rules, add one line there pointing at `.tower/PROTOCOL.md` so hand-opened sessions know the tower exists. Show the diff first.
 7. Lanes in windows (`--terminal`): open each agent the lanes use once by hand in the workspace (`claude`, `codex`, `opencode`) and get past its first-run screens (folder trust, accepting `bypassPermissions`); a lane cannot answer them and would wait there.
 8. Team lanes are optional at the start. Add them only if the person names them. A lane is a role on top of the agent they already use, not a new agent: `dah lane add <id> --runtime <r>` writes `.tower/lanes/<id>.md` (fill in: area, files it owns, done criteria, what not to touch) and a `/dah-<id>` shortcut so they can also open the role by hand. Only when a role needs its own model, prompt or tool limits, point it at one of *their* existing agents with `--agent NAME` (an OpenCode agent or a Claude Code `--agent`; Codex: `"args": ["--profile", NAME]`). Do not create new agent definitions for lanes. If several lanes may change the same files at once, or the person keeps working in the same checkout while lanes run, offer `--worktree`: the lane gets a git worktree and branch `dah/<id>` of its own and the hub merges it.
+
+9. Engines are optional too. One workspace with team lanes already runs as one implicit engine (`default`). If they do repeatable deliverables (a post, a shot, a screen) and want the lanes to share a written method with ratings, offer `dah engine add <name> --from blank|animation|marketing` and point them at `dah guide engines`. Everything it writes starts as `draft`; do not mark a card confirmed for them.
 
 ## Phase 4 — Launch
 
