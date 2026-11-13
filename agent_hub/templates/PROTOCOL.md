@@ -25,7 +25,7 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 | hub | `dah task LANE --title T "brief"` · `dah tell LANE "text"` · `dah wrap LANE` · `dah cancel TASK` | run the team |
 | hub | `dah decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
 | hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
-| hub | `dah memo reply ID "text"` · `dah memo send infra "text"` | answer a human request · hand tower work to infra |
+| hub | `dah memo reply ID "text"` · `dah infra "text" --approved "request #N"` | answer a human request · hand tower work to infra (humans reach infra only through you) |
 | infra | `dah memo reply ID "text"` · `dah memo forward ID` · `dah report wrapped "text"` | answer a memo · pass it to the hub · finish |
 | anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` | read |
 
@@ -50,7 +50,7 @@ One image shows one thing. Keep sizes and framing equal when images are compared
 
 ## agent-hub itself
 
-- The board, the tower and their features are infra's. A request to change them (a board tab or section, a dashboard, an API for another tool, a notification when something happens) goes to infra: `dah memo send infra "..."` from the hub, a note in your report from any other lane.
+- The board, the tower and their features are infra's. A request to change them (a board tab or section, a dashboard, an API for another tool, a notification when something happens) goes to infra: `dah infra "..." --approved "request #N"` from the hub, a note in your report from any other lane.
 - Never edit the installed agent-hub package (its board, its Python): `dah update` replaces it. Changes are built as extensions in `.tower/board/` and `.tower/ext/` (`dah guide extend`).
 
 ## Keeping the record

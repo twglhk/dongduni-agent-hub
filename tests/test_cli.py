@@ -114,6 +114,16 @@ class CliTest(unittest.TestCase):
         self.assertIn("only infra", self.tower("memo", "forward", "2", lane="hub", ok=False))
         self.assertIn("infra only uses", self.tower("report", "done", "x", lane="infra", ok=False))
 
+    def test_infra_takes_requests_from_the_hub_only(self) -> None:
+        from agent_hub.store import Store
+        s = Store(self.home / ".tower/state/tower.db")
+        self.assertIn("→ infra", self.tower("infra", "add a lane docs", "--approved", "request #7", lane="hub"))
+        self.assertIn("→ infra", self.tower("memo", "send", "infra", "second", lane="hub"))
+        first, second = s.pending("infra")
+        self.assertIn("Approved by the human: request #7", first["text"])
+        self.assertNotIn("Approved", second["text"])
+        self.assertIn("only the hub", self.tower("infra", "x", lane="infra", ok=False))
+
     def test_members_and_discover(self) -> None:
         out = self.tower("member", "add", "ana", "--role", "owner", "--token")
         token = out.split("give it privately): ")[1].strip()

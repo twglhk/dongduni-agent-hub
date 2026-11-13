@@ -33,6 +33,7 @@
   --t2:22px; --t3:20px; --t4:17px; --t5:15px; --t6:13px;
   --fs:16px; --tap:44px; --col:720px;
   --nav-h:calc(60px + env(safe-area-inset-bottom));
+  --chat-h:68px;
   --shadow:0 -8px 32px rgba(2,32,71,.10);
   --ease:cubic-bezier(.2,.8,.2,1);
 }
@@ -86,7 +87,20 @@ h1,h2,h3,h4,p{margin:0}
 @keyframes beat{50%{opacity:.35}}
 
 /* ---- layout ---- */
-main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--nav-h) + var(--s7))}
+main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--nav-h) + var(--chat-h) + var(--s7))}
+/* ---- pinned chat: the same request box on every tab ---- */
+#chat{position:fixed;left:0;right:0;bottom:var(--nav-h);z-index:19;background:var(--bg);border-top:1px solid var(--line)}
+#chat .in{max-width:var(--col);margin:0 auto;padding:var(--s2) var(--s5);display:grid;gap:var(--s1)}
+#chat-last{display:block;width:100%;text-align:left;font-size:var(--t6);line-height:1.4;color:var(--text-2);background:var(--blue-weak);border-radius:var(--r-s);padding:6px var(--s3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat .row{display:flex;gap:var(--s2);align-items:flex-end}
+#chat textarea{flex:1;min-width:0;height:var(--tap);max-height:120px;border:0;outline:none;resize:none;background:var(--surface);border-radius:var(--r-s);padding:12px var(--s4);font-size:var(--fs);line-height:1.3}
+#chat textarea::placeholder{color:var(--text-4)}
+#chat textarea:focus{box-shadow:inset 0 0 0 1.5px var(--blue)}
+body.has-last{--chat-h:104px}
+.btn-s{height:var(--tap);padding:0 var(--s5);border-radius:var(--r-s);background:var(--blue);color:#fff;font-weight:700;font-size:var(--t5);transition:opacity .15s,transform .12s}
+.btn-s:disabled{opacity:.35;cursor:default}
+.btn-s:active:not(:disabled){transform:scale(.97);background:var(--blue-dn)}
+.note::placeholder,.field::placeholder{color:var(--text-4)}
 #nav{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 #nav .in{max-width:var(--col);margin:0 auto;display:flex}
 #nav button{flex:1;height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--text-4);font-size:11px;font-weight:600;position:relative;transition:color .15s}
@@ -182,17 +196,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .clip-h{max-height:8.4em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 60%,transparent);mask-image:linear-gradient(#000 60%,transparent)}
 .more-tog{display:block;min-height:36px;color:var(--text-3);font-size:var(--t6);font-weight:600;margin-top:2px}
 
-/* ---- composer ---- */
-.memo-box{background:var(--surface);border-radius:var(--r-l);padding:var(--s2) var(--s2) var(--s2) var(--s2)}
-.memo-box textarea{display:block;width:100%;min-height:96px;border:0;outline:none;resize:vertical;background:transparent;padding:var(--s3) var(--s3) var(--s2);font-size:var(--fs);line-height:1.5}
-.memo-box textarea::placeholder,.note::placeholder,.field::placeholder{color:var(--text-4)}
-.memo-box .bar{display:flex;justify-content:flex-end}
-.memo-box:focus-within{box-shadow:inset 0 0 0 1.5px var(--blue)}
-.btn-s{height:var(--tap);padding:0 var(--s5);border-radius:var(--r-s);background:var(--blue);color:#fff;font-weight:700;font-size:var(--t5);transition:opacity .15s,transform .12s}
-.btn-s:disabled{opacity:.35;cursor:default}
-.btn-s:active:not(:disabled){transform:scale(.97);background:var(--blue-dn)}
-
-/* ---- sheet ---- */
 #sheet-bd{position:fixed;inset:0;z-index:29;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .25s}
 #sheet-bd.open{opacity:1;pointer-events:auto}
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;margin:0 auto;max-width:var(--col);max-height:calc(100vh - 12px);max-height:calc(100dvh - env(safe-area-inset-top) - 12px);background:var(--surface);border-radius:var(--r-l) var(--r-l) 0 0;display:flex;flex-direction:column;box-shadow:var(--shadow);transform:translateY(105%);visibility:hidden;transition:transform .32s var(--ease),visibility 0s linear .32s}
@@ -308,7 +311,7 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .field:focus{border-color:var(--blue);background:var(--surface)}
 
 /* ---- toast ---- */
-#toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + 16px);transform:translateX(-50%) translateY(8px);z-index:60;background:var(--toast-bg);color:var(--toast-fg);padding:14px 20px;border-radius:var(--r);font-size:var(--t5);font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s var(--ease);max-width:calc(100vw - 40px);width:max-content;text-align:center;line-height:1.4}
+#toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--chat-h) + 16px);transform:translateX(-50%) translateY(8px);z-index:60;background:var(--toast-bg);color:var(--toast-fg);padding:14px 20px;border-radius:var(--r);font-size:var(--t5);font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s var(--ease);max-width:calc(100vw - 40px);width:max-content;text-align:center;line-height:1.4}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.err{background:var(--red);color:#fff}
 body.sheet-open #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
@@ -338,17 +341,10 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 .mrow .badge{position:static;flex:none}
 .dot.on{background:var(--green)}
 
-/* ---- infra tip ---- */
-.info{width:var(--tap);height:var(--tap);margin:-8px -10px;display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:50%;color:var(--text-3)}
-.info>span{width:24px;height:24px;border-radius:50%;background:var(--grey-weak);display:flex;align-items:center;justify-content:center;transition:background-color .15s,color .15s}
-.info svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.6;stroke-linecap:round}
-.info[aria-expanded="true"]{color:var(--blue-ink)}
-.info[aria-expanded="true"]>span{background:var(--blue-weak)}
 .reach{background:var(--orange-weak);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:var(--s2)}
 .reach .k{font-weight:700;font-size:var(--t5);color:var(--orange-ink)}
 .reach .tx{font-size:var(--t5);color:var(--text-2);line-height:1.55}
 .reach .bar{display:flex;justify-content:flex-end}
-.tip{margin:0 0 var(--s3);padding:var(--s3) var(--s4);border-radius:var(--r);background:var(--blue-weak);color:var(--text-2);font-size:var(--t5);line-height:1.55}
 
 /* ---- lane cap stepper ---- */
 .sec-h.wrap{flex-wrap:wrap;row-gap:var(--s2)}
@@ -412,10 +408,10 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 </div></header>
 <main>
   <section id="v-hub"></section>
-  <section id="v-infra" class="hidden"></section>
   <section id="v-lanes" class="hidden"></section>
   <section id="v-history" class="hidden"></section>
 </main>
+<div id="chat" class="hidden"><div class="in"><button id="chat-last" type="button" class="hidden"></button><div class="row"><textarea id="chat-ta" rows="1"></textarea><button id="chat-send" class="btn-s" type="button" disabled></button></div></div></div>
 <nav id="nav"><div id="use" role="status"></div><div class="in"></div></nav>
 <div id="sheet-bd"></div>
 <div id="sheet" role="dialog" aria-modal="true"></div>
@@ -429,11 +425,10 @@ const BASE = location.pathname.replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
-    tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Lanes', history: 'History' },
-    sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', hubReq: 'Ask hub', sentReq: 'Recent requests',
-      infraItems: 'Open items', infraMemo: 'Request to infra', sentMemo: 'Recent requests', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
+    tabs: { hub: 'Hub', lanes: 'Lanes', history: 'History' },
+    sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
       usage: 'Usage today' },
-    empty: { yours: 'Nothing to decide', infra: 'No open items', reqs: 'No requests yet', memos: 'No requests yet', tasks: 'No live tasks',
+    empty: { yours: 'Nothing to decide', reqs: 'No requests yet', tasks: 'No live tasks',
       reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all' },
     status: { busy: 'Working', asking: 'Asking', idle: 'Idle', closed: 'Closed', unknown: 'No response' },
     task: { queued: 'Queued', running: 'Running', wrapping: 'Wrapping up', closed: 'Closed', cancelled: 'Cancelled' },
@@ -442,9 +437,10 @@ const UI = {
     verdict: { ok: 'Decided', okReview: 'Approved', no: 'Rejected', hold: 'On hold', answer: 'Answered', merged: 'Merged' },
     hist: { decided: 'Decided', reports: 'Reports', closed: 'Closed', memos: 'Infra requests', requests: 'Hub requests' },
     memo: { wait: 'Waiting', delivered: 'Delivered', replied: 'Replied' },
+    chat: { title: 'Request to the hub', open: 'Open the thread' },
     label: { why: 'Why it came to you', question: 'Question', options: 'Options', pickMany: 'Pick any', note: 'Note', answer: 'Answer',
       attachments: 'Attachments', noTask: 'No task', cap: '{u}/{c} busy', paused: 'Paused', reply: 'Reply', hubSide: 'Hub', ctx: 'ctx' },
-    ph: { answer: 'Your answer or a note', review: 'Leave empty to approve', hub: 'What should hub do?', infra: 'What should change?', token: 'Access token' },
+    ph: { answer: 'Your answer or a note', review: 'Leave empty to approve', token: 'Access token' },
     btn: { decide: 'Decide', answer: 'Answer myself', hold: 'Hold', done: 'Done reviewing', send: 'Send', more: 'More', less: 'Less',
       close: 'Close', prev: 'Previous', next: 'Next', login: 'Sign in', logout: 'Sign out', open: 'Open' },
     msg: { saved: 'Saved', decided: 'Decided', held: 'Put on hold', answered: 'Answer sent', reviewed: 'Review done', sent: 'Sent', fail: 'Couldn’t send',
@@ -453,16 +449,15 @@ const UI = {
     login: { title: 'Sign in' },
     ws: { title: 'Workspaces', local: 'Local only', running: 'Running', stopped: 'Stopped' },
     lang: { title: 'Language', note: 'Changes the board’s buttons on this device. Agents keep writing in the workspace language.' },
-    reach: { title: 'Only this computer can open the board', body: 'Your phone can’t reach it yet. Infra can set up Wi-Fi sign-in, Tailscale, Cloudflare or a server for you.', ask: 'Ask infra to set it up',
-      memo: 'Make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick.' },
-    tip: { show: 'Tip', infra: 'This board grows as far as you take it. Need a feature or a tool for your work? Ask infra and have it built in.' },
+    reach: { title: 'Only this computer can open the board', body: 'Your phone can’t reach it yet. The hub can have infra set up Wi-Fi sign-in, Tailscale, Cloudflare or a server for you.', ask: 'Ask the hub to set it up',
+      memo: 'Have infra make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick.' },
     lane: { add: 'Add a lane', id: 'Lane ID', idPh: 'e.g. docs', idHelp: 'Letters, numbers, - and _. Used in commands and file names.',
       idBad: 'Use letters, numbers, - and _ only', idDup: 'A lane with this ID already exists', runtime: 'Runtime',
       label: 'Display name (optional)', labelPh: 'e.g. Docs', role: 'Role',
       rolePh: 'What it owns, the files it works on, when it is done, what it must not touch',
-      model: 'Model (optional)', agent: 'Agent (optional)', optPh: 'Empty uses the default', send: 'Ask infra to add it', sent: 'Sent to infra',
-      hint: 'Infra creates the lane, fills in its role file and replies on the Infra tab.',
-      memo: 'Add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
+      model: 'Model (optional)', agent: 'Agent (optional)', optPh: 'Empty uses the default', send: 'Ask the hub to add it', sent: 'Sent to the hub',
+      hint: 'The hub has infra create the lane and fill in its role file, then answers in the chat.',
+      memo: 'Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
     use: { day: 'Today', io: '{i} / {o}', today: 'Today {i} in · {o} out',
@@ -470,11 +465,10 @@ const UI = {
     x: { err: 'Extension error' },
   },
   ko: {
-    tabs: { hub: '허브', infra: '인프라', lanes: '레인', history: '기록' },
-    sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', hubReq: '허브에 요청', sentReq: '최근 요청',
-      infraItems: '열린 항목', infraMemo: '인프라에 요청', sentMemo: '최근 요청', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
+    tabs: { hub: '허브', lanes: '레인', history: '기록' },
+    sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
       usage: '오늘 사용량' },
-    empty: { yours: '정할 게 없어요', infra: '열린 항목이 없어요', reqs: '보낸 요청이 없어요', memos: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
+    empty: { yours: '정할 게 없어요', reqs: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
       reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요' },
     status: { busy: '작업 중', asking: '질문 중', idle: '쉬는 중', closed: '닫힘', unknown: '응답 없음' },
     task: { queued: '대기', running: '진행 중', wrapping: '정리 중', closed: '끝남', cancelled: '취소됨' },
@@ -483,9 +477,10 @@ const UI = {
     verdict: { ok: '결정함', okReview: '승인', no: '반려', hold: '보류', answer: '직접 답', merged: '합침' },
     hist: { decided: '결정', reports: '보고', closed: '작업', memos: '인프라 요청', requests: '허브 요청' },
     memo: { wait: '대기', delivered: '전달됨', replied: '답 옴' },
+    chat: { title: '허브에 요청', open: '대화 열기' },
     label: { why: '나에게 온 이유', question: '질문', options: '선택지', pickMany: '여러 개 선택', note: '메모', answer: '내 답',
       attachments: '첨부', noTask: '맡은 작업 없음', cap: '{u}/{c} 사용 중', paused: '일시 정지', reply: '답', hubSide: '허브', ctx: '컨텍스트' },
-    ph: { answer: '직접 답하거나 메모를 남겨 주세요', review: '비우면 승인돼요', hub: '허브에 맡길 일을 적어 주세요', infra: '바꿀 점을 적어 주세요', token: '토큰' },
+    ph: { answer: '직접 답하거나 메모를 남겨 주세요', review: '비우면 승인돼요', token: '토큰' },
     btn: { decide: '결정', answer: '직접 답', hold: '보류', done: '검수 완료', send: '보내기', more: '더 보기', less: '접기',
       close: '닫기', prev: '이전', next: '다음', login: '로그인', logout: '로그아웃', open: '열기' },
     msg: { saved: '반영했어요', decided: '결정했어요', held: '보류했어요', answered: '답을 보냈어요', reviewed: '검수를 마쳤어요', sent: '보냈어요', fail: '보내지 못했어요',
@@ -494,16 +489,15 @@ const UI = {
     login: { title: '로그인' },
     ws: { title: '워크스페이스', local: '로컬 전용', running: '실행 중', stopped: '멈춤' },
     lang: { title: '언어', note: '이 기기에서 보드 버튼 언어만 바뀌어요. 에이전트는 워크스페이스 언어로 계속 써요.' },
-    reach: { title: '보드가 이 컴퓨터에서만 열려요', body: '아직 폰에서는 들어올 수 없어요. 같은 Wi-Fi 로그인, Tailscale, Cloudflare, 서버 중 맞는 방법을 인프라가 설정해 줄 수 있어요.', ask: '인프라에 설정 요청',
-      memo: '폰에서 보드를 열 수 있게 해 주세요. 이 컴퓨터에 맞는 방법(`dah guide lan`, `tailscale`, `cloudflare`, `aws`)을 비교해서 추천과 함께 결정 항목으로 올려 주고, 제가 고른 방법으로 설정해 주세요.' },
-    tip: { show: '도움말', infra: '이 서비스는 쓰는 역량만큼 마음껏 발전시킬 수 있어요. 업무에 필요한 기능이나 도구가 있으면 인프라에 요청해서 적극적으로 넣어 보세요.' },
+    reach: { title: '보드가 이 컴퓨터에서만 열려요', body: '아직 폰에서는 들어올 수 없어요. 같은 Wi-Fi 로그인, Tailscale, Cloudflare, 서버 중 맞는 방법을 허브가 인프라에 맡겨 설정해 줄 수 있어요.', ask: '허브에 설정 요청',
+      memo: '인프라가 폰에서 보드를 열 수 있게 해 주세요. 이 컴퓨터에 맞는 방법(`dah guide lan`, `tailscale`, `cloudflare`, `aws`)을 비교해서 추천과 함께 결정 항목으로 올려 주고, 제가 고른 방법으로 설정해 주세요.' },
     lane: { add: '레인 추가', id: '레인 ID', idPh: '예: docs', idHelp: '영문, 숫자, -, _만 써요. 명령어와 파일 이름에 쓰여요.',
       idBad: '영문, 숫자, -, _만 쓸 수 있어요', idDup: '이미 있는 레인 ID예요', runtime: '런타임',
       label: '표시 이름 (선택)', labelPh: '예: 문서', role: '역할',
       rolePh: '맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것',
-      model: '모델 (선택)', agent: '에이전트 (선택)', optPh: '비우면 기본값을 써요', send: '인프라에 추가 요청', sent: '인프라에 요청했어요',
-      hint: '인프라가 레인을 만들고 역할 파일을 채운 뒤 답을 남겨요.',
-      memo: '레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
+      model: '모델 (선택)', agent: '에이전트 (선택)', optPh: '비우면 기본값을 써요', send: '허브에 추가 요청', sent: '허브에 요청했어요',
+      hint: '허브가 인프라에 맡겨 레인을 만들고 역할 파일을 채운 뒤 채팅으로 답해요.',
+      memo: '인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
     use: { day: '오늘', io: '{i} / {o}', today: '오늘 {i} 입력 · {o} 출력',
@@ -511,11 +505,10 @@ const UI = {
     x: { err: '확장 기능 오류' },
   },
   ja: {
-    tabs: { hub: 'ハブ', infra: 'インフラ', lanes: 'レーン', history: '履歴' },
-    sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', hubReq: 'ハブに依頼', sentReq: '最近の依頼',
-      infraItems: '未対応の項目', infraMemo: 'インフラに依頼', sentMemo: '最近の依頼', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
+    tabs: { hub: 'ハブ', lanes: 'レーン', history: '履歴' },
+    sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
       usage: '今日の使用量' },
-    empty: { yours: '決めることはありません', infra: '未対応の項目はありません', reqs: 'まだ依頼はありません', memos: 'まだ依頼はありません',
+    empty: { yours: '決めることはありません', reqs: 'まだ依頼はありません',
       tasks: '進行中の作業はありません', reports: 'まだ報告はありません', lanes: 'レーンがありません', hist: 'まだありません', loading: '読み込み中',
       end: 'ここまでです' },
     status: { busy: '作業中', asking: '質問中', idle: '待機中', closed: '停止', unknown: '応答なし' },
@@ -525,10 +518,10 @@ const UI = {
     verdict: { ok: '決定済み', okReview: '承認', no: '差し戻し', hold: '保留', answer: '自分で回答', merged: '統合' },
     hist: { decided: '決定', reports: '報告', closed: '作業', memos: 'インフラへの依頼', requests: 'ハブへの依頼' },
     memo: { wait: '待ち', delivered: '届いた', replied: '返信あり' },
+    chat: { title: 'ハブに依頼', open: 'やり取りを開く' },
     label: { why: 'あなたに来た理由', question: '質問', options: '選択肢', pickMany: '複数選択可', note: 'メモ', answer: '回答',
       attachments: '添付', noTask: '担当作業なし', cap: '{u}/{c} 使用中', paused: '一時停止', reply: '返信', hubSide: 'ハブ', ctx: 'コンテキスト' },
-    ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', hub: 'ハブに任せたいことを書いてください',
-      infra: '変えたい点を書いてください', token: 'トークン' },
+    ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', token: 'トークン' },
     btn: { decide: '決定', answer: '自分で回答', hold: '保留', done: '確認完了', send: '送信', more: 'もっと見る', less: '閉じる',
       close: '閉じる', prev: '前へ', next: '次へ', login: 'ログイン', logout: 'ログアウト', open: '開く' },
     msg: { saved: '反映しました', decided: '決定しました', held: '保留しました', answered: '回答を送りました', reviewed: '確認しました', sent: '送信しました',
@@ -537,16 +530,15 @@ const UI = {
     login: { title: 'ログイン' },
     ws: { title: 'ワークスペース', local: 'ローカル専用', running: '稼働中', stopped: '停止中' },
     lang: { title: '言語', note: 'この端末のボタン表示だけが変わります。エージェントはワークスペースの言語で書き続けます。' },
-    reach: { title: 'ボードはこのパソコンでしか開けません', body: 'まだスマホからは入れません。同じ Wi-Fi でのログイン、Tailscale、Cloudflare、サーバーのうち合う方法をインフラが設定できます。', ask: 'インフラに設定を依頼',
-      memo: 'スマホからボードを開けるようにしてください。このパソコンに合う方法(`dah guide lan`、`tailscale`、`cloudflare`、`aws`)を比べ、おすすめ付きで決定項目を出し、私が選んだ方法で設定してください。' },
-    tip: { show: 'ヒント', infra: 'このサービスは、使いこなす力しだいでどこまでも育てられます。仕事に必要な機能やツールがあれば、インフラに依頼してどんどん取り入れてみてください。' },
+    reach: { title: 'ボードはこのパソコンでしか開けません', body: 'まだスマホからは入れません。同じ Wi-Fi でのログイン、Tailscale、Cloudflare、サーバーのうち合う方法をハブがインフラに頼んで設定できます。', ask: 'ハブに設定を依頼',
+      memo: 'インフラで、スマホからボードを開けるようにしてください。このパソコンに合う方法(`dah guide lan`、`tailscale`、`cloudflare`、`aws`)を比べ、おすすめ付きで決定項目を出し、私が選んだ方法で設定してください。' },
     lane: { add: 'レーンを追加', id: 'レーン ID', idPh: '例: docs', idHelp: '英数字と - _ だけ使えます。コマンドとファイル名に使われます。',
       idBad: '英数字と - _ だけ使えます', idDup: 'この ID のレーンはすでにあります', runtime: 'ランタイム',
       label: '表示名(任意)', labelPh: '例: ドキュメント', role: '役割',
       rolePh: '担当範囲、扱うファイル、完了の条件、触れてはいけないもの',
-      model: 'モデル(任意)', agent: 'エージェント(任意)', optPh: '空欄なら既定値を使います', send: 'インフラに追加を依頼', sent: 'インフラに依頼しました',
-      hint: 'インフラがレーンを作り、役割ファイルを埋めてからインフラタブで返信します。',
-      memo: 'レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
+      model: 'モデル(任意)', agent: 'エージェント(任意)', optPh: '空欄なら既定値を使います', send: 'ハブに追加を依頼', sent: 'ハブに依頼しました',
+      hint: 'ハブがインフラに頼んでレーンを作り、役割ファイルを埋めてからチャットで返信します。',
+      memo: 'インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
     use: { day: '今日', io: '{i} / {o}', today: '今日 入力 {i} · 出力 {o}',
@@ -554,11 +546,10 @@ const UI = {
     x: { err: '拡張機能のエラー' },
   },
   zh: {
-    tabs: { hub: '中枢', infra: '基础设施', lanes: '通道', history: '记录' },
-    sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', hubReq: '交给中枢', sentReq: '最近的请求',
-      infraItems: '待处理事项', infraMemo: '向基础设施提请求', sentMemo: '最近的请求', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
+    tabs: { hub: '中枢', lanes: '通道', history: '记录' },
+    sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
       usage: '今日用量' },
-    empty: { yours: '没有待决定的事', infra: '没有待处理事项', reqs: '还没有请求', memos: '还没有请求', tasks: '没有进行中的任务',
+    empty: { yours: '没有待决定的事', reqs: '还没有请求', tasks: '没有进行中的任务',
       reports: '还没有报告', lanes: '没有通道', hist: '暂无内容', loading: '加载中', end: '就这些' },
     status: { busy: '工作中', asking: '提问中', idle: '空闲', closed: '已关闭', unknown: '无响应' },
     task: { queued: '排队中', running: '进行中', wrapping: '收尾中', closed: '已完成', cancelled: '已取消' },
@@ -567,9 +558,10 @@ const UI = {
     verdict: { ok: '已决定', okReview: '已批准', no: '已驳回', hold: '暂缓', answer: '自行回答', merged: '已合并' },
     hist: { decided: '决定', reports: '报告', closed: '任务', memos: '基础设施请求', requests: '中枢请求' },
     memo: { wait: '等待中', delivered: '已送达', replied: '已回复' },
+    chat: { title: '向中枢提请求', open: '打开对话' },
     label: { why: '为什么交给你', question: '问题', options: '选项', pickMany: '可多选', note: '备注', answer: '回答',
       attachments: '附件', noTask: '暂无任务', cap: '{u}/{c} 使用中', paused: '已暂停', reply: '回复', hubSide: '中枢', ctx: '上下文' },
-    ph: { answer: '写下你的回答或备注', review: '留空即批准', hub: '想让中枢做什么?', infra: '想改什么?', token: '访问令牌' },
+    ph: { answer: '写下你的回答或备注', review: '留空即批准', token: '访问令牌' },
     btn: { decide: '决定', answer: '自己回答', hold: '暂缓', done: '审核完成', send: '发送', more: '更多', less: '收起',
       close: '关闭', prev: '上一张', next: '下一张', login: '登录', logout: '退出', open: '打开' },
     msg: { saved: '已更新', decided: '已决定', held: '已暂缓', answered: '回答已发送', reviewed: '审核完成', sent: '已发送', fail: '发送失败',
@@ -578,16 +570,15 @@ const UI = {
     login: { title: '登录' },
     ws: { title: '工作区', local: '仅限本机', running: '运行中', stopped: '已停止' },
     lang: { title: '语言', note: '只改变本设备上看板的按钮语言。代理仍用工作区的语言写作。' },
-    reach: { title: '看板只能在这台电脑上打开', body: '手机还进不来。基础设施可以帮你设置同一 Wi-Fi 登录、Tailscale、Cloudflare 或服务器。', ask: '请基础设施设置',
-      memo: '让我能在手机上打开看板。比较适合这台电脑的方式(`dah guide lan`、`tailscale`、`cloudflare`、`aws`),附上推荐发一个决定项,然后按我选的方式设置。' },
-    tip: { show: '提示', infra: '这个服务你用得多深,就能发展得多远。工作中需要什么功能或工具,就向基础设施提请求,积极把它加进来吧。' },
+    reach: { title: '看板只能在这台电脑上打开', body: '手机还进不来。中枢可以让基础设施帮你设置同一 Wi-Fi 登录、Tailscale、Cloudflare 或服务器。', ask: '请中枢设置',
+      memo: '请基础设施让我能在手机上打开看板。比较适合这台电脑的方式(`dah guide lan`、`tailscale`、`cloudflare`、`aws`),附上推荐发一个决定项,然后按我选的方式设置。' },
     lane: { add: '添加通道', id: '通道 ID', idPh: '例如 docs', idHelp: '只能用字母、数字、- 和 _,会用在命令和文件名里。',
       idBad: '只能用字母、数字、- 和 _', idDup: '已有这个 ID 的通道', runtime: '运行时',
       label: '显示名称(可选)', labelPh: '例如 文档', role: '职责',
       rolePh: '负责什么、处理哪些文件、怎样算完成、不能碰什么',
-      model: '模型(可选)', agent: '代理(可选)', optPh: '留空则用默认值', send: '请基础设施添加', sent: '已发给基础设施',
-      hint: '基础设施会创建通道、填好职责文件,然后在基础设施页回复。',
-      memo: '添加通道请求: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
+      model: '模型(可选)', agent: '代理(可选)', optPh: '留空则用默认值', send: '请中枢添加', sent: '已发给中枢',
+      hint: '中枢会让基础设施创建通道、填好职责文件,然后在聊天里回复。',
+      memo: '请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
     use: { day: '今天', io: '{i} / {o}', today: '今天 输入 {i} · 输出 {o}',
@@ -595,11 +586,10 @@ const UI = {
     x: { err: '扩展出错' },
   },
   es: {
-    tabs: { hub: 'Hub', infra: 'Infra', lanes: 'Carriles', history: 'Historial' },
-    sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', hubReq: 'Pedir al hub', sentReq: 'Peticiones recientes',
-      infraItems: 'Elementos abiertos', infraMemo: 'Petición a infra', sentMemo: 'Peticiones recientes', lanes: 'Carriles', tasks: 'Tareas en curso',
+    tabs: { hub: 'Hub', lanes: 'Carriles', history: 'Historial' },
+    sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', lanes: 'Carriles', tasks: 'Tareas en curso',
       reports: 'Informes recientes', usage: 'Uso de hoy' },
-    empty: { yours: 'Nada que decidir', infra: 'Sin elementos abiertos', reqs: 'Aún no hay peticiones', memos: 'Aún no hay peticiones',
+    empty: { yours: 'Nada que decidir', reqs: 'Aún no hay peticiones',
       tasks: 'No hay tareas en curso', reports: 'Aún no hay informes', lanes: 'Sin carriles', hist: 'Aún no hay nada', loading: 'Cargando',
       end: 'Eso es todo' },
     status: { busy: 'Trabajando', asking: 'Preguntando', idle: 'Libre', closed: 'Cerrado', unknown: 'Sin respuesta' },
@@ -609,10 +599,10 @@ const UI = {
     verdict: { ok: 'Decidido', okReview: 'Aprobado', no: 'Rechazado', hold: 'En espera', answer: 'Respondido', merged: 'Unido' },
     hist: { decided: 'Decididos', reports: 'Informes', closed: 'Tareas', memos: 'Peticiones a infra', requests: 'Peticiones al hub' },
     memo: { wait: 'Esperando', delivered: 'Entregada', replied: 'Respondida' },
+    chat: { title: 'Petición al hub', open: 'Abrir la conversación' },
     label: { why: 'Por qué te llega', question: 'Pregunta', options: 'Opciones', pickMany: 'Varias posibles', note: 'Nota', answer: 'Respuesta',
       attachments: 'Adjuntos', noTask: 'Sin tarea', cap: '{u}/{c} ocupados', paused: 'En pausa', reply: 'Respuesta', hubSide: 'Hub', ctx: 'contexto' },
-    ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', hub: '¿Qué debe hacer el hub?', infra: '¿Qué debe cambiar?',
-      token: 'Token de acceso' },
+    ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', token: 'Token de acceso' },
     btn: { decide: 'Decidir', answer: 'Responder yo', hold: 'Esperar', done: 'Revisión hecha', send: 'Enviar', more: 'Más', less: 'Menos',
       close: 'Cerrar', prev: 'Anterior', next: 'Siguiente', login: 'Entrar', logout: 'Salir', open: 'Abrir' },
     msg: { saved: 'Guardado', decided: 'Decidido', held: 'Puesto en espera', answered: 'Respuesta enviada', reviewed: 'Revisión hecha', sent: 'Enviado',
@@ -621,16 +611,15 @@ const UI = {
     login: { title: 'Entrar' },
     ws: { title: 'Espacios de trabajo', local: 'Solo local', running: 'En marcha', stopped: 'Detenido' },
     lang: { title: 'Idioma', note: 'Cambia solo los botones del tablero en este dispositivo. Los agentes siguen escribiendo en el idioma del espacio.' },
-    reach: { title: 'Solo este ordenador abre el tablero', body: 'Tu móvil aún no llega. Infra puede configurarte acceso por Wi-Fi, Tailscale, Cloudflare o un servidor.', ask: 'Pedir a infra que lo configure',
-      memo: 'Haz que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija.' },
-    tip: { show: 'Consejo', infra: 'Este tablero crece tanto como tú lo lleves. ¿Necesitas una función o una herramienta para tu trabajo? Pídesela a infra y que la incorpore.' },
+    reach: { title: 'Solo este ordenador abre el tablero', body: 'Tu móvil aún no llega. El hub puede encargar a infra que te configure acceso por Wi-Fi, Tailscale, Cloudflare o un servidor.', ask: 'Pedir al hub que lo configure',
+      memo: 'Que infra haga que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija.' },
     lane: { add: 'Añadir un carril', id: 'ID del carril', idPh: 'p. ej. docs', idHelp: 'Letras, números, - y _. Se usa en comandos y nombres de archivo.',
       idBad: 'Usa solo letras, números, - y _', idDup: 'Ya existe un carril con este ID', runtime: 'Runtime',
       label: 'Nombre visible (opcional)', labelPh: 'p. ej. Docs', role: 'Rol',
       rolePh: 'Qué le toca, con qué archivos trabaja, cuándo está hecho, qué no debe tocar',
-      model: 'Modelo (opcional)', agent: 'Agente (opcional)', optPh: 'Vacío usa el valor por defecto', send: 'Pedir a infra que lo añada',
-      sent: 'Enviado a infra', hint: 'Infra crea el carril, rellena su archivo de rol y responde en la pestaña Infra.',
-      memo: 'Añadir un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
+      model: 'Modelo (opcional)', agent: 'Agente (opcional)', optPh: 'Vacío usa el valor por defecto', send: 'Pedir al hub que lo añada',
+      sent: 'Enviado al hub', hint: 'El hub encarga a infra crear el carril y rellenar su archivo de rol, y responde en el chat.',
+      memo: 'Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
     use: { day: 'Hoy', io: '{i} / {o}',
@@ -642,14 +631,13 @@ const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', e
 // Product names stay as they are in every language.
 const RUNTIMES = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
 const LANE_ID = /^[A-Za-z0-9_-]+$/;
-const TABS = ['hub', 'infra', 'lanes', 'history'];
+const TABS = ['hub', 'lanes', 'history'];
 const HIST_KINDS = ['decided', 'reports', 'closed', 'memos', 'requests'];
 const WS_MS = 30000;
 const POLL_MS = 5000;
 const IMG = /\.(png|jpe?g|gif|webp|avif|svg)$/i, VID = /\.(mp4|webm|mov|m4v)$/i, TXT = /\.(md|txt|json|log)$/i;
 const ICON = {
   hub: 'M3 12l2-7h14l2 7v7H3zM3 12h5l2 3h4l2-3h5',
-  infra: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 4v6M9 14v6',
   lanes: 'M4 5h16v5H4zM4 14h16v5H4z',
   history: 'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   chev: 'M9 5l7 7-7 7', prev: 'M15 5l-7 7 7 7', next: 'M9 5l7 7-7 7',
@@ -781,7 +769,7 @@ function asksFirst(list) { return [...list.filter(x => x.question).sort(newest),
 function itemById(id) { return (S.data ? S.data.items.find(x => x.id === id) : null) || S.extra[id]; }
 function normalize(j) {
   for (const k of ['items', 'tasks', 'reports', 'lanes']) if (!Array.isArray(j[k])) j[k] = [];
-  j.memos = { infra: [], hub: [], ...(j.memos || {}) };
+  j.memos = { hub: [], ...(j.memos || {}) };
   j.counts = j.counts || {};
   return j;
 }
@@ -852,12 +840,12 @@ function closeSheet() {
 function render() {
   const xt = xTab(S.view), builtin = TABS.includes(S.view);
   if (!builtin && !xt && X.ready) S.view = 'hub';  // an extension tab this workspace no longer has
-  renderTop(); renderNav();
+  renderTop(); renderNav(); renderChat();
   const v = viewEl(S.view);
   for (const el of [...TABS.map(t => $('#v-' + t)), ...[...X.tabs.values()].map(t => t.el), X.wait]) if (el) el.classList.toggle('hidden', el !== v);
   if (!S.data || !TABS.includes(S.view) && !xt) { v._lang = null; paint(v, 'loading' + LANG, () => h('div', { class: 'empty' }, L.empty.loading)); }
   else if (xt) xPaint(v, xt.id, xt.render);
-  else { ({ hub: viewHub, infra: viewInfra, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
+  else { ({ hub: viewHub, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
   renderSheet();
 }
 function viewEl(view) {
@@ -869,7 +857,7 @@ function viewEl(view) {
 }
 function counts() {
   const items = S.data ? S.data.items.filter(forHuman) : [];
-  return { hub: items.filter(it => it.lane !== 'infra').length, infra: items.filter(it => it.lane === 'infra').length };
+  return { hub: items.length };
 }
 function renderTop() {
   const d = D(), name = d ? d.title : '', many = S.ws.length > 1;
@@ -879,7 +867,7 @@ function renderTop() {
     : name);
   const lb = $('#langbtn'); lb.textContent = LANG.toUpperCase(); lb.setAttribute('aria-label', L.lang.title);
   const stop = $('#stopped'); stop.textContent = L.msg.stopped; stop.classList.toggle('hidden', !(d && d.running === false));
-  const n = counts(), total = n.hub + n.infra;
+  const n = counts(), total = n.hub;
   document.title = (total ? `(${total}) ` : '') + (d ? d.title : '');
   $('#me').textContent = d && d.me ? d.me.name : '';
   const so = $('#signout');
@@ -936,28 +924,30 @@ function cardList(list, emptyText) {
   return list.length ? h('div', { class: 'stack' }, list.map(itemCard)) : empty(emptyText);
 }
 
-// ---------- composer + memos ----------
-function composer(to, title, ph, tip) {
-  const ta = h('textarea', { placeholder: ph, 'aria-label': title, rows: '3' });
-  const btn = h('button', { class: 'btn-s', type: 'button', disabled: true }, L.btn.send);
-  ta.addEventListener('input', () => { btn.disabled = !ta.value.trim(); });
+// ---------- pinned chat ----------
+// One request box fixed above the nav on every tab; it writes to the hub. The textarea lives in the page, not in a view, so typing survives repaints.
+const chatLast = () => { const m = ((S.data && S.data.memos.hub) || []).find(x => (x.replies || []).length); return m ? m.replies[m.replies.length - 1].text : ''; };
+function renderChat() {
+  const box = $('#chat'), ta = $('#chat-ta'), last = $('#chat-last'), txt = S.data ? chatLast().replace(/\s+/g, ' ').trim() : '';
+  box.classList.toggle('hidden', !S.data);
+  ta.placeholder = L.chat.title; ta.setAttribute('aria-label', L.chat.title);
+  $('#chat-send').textContent = L.btn.send;
+  last.textContent = txt; last.classList.toggle('hidden', !txt);
+  last.setAttribute('aria-label', `${L.chat.open}: ${txt}`);
+  document.body.classList.toggle('has-last', !!txt);
+}
+function initChat() {
+  const ta = $('#chat-ta'), btn = $('#chat-send');
+  ta.addEventListener('input', () => { btn.disabled = !ta.value.trim(); ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; });
   btn.addEventListener('click', async () => {
     const text = ta.value.trim();
     if (!text || btn.disabled) return;
     btn.disabled = true;
-    try { await post(BASE + 'api/memo', { to, text }); ta.value = ''; toast(L.msg.sent); refresh(); }
+    try { await post(BASE + 'api/memo', { to: 'hub', text }); ta.value = ''; ta.style.height = ''; toast(L.msg.sent); refresh(); }
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     btn.disabled = !ta.value.trim();
   });
-  const box = h('div', { class: 'memo-box' }, ta, h('div', { class: 'bar' }, btn));
-  if (!tip) return sec(title, null, box);
-  // A tap-to-open tip under the header (works on touch; open state lives in S so a repaint keeps it).
-  const key = 'tip:' + to, on = () => !!S.open[key];
-  const note = h('div', { class: 'tip' + (on() ? '' : ' hidden'), id: 'tip-' + to }, tip);
-  const ib = h('button', { class: 'info', type: 'button', 'aria-label': L.tip.show, 'aria-controls': 'tip-' + to, 'aria-expanded': String(on()),
-    onclick: () => { S.open[key] = !on(); note.classList.toggle('hidden', !on()); ib.setAttribute('aria-expanded', String(on())); } },
-    h('span', null, svg(ICON.info)));
-  return h('section', { class: 'sec' }, h('div', { class: 'sec-h' }, h('h2', null, title), ib), note, box);
+  $('#chat-last').addEventListener('click', () => openMenu('thread'));
 }
 function clampToggle(key, el) {
   const long = el.textContent.length > 220 || el.textContent.split('\n').length > 5;
@@ -979,16 +969,12 @@ function memoRow(m) {
     reps.map((r, i) => h('div', { class: 'reply' }, h('div', { class: 'meta' }, h('span', null, L.label.reply), when(r.created)),
       clampToggle(`r${m.id}.${i}`, md(r.text)))));
 }
-function memoSec(title, list, emptyText) {
-  return sec(title, null, list.length ? h('div', { class: 'sent' }, list.map(memoRow)) : empty(emptyText));
-}
-
 // ---------- hub tab ----------
 function viewHub() {
   const v = $('#v-hub'), d = D(), K = tick();
   shell(v, () => [h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
-    composer('hub', L.sec.hubReq, L.ph.hub), h('div', { id: 'hub-sent' })]);
-  const mine = d.items.filter(it => forHuman(it) && it.lane !== 'infra');
+    h('div', { id: 'hub-reach' })]);
+  const mine = d.items.filter(forHuman);
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
   const hub = lanes().find(l => l.lane === 'hub');
   paint($('#hub-doing'), K + JSON.stringify(hub), () => hub ? doingCard(hub) : null);
@@ -996,7 +982,7 @@ function viewHub() {
   paint($('#hub-items'), K + JSON.stringify(rest), () => sec(L.sec.yours, rest.length, cardList(rest, L.empty.yours)));
   const side = d.items.filter(it => isOpen(it) && it.audience === 'hub').sort(newest);
   paint($('#hub-handling'), K + S.hubOpen + JSON.stringify(side), () => side.length ? handling(side) : null);
-  paint($('#hub-sent'), K + JSON.stringify(d.memos.hub), () => memoSec(L.sec.sentReq, d.memos.hub, L.empty.reqs));
+  paint($('#hub-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
 }
 // ---------- menus ----------
 function menuHead(title) {
@@ -1004,6 +990,7 @@ function menuHead(title) {
     h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
 }
 function menuBody() {
+  if (S.menu === 'thread') { const list = S.data.memos.hub; return list.length ? [h('div', { class: 'sent' }, list.map(memoRow))] : [empty(L.empty.reqs)]; }
   if (S.menu === 'lang') return [h('div', { class: 'menu', role: 'listbox' }, Object.entries(LANGS).map(([c, nm]) =>
     h('button', { class: 'mrow' + (c === LANG ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': String(c === LANG), lang: c, onclick: () => chooseLang(c) },
       h('div', { class: 'body' }, h('div', { class: 'nm' }, nm), h('div', { class: 'sub' }, c.toUpperCase())), c === LANG ? svg(ICON.check, 'ck') : null))),
@@ -1029,21 +1016,11 @@ function handling(list) {
   return h('section', { class: 'sec' }, h('div', { class: 'list' }, tog, S.hubOpen ? list.map(itemRow) : null));
 }
 
-// ---------- infra tab ----------
-function viewInfra() {
-  const v = $('#v-infra'), d = D(), K = tick();
-  shell(v, () => [h('div', { id: 'inf-reach' }), h('div', { id: 'inf-items' }), composer('infra', L.sec.infraMemo, L.ph.infra, L.tip.infra), h('div', { id: 'inf-sent' })]);
-  const items = asksFirst(d.items.filter(it => isOpen(it) && it.lane === 'infra'));
-  paint($('#inf-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
-  paint($('#inf-items'), K + JSON.stringify(items), () => sec(L.sec.infraItems, items.length, cardList(items, L.empty.infra)));
-  paint($('#inf-sent'), K + JSON.stringify(d.memos.infra), () => memoSec(L.sec.sentMemo, d.memos.infra, L.empty.memos));
-}
-
 function reachCard() {
   const btn = h('button', { class: 'btn-s', type: 'button', disabled: !!S.busy.reach, onclick: async () => {
     if (S.busy.reach) return;
     S.busy.reach = true; render();
-    try { await post(BASE + 'api/memo', { to: 'infra', text: L.reach.memo }); toast(L.msg.sent); }
+    try { await post(BASE + 'api/memo', { to: 'hub', text: L.reach.memo }); toast(L.msg.sent); }
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     S.busy.reach = false; refresh();
   } }, L.reach.ask);
@@ -1172,7 +1149,7 @@ function laneAdd() {
     const text = memoText();
     st.busy = true; sync();
     try {
-      await post(BASE + 'api/memo', { to: 'infra', text });
+      await post(BASE + 'api/memo', { to: 'hub', text });
       for (const el of [id, lbl, model, agent, role]) el.value = '';
       st.rt = def; expand(false); tog.focus(); toast(L.lane.sent); refresh();
     } catch (e) { if (e.status !== 401) toast(e.message, true); }
@@ -1259,8 +1236,9 @@ function closeSheetDom() {
 }
 function sheetView() {
   if (S.menu) {
-    const title = S.menu === 'lang' ? L.lang.title : L.ws.title;
-    return { id: 'm-' + S.menu, key: [S.menu, S.menu === 'ws' ? S.ws : LANG], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
+    const title = S.menu === 'lang' ? L.lang.title : S.menu === 'thread' ? L.chat.title : L.ws.title;
+    const dep = S.menu === 'ws' ? S.ws : S.menu === 'thread' ? S.data && S.data.memos.hub : LANG;
+    return { id: 'm-' + S.menu, key: [S.menu, dep], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
   }
   const it = S.item !== null ? itemById(S.item) : null;
   if (S.item !== null && !it && S.data) fetchItem(S.item);
@@ -1505,7 +1483,7 @@ function paintLb() {
 // A workspace extends this board from .tower/: the server reports extensions.{css,js} in api/state and serves the
 // files at x/<path>, its routes at api/x/<name>. After the first state load the board adds x/extra.css and
 // x/extra.js (once); extra.js talks to the board only through window.dah:
-//   dah.addSection(tab, id, render)  tab: 'hub' | 'infra' | 'lanes' | 'history'; painted after that tab's own sections
+//   dah.addSection(tab, id, render)  tab: 'hub' | 'lanes' | 'history'; painted after that tab's own sections
 //   dah.addTab(id, label, icon, render)  a nav tab after the built-in ones, opened at #x-<id>
 //   dah.onState(fn)  fn(state) after every state load (and once right after registering)
 // render(state) returns a Node, a string (shown as text), an array of those, or null. The board calls it on every
@@ -1653,6 +1631,7 @@ window.dah = {
   setInterval(() => { if (!document.hidden) load(); }, POLL_MS);
   setInterval(() => { if (!document.hidden) loadWs(); }, WS_MS);
 })();
+initChat();
 setLang(pickLang(''));
 route();
 load().then(loadWs);

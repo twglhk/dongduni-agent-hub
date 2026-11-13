@@ -69,11 +69,32 @@ class LocalModeTest(unittest.TestCase):
         self.assertEqual(code, 409)
         self.assertIn("already decided", body["error"])
 
-    def test_memo_to_infra_and_hub_only(self) -> None:
-        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "infra"}, POST)[0], 200)
+    def test_board_memos_go_to_the_hub_only(self) -> None:
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "hub"}, POST)[0], 200)
+        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "no to"}, POST)[0], 200)  # the hub is the default
+        code, body, _ = self.b.req("POST", "/api/memo", {"text": "hi", "to": "infra"}, POST)
+        self.assertEqual(code, 409)
+        self.assertIn("ask the hub", body["error"])
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "docs"}, POST)[0], 409)
-        self.assertEqual(len(self.b.s.pending(INFRA)), 1)
+        self.assertEqual(self.b.s.pending(INFRA), [])
+        self.assertEqual(len(self.b.s.pending(HUB)), 2)
+
+    def test_board_has_no_infra_tab_and_every_language_has_the_same_keys(self) -> None:
+        import re
+        from pathlib import Path
+        html = (Path(__file__).resolve().parent.parent / "agent_hub" / "board" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("const TABS = ['hub', 'lanes', 'history'];", html)
+        self.assertNotIn('id="v-infra"', html)
+        self.assertIn('id="chat-ta"', html)
+        ui = html[html.index("const UI = {"):html.index("const LANGS =")]
+        blocks = re.split(r"\n  (?=[a-z]{2}: \{\n)", ui)[1:]
+        self.assertEqual(len(blocks), 5)
+
+        def keys(block: str) -> list[str]:  # every key name outside the quoted strings, as a sorted multiset
+            return sorted(re.findall(r"(\w+):", re.sub(r"'(?:[^'\\]|\\.)*'", "''", block.split("\n", 1)[1])))
+        base = keys(blocks[0])
+        for b in blocks[1:]:
+            self.assertEqual(keys(b), base, b[:12])
 
     def test_max_lanes_from_the_board(self) -> None:
         self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"], {"used": 0, "cap": 2, "max": 10})

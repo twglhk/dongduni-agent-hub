@@ -9,7 +9,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
-  POST /api/memo                  {text, to: infra | hub}
+  POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
   *    /api/goals...              410 Gone (goals were removed in 0.8.0)
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
@@ -432,9 +432,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, {"ok": True, "item": it})
                 if path == "/api/memo":
                     text = str(body.get("text") or "").strip()[:4000]
-                    to = str(body.get("to") or INFRA)
-                    if to not in c.lanes or to not in (HUB, INFRA):
-                        raise StoreError("memos go to hub or infra")
+                    to = str(body.get("to") or HUB)
+                    if to == INFRA:
+                        raise StoreError("infra only takes requests from the hub: ask the hub")
+                    if to != HUB or to not in c.lanes:
+                        raise StoreError("requests from the board go to the hub")
                     if not text:
                         raise StoreError("empty memo")
                     mid = st.push(to, who, "memo", text)

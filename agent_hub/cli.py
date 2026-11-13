@@ -310,9 +310,24 @@ def cmd_memo(args: argparse.Namespace) -> None:
             s.reply_memo(args.id, "Passed to the hub.", INFRA)
             print(f"memo #{args.id} → hub")
         else:
-            if me != HUB or args.target != INFRA or INFRA not in c.lanes:
-                raise TowerError("only the hub sends memos, to infra")
-            print(f"memo #{s.push(INFRA, HUB, 'memo', args.text)} → infra")
+            send_infra(c, s, me, args.text, args.approved)
+    except StoreError as e:
+        raise TowerError(str(e))
+
+
+def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None) -> None:
+    """Infra runs only on a hub request; the human's approval, when there is one, travels with it."""
+    if me != HUB or INFRA not in c.lanes:
+        raise TowerError("only the hub sends requests to infra; humans ask the hub")
+    if approved and approved.strip():
+        text = f"{text}\n\nApproved by the human: {approved.strip()}"
+    print(f"memo #{s.push(INFRA, HUB, 'memo', text)} → infra")
+
+
+def cmd_infra(args: argparse.Namespace) -> None:
+    c = cfg()
+    try:
+        send_infra(c, store(c), need(args, c, HUB, INFRA), args.text, args.approved)
     except StoreError as e:
         raise TowerError(str(e))
 
@@ -997,6 +1012,10 @@ def build_parser() -> argparse.ArgumentParser:
     q = msub.add_parser("send")
     q.add_argument("target", choices=(INFRA,))
     q.add_argument("text")
+    q.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
+    p = sub.add_parser("infra", help="hub: ask infra to do something (infra runs only on a hub request)")
+    p.add_argument("text")
+    p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
 
     sub.add_parser("status", help="lanes, tasks and open items")
     p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
@@ -1103,7 +1122,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 HANDLERS = {
     "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "tell": cmd_tell,
-    "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
+    "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
     "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
