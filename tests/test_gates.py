@@ -196,7 +196,7 @@ class GitRepoCases(unittest.TestCase):
         self.assertFalse(gates.linked_worktree(str(self.repo)))
         self.assertIsNone(gates.check("Bash", {"command": "git stash && git reset --hard"}, str(wt), USER, HOME))
         self.assertEqual(verdict("Bash", {"command": "git stash"}, str(self.repo)), "git")
-        self.assertEqual(verdict("Bash", {"command": f'git -C "{self.repo}" stash'}, str(wt)), "git")
+        self.assertEqual(verdict("Bash", {"command": f'git -C "{self.repo.as_posix()}" stash'}, str(wt)), "git")
 
 
 class EnvGate(unittest.TestCase):
