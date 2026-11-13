@@ -35,9 +35,9 @@ class SnapshotTest(unittest.TestCase):
         (self.skills / "render").mkdir()
         (self.skills / "render" / "SKILL.md").write_text("new skill")
         card = self.skills / "layout/references/process/storyboard.md"
-        card.write_text(card.read_text().replace("— v2", "— v3"))
+        card.write_text(card.read_text(encoding="utf-8").replace("— v2", "— v3"), encoding="utf-8")
         frames = self.skills / "layout/references/patterns/frames.md"
-        frames.write_text("# Frames — v2\n\n## Status\n\nconfirmed\n")
+        frames.write_text("# Frames — v2\n\n## Status\n\nconfirmed\n", encoding="utf-8")
         new = self.live(self.t0 + 7 * DAY)
         got = {(c["kind"], c["name"]): (c["from"], c["to"]) for c in engines.diff(old, new)}
         self.assertEqual(got[("skill_changed", "layout")], ("", ""))

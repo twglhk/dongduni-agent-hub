@@ -54,7 +54,7 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
-### 0.8.0 (prepared on branch `port/engines`; not tagged, not published)
+### 0.8.0
 
 A minor release below 1.0, with breaking changes. `agent_hub/__init__.py` is the only place the version is set; `pyproject.toml` reads it.
 

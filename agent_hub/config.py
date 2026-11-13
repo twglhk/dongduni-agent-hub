@@ -224,7 +224,7 @@ def _engines(raw: Any, lanes: dict[str, Lane]) -> dict[str, Engine]:
         if not isinstance(e, dict):
             raise ConfigError(f"engine {eid}: must be an object")
         for key in _ENGINE_PATHS:
-            if e.get(key) and (Path(str(e[key])).is_absolute() or ".." in Path(str(e[key])).parts):
+            if e.get(key) and (Path(str(e[key])).is_absolute() or str(e[key]).startswith(("/", "\\")) or ".." in Path(str(e[key])).parts):
                 raise ConfigError(f"engine {eid}: {key} is a path inside the workspace, got {e[key]!r}")
         if not isinstance(e.get("lanes", []), list):
             raise ConfigError(f"engine {eid}: lanes must be a list of lane ids")
