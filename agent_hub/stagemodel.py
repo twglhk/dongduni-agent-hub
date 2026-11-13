@@ -10,8 +10,9 @@ A brief line always wins. Optional second source: a markdown table named in `tow
 line like `Line: row 4 stage 2-3` (or `Line: #4 stage 2`). A row id is digits or one letter and digits (`4`, `D5`). The table can be an engine's pattern library
 (`engines.py`): the same `model · effort` column. A cell is one `opus/high` for the whole row or
 per-stage entries `1-2 sonnet/medium; 3 opus/high`. Across a range of stages the strongest model and the highest
-effort win. Names are not checked here: whatever the runtime accepts passes through (`opus`, `gpt-5`, ...);
-the rank tables only order the ones they know.
+effort win. Model names: `fable`, `opus`, `sonnet`, `haiku`, or any full id the runtime accepts (`claude-opus-5-5`, `gpt-5`);
+`problems()` flags a bare word that is none of the four aliases (a typo) and an effort outside the five levels.
+The rank tables only order the aliases they know. `guide/MODELS.md` says which to pick.
 
 No table, no cell, or no line gives (None, None) and the lane's own configured model applies.
 """
@@ -23,7 +24,8 @@ from pathlib import Path
 
 from .config import Config
 
-MODEL_RANK = {"haiku": 0, "sonnet": 1, "opus": 2}
+MODEL_RANK = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
+MODEL_ALIASES = tuple(MODEL_RANK)
 EFFORT_RANK = {"low": 0, "medium": 1, "high": 2, "xhigh": 3, "max": 4}
 _EFFORTS = "low|medium|high|xhigh|max"
 _ENTRY = re.compile(rf"^(?:(\d+)(?:\s*-\s*(\d+))?\s*[:=]?\s+)?([\w.\-]+)\s*/\s*({_EFFORTS})$", re.I)
@@ -35,6 +37,17 @@ _EFFORT = re.compile(rf"^\s*effort:\s*({_EFFORTS})\b", re.M | re.I)
 def missing_lines(brief: str) -> list[str]:
     """Which of the brief's `model:` / `effort:` lines are absent."""
     return [n for n, rx in (("model: <name>", _MODEL), ("effort: low|medium|high|xhigh|max", _EFFORT)) if not rx.search(brief)]
+
+
+def problems(model: str | None, effort: str | None) -> list[str]:
+    """What is wrong with a named model or effort: a typo in an alias, an unknown effort. A full id (it has a hyphen,
+    a dot, a slash or a digit) is the runtime's to judge and passes."""
+    out = []
+    if model and model.lower() not in MODEL_ALIASES and not re.search(r"[-./\d]", model):
+        out.append(f"model {model!r}: use fable, opus, sonnet, haiku or a full model id")
+    if effort and effort.lower() not in EFFORT_RANK:
+        out.append(f"effort {effort!r}: use low, medium, high, xhigh or max")
+    return out
 
 
 def _entries(cell: str) -> list[tuple[int, int, str, str]]:

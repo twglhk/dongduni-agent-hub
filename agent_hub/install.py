@@ -13,7 +13,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .config import CONFIG_NAME, HUB, INFRA, TOWER_DIR, Config, free_ports, template
+from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 SHIM_PREFIX = "dah-"
@@ -64,10 +64,19 @@ def _write(path: Path, text: str, force: bool, wrote: list[str], home: Path) -> 
     wrote.append(str(path.relative_to(home)) if home in path.parents else str(path))
 
 
+REQUIRED_LANES = {"research": ("research.md", "opus"), "audit": ("audit.md", "fable")}  # role -> (template, claude model alias)
+
+
+def required_lane_text(role: str, lane: str, skill: str) -> str:
+    return (TEMPLATES / "lanes" / REQUIRED_LANES[role][0]).read_text(encoding="utf-8").replace("{lane}", lane).replace("{skill}", skill)
+
+
 def lane_template(lane: str) -> str:
     name = {HUB: "hub.md", INFRA: "infra.md"}.get(lane)
     if name:
         return (TEMPLATES / "lanes" / name).read_text(encoding="utf-8")
+    if lane in REQUIRED_LANES:
+        return required_lane_text(lane, lane, lane)
     return (TEMPLATES / "lanes" / "team.md").read_text(encoding="utf-8").replace("{lane}", lane)
 
 
@@ -77,6 +86,10 @@ def install(cfg: Config, force: bool = False) -> list[str]:
     _write(home / TOWER_DIR / "PROTOCOL.md", (TEMPLATES / "PROTOCOL.md").read_text(encoding="utf-8"), force, wrote, home)
     for lid in cfg.lanes:
         _write(cfg.instructions(lid), lane_template(lid), force, wrote, home)
+    for role in REQUIRED_LANES:
+        if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE):
+            for path, text in required_skill_files(home, role, role, "this project", "").items():
+                _write(path, text, force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
     ignore_state(home, wrote)
     if not (home / TOWER_DIR / "state" / "board.sha").is_file():
@@ -222,6 +235,8 @@ def shipped() -> dict[str, list[str]]:
 
 
 def _template_key(lane: str) -> str:
+    if lane in REQUIRED_LANES:
+        return f"lanes/{REQUIRED_LANES[lane][0]}"
     return {HUB: "lanes/hub.md", INFRA: "lanes/infra.md"}.get(lane, "lanes/team.md")
 
 
@@ -275,7 +290,7 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
     home, versions = cfg.home, shipped()
     _refresh_file(home / TOWER_DIR / "PROTOCOL.md", versions["PROTOCOL.md"], report, home)
     for lid in cfg.lanes:
-        texts = [t.replace("{lane}", lid) for t in versions[_template_key(lid)]]
+        texts = [t.replace("{lane}", lid).replace("{skill}", lid) for t in versions[_template_key(lid)]]
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
@@ -533,6 +548,19 @@ def remove_tree(path: Path, tries: int = 10) -> None:
 ENGINE_TEMPLATES = TEMPLATES / "engines"
 ENGINE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 REVIEW_ROLE = "review"
+REQUIRED_SKILLS = {"research": "ENGINE-research", "audit": "ENGINE-audit"}
+RESEARCH_ROW = "| {n} | Research note | {id}-research · {id}-research | draft v1 (process/research-note.md) | draft | opus/medium |"
+
+
+def required_skill_files(home: Path, role: str, prefix: str, label: str, skills_dir: str) -> dict[Path, str]:
+    """The skill folder of a required lane: `{prefix}-{role}`, or plain `{role}` when prefix == role (no engine)."""
+    src = ENGINE_TEMPLATES / "required" / "skills" / REQUIRED_SKILLS[role]
+    name = role if prefix == role else f"{prefix}-{role}"
+    out: dict[Path, str] = {}
+    for f in sorted(src.rglob("*.md")):
+        text = f.read_text(encoding="utf-8").replace("{label}", label).replace("ENGINE-" + role, name)
+        out[home / (skills_dir or ".agents/skills") / name / f.relative_to(src).as_posix()] = text
+    return out
 
 
 def engine_kinds() -> list[str]:
@@ -567,6 +595,9 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
     for f in sorted((src / "skills").rglob("*.md")):
         rel = fill(f.relative_to(src / "skills").as_posix())
         files[cfg.home / skills_dir / rel] = fill(f.read_text(encoding="utf-8"))
+    lib = files[lib_path].rstrip("\n")
+    n = max((int(r["n"]) for r in engines_mod.library_rows(lib) if r["n"].isdigit()), default=0) + 1
+    files[lib_path] = lib + "\n" + RESEARCH_ROW.format(n=n, id=eid) + "\n"
     rows = engines_mod.library_rows(files[lib_path])
     roles = {f"{eid}-{r}": t for r, t in meta["lanes"].items()}
     lanes: dict[str, str] = {}
@@ -576,6 +607,10 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
             next(ln for ln in lane_template(lid).splitlines() if ln.startswith("(Infra or the hub")),
             f"{what} It works the {label} pattern library at `{library}`." + "".join(f' Run `skill("{s}")` before each task.' for s in dict.fromkeys(use)))
         lanes[lid] = text
+    for role in REQUIRED_LANES:  # research and the engine auditor come with every engine
+        lid = f"{eid}-{role}"
+        lanes[lid] = required_lane_text(role, lid, lid)
+        files.update(required_skill_files(cfg.home, role, eid, label, skills_dir))
     rid = f"{eid}-{REVIEW_ROLE}"
     lanes[rid] = fill((ENGINE_TEMPLATES / "review-lane.md").read_text(encoding="utf-8"), lane=rid, library=library)
     for lid, text in lanes.items():
@@ -590,4 +625,7 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
     if cap:
         entry["cap"] = cap
     lane_entries = {lid: {"runtime": runtime, "label": lid, "engine": eid} for lid in lanes}
+    if runtime == "claude":
+        for role, (_, model) in REQUIRED_LANES.items():
+            lane_entries[f"{eid}-{role}"]["model"] = model
     return {"entry": entry, "lanes": lane_entries, "files": files}

@@ -28,7 +28,9 @@ Every template also creates `NAME-review`, an engine review lane, and writes:
 
 1. Rename the rows and stages to what your team really ships. A process card is a table: `#`, `Stage`, `Input`, `Output`, `Gate`, `Passed by`, `Pattern card`.
 2. Fill in each pattern card: sources (shipped work at a professional level), the recipe, the checks. The checks are the stage's gate.
-3. Set a model and effort per row in the library's last column (see `stage_table` in tower.json).
+3. Set a model and effort per row in the library's last column (see `stage_table` in tower.json). How to choose: [MODELS.md](MODELS.md) (`dah guide models`).
+
+Every engine also gets two lanes: `NAME-research` (a referenced note against tier-1 sources, on the research-note process card; Opus medium) and `NAME-audit` (reads raw evidence for why a pattern happened and sends the hub cards with predicted effects; Fable high). Their skills are `NAME-research` and `NAME-audit`; edit them like any card. `dah init` creates plain `research` and `audit` lanes the same way.
 4. Run a few tasks with `prepare` and `make` lines (`Line: #1 Deliverable · stage 2 · make`). `make` is refused until the process card says `Status: confirmed` and its pattern cards are confirmed or tuned; the review lane proposes the card changes that get them there.
 5. Read `dah ratings --engine NAME` weekly and tune the lowest-rated stage first, one change at a time.
 

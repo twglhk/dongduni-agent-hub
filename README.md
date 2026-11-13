@@ -157,7 +157,7 @@ model: opus
 effort: high
 ```
 
-Claude and Codex lanes start (and resume) that task's session with them (`--model` and `--effort`, or `-c model_reasoning_effort=`); OpenCode lanes keep the lane's configured model. A brief with neither line uses the lane's `model`.
+Claude and Codex lanes start (and resume) that task's session with them (`--model` and `--effort`, or `-c model_reasoning_effort=`); OpenCode lanes keep the lane's configured model. A brief with neither line uses the lane's `model`. Which model and effort to pick: [guide/MODELS.md](agent_hub/guide/MODELS.md) (`dah guide models`).
 
 Two optional keys in `tower.json` (top level):
 

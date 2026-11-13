@@ -61,6 +61,50 @@ class ScaffoldTest(unittest.TestCase):
                     self.assertTrue(cfg.instructions(lid).is_file(), lid)
                     self.assertEqual(cfg.lanes[lid].engine, eid)
 
+    def test_every_engine_gets_research_and_audit(self) -> None:
+        for kind in engine_kinds():
+            eid = f"{kind}-req"
+            self.tower("engine", "add", eid, "--from", kind, "--runtime", "claude")
+            shown = self.tower("engine", "show", eid)
+            cfg = config_mod.load(self.home)
+            e = cfg.engines[eid]
+            for role, model in (("research", "opus"), ("audit", "fable")):
+                lid = f"{eid}-{role}"
+                self.assertIn(lid, e.lanes)
+                self.assertEqual(cfg.lanes[lid].model, model)
+                self.assertTrue((cfg.home / e.skills / lid / "SKILL.md").is_file(), lid)
+                self.assertIn(f'skill("{lid}")', cfg.instructions(lid).read_text(encoding="utf-8"))
+            rows = engines_mod.build(cfg.home / e.library, cfg.home / e.skills)
+            row = next(r for r in rows if r["type"] == "Research note")
+            self.assertEqual(row["lane"], f"{eid}-research")
+            self.assertEqual(len(row["process"]["stages"]), 4)
+            for s in row["process"]["stages"]:
+                self.assertTrue(s["card"]["exists"], s)
+            self.assertIn(f"{eid}-research", shown)
+            self.assertIn(f"{eid}-audit", shown)
+
+    def test_init_creates_plain_research_and_audit(self) -> None:
+        cfg = config_mod.load(self.home)
+        for lid in ("research", "audit"):
+            self.assertIn(lid, cfg.lanes)
+            self.assertTrue(cfg.instructions(lid).is_file())
+            self.assertTrue((self.home / ".agents/skills" / lid / "SKILL.md").is_file())
+            self.assertIn(f'skill("{lid}")', cfg.instructions(lid).read_text(encoding="utf-8"))
+
+    def test_models_guide_is_shipped(self) -> None:
+        out = self.tower("guide", "models")
+        for word in ("fable", "opus", "sonnet", "haiku", "xhigh"):
+            self.assertIn(word, out)
+
+    def test_task_warns_without_model_lines(self) -> None:
+        self.tower("lane", "add", "docs", "--runtime", "claude")
+        env = {"TOWER_LANE": "hub"}
+        warn = subprocess.run([sys.executable, "-m", "agent_hub", "task", "docs", "--title", "T", "just do it"], cwd=self.home,
+                              env={**os.environ, "TOWER_HOME": str(self.home), "PYTHONPATH": str(ROOT), **env},
+                              capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(warn.returncode, 0, warn.stderr)
+        self.assertIn("no model and no effort line", warn.stderr)
+
     def test_scaffolded_skills_pass_skill_lint(self) -> None:
         try:
             import yaml  # noqa: F401
@@ -70,7 +114,7 @@ class ScaffoldTest(unittest.TestCase):
             self.tower("engine", "add", f"{kind}-two", "--from", kind, "--label", f"{kind.title()} two")
         p = subprocess.run([sys.executable, str(ROOT / "tools" / "skill_lint.py"), str(self.home)], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("scanned 4 skills", p.stdout)  # blank 1, animation 2, marketing 1
+        self.assertIn("scanned 12 skills", p.stdout)  # blank 1, animation 2, marketing 1, research and audit in each of the 3 engines and in the init workspace
         self.assertIn("FAIL 0", p.stdout)
 
     def test_two_engines_do_not_collide_and_an_existing_one_is_refused(self) -> None:
@@ -90,7 +134,7 @@ class ScaffoldTest(unittest.TestCase):
         before = (self.home / ".tower/tower.json").read_text(encoding="utf-8")
         self.assertIn("would overwrite", self.tower("engine", "add", "delta", "--from", "blank", ok=False))
         self.assertEqual((self.home / ".tower/tower.json").read_text(encoding="utf-8"), before)
-        self.assertFalse((self.home / ".agents").exists())
+        self.assertEqual([p.name for p in (self.home / ".agents/skills").glob("delta-*")], [])
 
     def test_cap_and_label_flags_and_the_guide(self) -> None:
         self.tower("engine", "add", "capped", "--from", "blank", "--cap", "tokens-day:5000")

@@ -216,10 +216,18 @@ def cmd_task(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
     need_team(c, args.lane)
-    if c.require_model_lines:
-        from .stagemodel import missing_lines
-        if gap := missing_lines(args.brief):
+    from .stagemodel import missing_lines, problems, resolve, table_for
+    if gap := missing_lines(args.brief):
+        if c.require_model_lines:
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
+        if resolve(table_for(c, args.lane), args.brief) != (None, None) and len(gap) == 2:
+            gap = []  # a `Line:` header that names a library row sets both
+        if gap:
+            print("warning: the brief has no " + " and no ".join(g.split(":")[0] for g in gap) + " line; the lane's own default runs. "
+                  "Pick one on purpose (`dah guide models`).", file=sys.stderr)
+    m, e = resolve(table_for(c, args.lane), args.brief)
+    for bad in problems(m, e):
+        print(f"warning: {bad}", file=sys.stderr)
     from . import engines as engines_mod
     if c.require_line:
         eng = c.engines.get(c.lanes[args.lane].engine)
@@ -979,7 +987,7 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md"}
+    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md", "models": "MODELS.md"}
     path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
         names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
@@ -1300,7 +1308,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--purge", action="store_true", help="also delete .tower/ (config, lane files, extensions, history)")
     p.add_argument("--keep-lanes", action="store_true", help="leave running lane sessions open")
     p = sub.add_parser("guide", help="print the setup playbook, the extension guide, or a guide for reaching the board")
-    p.add_argument("name", nargs="?", help="setup (default), extend, lan, tailscale, cloudflare, aws")
+    p.add_argument("name", nargs="?", help="setup (default), extend, engines, models, lan, tailscale, cloudflare, aws")
     p = sub.add_parser("workspaces", help="workspaces with a tower on this machine (the board switches between them)")
     wsub = p.add_subparsers(dest="sub")
     wsub.add_parser("list")

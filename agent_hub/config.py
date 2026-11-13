@@ -335,6 +335,8 @@ def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web
         "lanes": {
             HUB: {"runtime": hub, "label": "Hub", "args": args[hub]},
             INFRA: {"runtime": infra, "label": "Infra", "args": args[infra]},
+            "research": {"runtime": hub, "label": "Research", "args": args[hub], **({"model": "opus"} if hub == "claude" else {})},
+            "audit": {"runtime": hub, "label": "Engine audit", "args": args[hub], **({"model": "fable"} if hub == "claude" else {})},
         },
     }
     if terminal != "none":
