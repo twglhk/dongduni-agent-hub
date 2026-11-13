@@ -54,6 +54,21 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
+### 0.9.2
+
+A patch release: PROTOCOL takes the project-neutral working rules from Auto Arkham's own tower (docs/audit/0.9.1-starter.md, "Compared with Auto Arkham").
+
+**New** (PROTOCOL.md)
+
+- Hard rules: a denied tool call is not retried; a hook's refusal reason is read and the call fixed; subagents get the full rules in their brief and their results are checked file by file.
+- Lane close-out: delete temp dirs and worktrees before `wrapped`; retry a locked commit or rejected push once; never force-push, rebase or amend.
+- "Shared checkout": reread before writing, stage own hunks, stop only your own PIDs, heavy jobs one at a time.
+- "When to post an item": what is and is not an item, approvals kept apart, evidence on the item, revise open items in place.
+
+**Upgrade**
+
+`dah update` swaps an untouched PROTOCOL.md; an edited one gets `PROTOCOL.md.new` beside it.
+
 ### 0.9.1
 
 A patch release: the starter fix list from `docs/audit/0.9.0-starter.md` section 5.
