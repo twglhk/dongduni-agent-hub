@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import re
 import time
+import types
 from typing import Any, Callable
 
 from . import engines as engines_mod, stagemodel
@@ -261,6 +262,28 @@ class Engine:
 
     def conflict(self, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
         return conflict_of(self.store, task, also)
+
+    def cap_reason(self, task: dict[str, Any]) -> str | None:
+        """Why the task's engine is over its usage cap (None = under it, or no cap). `cap` in tower.json is `tokens-day:N`
+        (tokens in + out today over the engine's lanes) or the name of a function an extension registers in `caps`; that
+        function gets a ctx (cfg, store, log, now, engine) and returns a reason string to hold new tasks, or None."""
+        lane = self.cfg.all_lanes.get(base_lane(str(task["lane"])))
+        eng = self.cfg.engines.get(lane.engine) if lane else None
+        if eng is None or not eng.cap:
+            return None
+        kind, _, arg = eng.cap.partition(":")
+        if kind == "tokens-day":
+            if not arg.strip().isdigit():
+                return None
+            used = sum(u["tokens_in"] + u["tokens_out"] for ln, u in self.store.usage(self.store.day()).items()
+                       if ln in eng.lanes)
+            return f"engine {eng.id} used {used} of {arg.strip()} tokens today (cap)" if used >= int(arg) else None
+        fn = self.ext.table("caps").get(eng.cap)
+        if not callable(fn):
+            return None
+        ctx = types.SimpleNamespace(cfg=self.cfg, store=self.store, log=self.log, now=self.clock(), engine=eng.id)
+        got = self.ext.call(fn, ctx)
+        return f"engine {eng.id} held by cap {eng.cap}: {got}" if got else None
 
     def weight(self, task: dict[str, Any]) -> str:
         """heavy = `paths:` under one of cfg.heavy_paths (takes a max_lanes slot); anything else is light."""
@@ -594,7 +617,7 @@ class Engine:
                 continue  # the lane has its task for this tick
             if len([t for t in started if wt(t) == w]) >= max(0, free_h if w == "heavy" else free_l):
                 continue  # full. A task skipped for a conflict takes no slot, so a later one can start (head-of-line skip)
-            why = self.conflict(nxt, started)
+            why = self.conflict(nxt, started) or self.cap_reason(nxt)
             if why:
                 self.log(f"{lane}: task #{nxt['id']} waits: {why}")
                 continue

@@ -188,9 +188,11 @@ body.has-last{--chat-h:104px}
 .pl .stages{margin:0}
 #v-engine .days{margin-bottom:var(--s6)}
 .stg.now{background:var(--blue-weak);color:var(--blue-ink)}
-.days{display:flex;gap:6px;align-items:flex-end;height:72px}
-.day{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:var(--t6);color:var(--text-3)}
-.day i{display:block;width:100%;min-height:2px;background:var(--blue-weak);border-radius:3px 3px 0 0}
+.days{display:flex;gap:6px;align-items:flex-end;height:96px}
+.day{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:var(--t6);color:var(--text-3)}
+.day .col{flex:1;width:100%;display:flex;align-items:flex-end}
+.day i{display:block;width:100%;min-height:2px;background:var(--blue);border-radius:3px 3px 0 0}
+.day b{font-weight:600;font-size:var(--t6);color:var(--text-2,var(--text));white-space:nowrap;font-variant-numeric:tabular-nums}
 .row.static{cursor:default}
 .sb>.tk{font-size:var(--t5);font-weight:600;line-height:1.45;margin:var(--s2) 0}
 .sb>.tk .id{color:var(--text-3);font-weight:500;margin-right:4px}
@@ -1153,7 +1155,7 @@ function engineBody(d) {
   if (d.notes) out.push(h('div', { class: 'hint' }, d.notes));
   out.push(h('div', { class: 'h3' }, E.usage));
   out.push(h('div', { class: 'days' }, d.usage.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
-    h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` }), h('span', null, x.day.slice(8))))));
+    h('b', null, fmtTok(x.tokens_in + x.tokens_out)), h('div', { class: 'col' }, h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` })), h('span', null, x.day.slice(8))))));
   out.push(sec(E.pipes, d.pipelines.length, d.pipelines.length ? h('div', { class: 'grid' }, d.pipelines.map(pipeCard)) : empty(E.noRows)));
   const ch = d.changes;
   out.push(sec(E.changes, ch.items.length || null, !ch.since ? empty(E.noSnap) : h('div', { class: 'stack' },
@@ -1203,7 +1205,7 @@ function laneSheet(d) {
   out.push(h('div', { class: 'h3' }, L.lv.week));
   const max = Math.max(1, ...d.days.map(x => x.tokens_in + x.tokens_out));
   out.push(h('div', { class: 'days' }, d.days.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
-    h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` }), h('span', null, x.day.slice(8))))));
+    h('b', null, fmtTok(x.tokens_in + x.tokens_out)), h('div', { class: 'col' }, h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` })), h('span', null, x.day.slice(8))))));
   out.push(h('div', { class: 'h3' }, L.lv.recent));
   out.push(d.recent.length ? h('div', { class: 'list' }, d.recent.map(r => h('div', { class: 'row static' }, h('div', { class: 'body' },
     h('div', { class: 'title' }, '#' + r.id + ' ' + r.title),

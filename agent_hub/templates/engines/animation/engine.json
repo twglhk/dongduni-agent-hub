@@ -1,0 +1,10 @@
+{
+  "notes": "Short pieces from script to final render.",
+  "tools": [
+    {
+      "name": "ffmpeg",
+      "note": "cuts, encodes and the loudness pass"
+    }
+  ],
+  "experiments": []
+}

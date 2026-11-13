@@ -14,6 +14,10 @@
       on_notify(ctx, notes)           each push the tower sends people (title, lane, alert, the item's fields)
       runtimes = {"name": cls}        an agent runtime: a subclass of runtimes.Adapter, used as "runtime": "name"
       terminals = {"name": cls}       a terminal app for lane windows: a subclass of runtimes.Host
+      caps = {"name": fn}             a usage cap, used as `"cap": "name"` on an engine in tower.json; fn(ctx) returns a
+                                      reason to hold that engine's queued tasks, or None. ctx: cfg, store, log, now, engine
+      caps = {"name": fn}             a usage cap, used as `"cap": "name"` on an engine in tower.json; fn(ctx) returns a
+                                      reason to hold that engine's queued tasks, or None. ctx: cfg, store, log, now, engine
 
 Built-in routes and engine decisions are the contract and cannot be overridden. A failing extension is logged and
 skipped; it never stops the board or the tower. Files are reloaded when they change.

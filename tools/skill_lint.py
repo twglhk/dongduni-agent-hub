@@ -6,7 +6,7 @@ the checks are opencode's: https://opencode.ai/docs/skills/
 
     python3 tools/skill_lint.py [repo_root]
 
-Skills are found by globbing `.opencode/skills/*/` (never a list, so a new
+Skills are found by globbing `.opencode/skills/*/` and `.agents/skills/*/` (never a list, so a new
 skill can't slip past). Per skill:
   FAIL  no SKILL.md; frontmatter missing or not YAML; `name` missing, not
         ^[a-z0-9]+(-[a-z0-9]+)*$, over 64 chars, or not the folder name;
@@ -33,6 +33,7 @@ import yaml
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 KNOWN_KEYS = {"name", "description", "license", "compatibility", "metadata"}
+SKILL_DIRS = (".opencode/skills", ".agents/skills")  # `.agents/skills` is where `dah engine add` puts an engine's skills
 BODY_BUDGET = 150
 REF_BUDGET = 300
 
@@ -147,10 +148,10 @@ def lint_rule(rule: Path, root: Path) -> tuple[str, list[str]]:
 
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    skills = sorted(p for p in (root / ".opencode/skills").glob("*/") if p.is_dir())
+    skills = sorted(p for d in SKILL_DIRS for p in (root / d).glob("*/") if p.is_dir())
     rules = sorted((root / ".claude/rules").glob("*.md"))
     if not skills:
-        print(f"NOT ASSESSED: no skill folders under {root / '.opencode/skills'}")
+        print(f"NOT ASSESSED: no skill folders under {' or '.join(str(root / d) for d in SKILL_DIRS)}")
         return 2
     results = [(f"skill {p.name}", *lint_skill(p)) for p in skills]
     results += [(f"rule {p.name}", *lint_rule(p, root)) for p in rules]

@@ -83,6 +83,7 @@ class Engine:
     library: str = ""            # pattern library markdown, relative to home
     skills: str = ""             # skills folder, relative to home
     map: str = ""                # optional hand-written engine.json, relative to home
+    cap: str = ""                # optional usage cap: "tokens-day:N" (built in) or a name an extension registers in `caps`
     implicit: bool = False       # made up because tower.json declares no `engines`
 
 
@@ -226,7 +227,8 @@ def _engines(raw: Any, lanes: dict[str, Lane]) -> dict[str, Engine]:
                 raise ConfigError(f"engine {eid}: {key} is a path inside the workspace, got {e[key]!r}")
         if not isinstance(e.get("lanes", []), list):
             raise ConfigError(f"engine {eid}: lanes must be a list of lane ids")
-        out[eid] = Engine(id=eid, label=str(e.get("label") or eid), lanes=[], **{k: str(e.get(k) or "") for k in _ENGINE_PATHS})
+        out[eid] = Engine(id=eid, label=str(e.get("label") or eid), lanes=[], cap=str(e.get("cap") or "").strip(),
+                          **{k: str(e.get(k) or "") for k in _ENGINE_PATHS})
         for lid in e.get("lanes") or []:
             ln = lanes.get(str(lid))
             if ln is None or ln.kind != "team":

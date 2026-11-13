@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -503,3 +504,68 @@ def remove_tree(path: Path, tries: int = 10) -> None:
             if i == tries - 1:
                 raise
             time.sleep(0.5)
+
+
+# ---------------------------------------------------------------- engine scaffolds (`dah engine add NAME --from KIND`)
+
+ENGINE_TEMPLATES = TEMPLATES / "engines"
+ENGINE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+REVIEW_ROLE = "review"
+
+
+def engine_kinds() -> list[str]:
+    return sorted(p.name for p in ENGINE_TEMPLATES.iterdir() if (p / "kind.json").is_file()) if ENGINE_TEMPLATES.is_dir() else []
+
+
+def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, skills: str = "", cap: str = "") -> dict:
+    """Create engine `eid` from template `kind`: a library, an `engine.json`, skills with process and pattern cards (all
+    `draft`), a lane per role and an engine review lane, with their instruction files. Nothing is overwritten: an existing
+    file or engine is an error before anything is written. Returns {"entry", "lanes", "files"}; the caller writes tower.json."""
+    from . import engines as engines_mod
+    if not ENGINE_ID.match(eid):
+        raise ValueError("engine id for --from: lowercase letters, digits and single hyphens (it prefixes the skill and lane names)")
+    if kind not in engine_kinds():
+        raise ValueError(f"--from: one of {', '.join(engine_kinds())}")
+    if any(c in label for c in '"\\\n:#'):
+        raise ValueError('--label: no quotes, backslashes, colons, # or line breaks (it goes into skill descriptions)')
+    src = ENGINE_TEMPLATES / kind
+    meta = json.loads((src / "kind.json").read_text(encoding="utf-8"))
+    skills_dir = skills or engines_mod.SKILLS_DEFAULT
+    edir = f"engines/{eid}"
+    library = f"{edir}/pattern-library.md"
+    lib_path = cfg.home / library
+
+    def fill(text: str, **extra: str) -> str:
+        for k, v in {"id": eid, "label": label, **extra}.items():
+            text = text.replace("{" + k + "}", v)
+        return text.replace("ENGINE-", eid + "-")
+
+    files: dict[Path, str] = {cfg.home / edir / "pattern-library.md": fill((src / "pattern-library.md").read_text(encoding="utf-8")),
+                              cfg.home / edir / "engine.json": (src / "engine.json").read_text(encoding="utf-8")}
+    for f in sorted((src / "skills").rglob("*.md")):
+        rel = fill(f.relative_to(src / "skills").as_posix())
+        files[cfg.home / skills_dir / rel] = fill(f.read_text(encoding="utf-8"))
+    rows = engines_mod.library_rows(files[lib_path])
+    roles = {f"{eid}-{r}": t for r, t in meta["lanes"].items()}
+    lanes: dict[str, str] = {}
+    for lid, what in roles.items():
+        use = [r["skill"] for r in rows if r["lane"] == lid and r["skill"]]
+        text = lane_template(lid).replace(
+            next(ln for ln in lane_template(lid).splitlines() if ln.startswith("(Infra or the hub")),
+            f"{what} It works the {label} pattern library at `{library}`." + "".join(f' Run `skill("{s}")` before each task.' for s in dict.fromkeys(use)))
+        lanes[lid] = text
+    rid = f"{eid}-{REVIEW_ROLE}"
+    lanes[rid] = fill((ENGINE_TEMPLATES / "review-lane.md").read_text(encoding="utf-8"), lane=rid, library=library)
+    for lid, text in lanes.items():
+        files[cfg.home / TOWER_DIR / "lanes" / f"{lid}.md"] = text
+    clash = [p for p in files if p.exists()]
+    if clash:
+        raise ValueError("would overwrite: " + ", ".join(p.relative_to(cfg.home).as_posix() for p in clash))
+    dup = [lid for lid in lanes if lid in cfg.lanes]
+    if dup:
+        raise ValueError(f"lane exists: {', '.join(dup)}")
+    entry = {"label": label, "dir": edir, "library": library, "skills": skills_dir, "map": f"{edir}/engine.json"}
+    if cap:
+        entry["cap"] = cap
+    lane_entries = {lid: {"runtime": runtime, "label": lid, "engine": eid} for lid in lanes}
+    return {"entry": entry, "lanes": lane_entries, "files": files}

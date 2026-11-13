@@ -75,10 +75,14 @@ def _version(title: str) -> int | None:
 
 def library(path: Path) -> list[dict[str, str]]:
     """Rows of the library table: {n, type, lane, skill, process_text, pattern_text, model_text}. Missing file -> []."""
+    return library_rows(_read(path))
+
+
+def library_rows(text: str) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     cols: dict[str, int] = {}
     names = {"type": "type", "lane": "lane", "process": "process", "pattern": "pattern", "model": "model"}
-    for ln in _read(path).splitlines():
+    for ln in text.splitlines():
         if not ln.lstrip().startswith("|"):
             continue
         cs = _cells(ln)

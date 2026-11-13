@@ -975,7 +975,7 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    top = {"setup": "SETUP.md", "extend": "EXTEND.md"}
+    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md"}
     path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
         names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
@@ -1079,8 +1079,10 @@ def cmd_engine(args: argparse.Namespace) -> None:
         raise TowerError("engine id: use letters, digits, - and _")
     if args.id in c.engines and not c.engines[args.id].implicit:
         raise TowerError(f"engine {args.id} exists")
+    if args.template:
+        return scaffold_engine_cmd(c, args)
     entry = {k: v for k, v in (("label", args.label), ("dir", args.dir), ("library", args.library),
-                               ("skills", args.skills), ("map", args.map)) if v}
+                               ("skills", args.skills), ("map", args.map), ("cap", args.cap)) if v}
     path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
     before = path.read_text(encoding="utf-8")
     edit_config(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
@@ -1090,6 +1092,37 @@ def cmd_engine(args: argparse.Namespace) -> None:
         path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
         raise TowerError(str(e))
     print(f"engine {args.id} added. Put lanes in it with `dah lane add ID --runtime R --engine {args.id}`.")
+
+
+def scaffold_engine_cmd(c: Any, args: argparse.Namespace) -> None:
+    from .install import scaffold_engine
+    if args.runtime not in RUNTIMES and args.runtime not in config_mod.ext_names(c.home, "runtimes"):
+        raise TowerError(f"--runtime: one of {', '.join(RUNTIMES)}, or one an extension in .tower/ext/ registers")
+    try:
+        made = scaffold_engine(c, args.id, args.template, args.label or args.id.replace("-", " ").title(), args.runtime,
+                               args.skills or "", args.cap or "")
+    except ValueError as e:
+        raise TowerError(str(e))
+    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
+    before = path.read_text(encoding="utf-8")
+
+    def add(d: dict[str, Any]) -> None:
+        d.setdefault("engines", {})[args.id] = made["entry"]
+        d["lanes"].update(made["lanes"])
+
+    edit_config(c.home, add)
+    try:
+        c2 = config_mod.load(c.home)
+    except config_mod.ConfigError as e:
+        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
+        raise TowerError(str(e))
+    for f, text in made["files"].items():
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text, encoding="utf-8")
+    write_shims(c2, list(c2.lanes), False, [])
+    print(f"engine {args.id} added from {args.template}: {len(made['files'])} files, lanes {', '.join(made['lanes'])}. "
+          f"Everything starts as draft: `dah engine show {args.id}`, then edit the cards in {made['entry']['skills']} "
+          f"(`dah guide engines`).")
 
 
 def cmd_member(args: argparse.Namespace) -> None:
@@ -1295,6 +1328,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--library", help="pattern library markdown, path inside the workspace")
     q.add_argument("--skills", help="skills folder inside the workspace")
     q.add_argument("--map", help="hand-written engine.json, path inside the workspace")
+    q.add_argument("--cap", help='usage cap: "tokens-day:N", or a name an extension registers in `caps`')
+    q.add_argument("--from", dest="template", metavar="KIND", help="scaffold the engine from a template: blank, animation or marketing "
+                   "(creates its library, skills with draft process and pattern cards, lanes and an engine review lane)")
+    q.add_argument("--runtime", default="claude", help="runtime of the scaffolded lanes (with --from; default claude)")
     p = sub.add_parser("member", help="people who use the board")
     esub = p.add_subparsers(dest="sub", required=True)
     esub.add_parser("list")
