@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS tasks(
   respawns INTEGER NOT NULL DEFAULT 0,
   handoff TEXT,
   rotate_ready REAL,
-  goal_id INTEGER                   -- the goal this task serves, if any
+  goal_id INTEGER,                  -- the goal this task serves, if any
+  engine TEXT                       -- the engine of the lane when the task was queued (NULL on rows from before engines)
 );
 CREATE TABLE IF NOT EXISTS goals(
   id INTEGER PRIMARY KEY,
@@ -114,7 +115,8 @@ CREATE TABLE IF NOT EXISTS lanes(
   active_message INTEGER,           -- infra: the one message this session owns
   active_retries INTEGER DEFAULT 0,
   doing TEXT,
-  doing_at REAL
+  doing_at REAL,
+  engine TEXT                       -- the engine a team lane belongs to, kept in step with tower.json
 );
 CREATE TABLE IF NOT EXISTS members(
   name TEXT PRIMARY KEY,
@@ -191,6 +193,9 @@ class Store:
             cols = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
             if "goal_id" not in cols:  # databases made before goals existed
                 con.execute("ALTER TABLE tasks ADD COLUMN goal_id INTEGER")
+            for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
+                if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -302,10 +307,12 @@ class Store:
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str, goal_id: int | None = None) -> int:
+    def add_task(self, lane: str, title: str, brief: str, goal_id: int | None = None,
+                 engine: str | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
-                                   (lane, title, brief, "queued", self.clock(), goal_id)))
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id, engine) "
+                                   "VALUES(?,?,?,?,?,?,?)",
+                                   (lane, title, brief, "queued", self.clock(), goal_id, engine)))
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -677,6 +684,13 @@ class Store:
     def lane(self, lane: str) -> dict[str, Any]:
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM lanes WHERE lane=?", (lane,))) or {"lane": lane}
+
+    def sync_lane_engines(self, engines: dict[str, str]) -> None:
+        """Record each team lane's engine (lane id -> engine id) in the lanes table."""
+        with self.conn() as con:
+            for lane, engine in engines.items():
+                con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
+                con.execute("UPDATE lanes SET engine=? WHERE lane=?", (engine, lane))
 
     def set_lane(self, lane: str, **fields: Any) -> None:
         with self.conn() as con:

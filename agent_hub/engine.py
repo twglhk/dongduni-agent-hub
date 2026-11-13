@@ -122,6 +122,7 @@ class Engine:
         self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
         self.ext_lanes: dict[str, str] | None = None  # lane statuses as extensions last heard them
         self.team = cfg.team()
+        store.sync_lane_engines({lid: cfg.lanes[lid].engine for lid in self.team})
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
@@ -376,9 +377,11 @@ class Engine:
                      f"`dah log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
                      f"allows and nothing beyond it. If it is unclear, `dah item add` or `dah report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
-            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id) VALUES(?,?,?,?,?,?)",
+            ln = self.cfg.lanes.get(lane)
+            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, goal_id, engine) "
+                              "VALUES(?,?,?,?,?,?,?)",
                               (lane, clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
-                               src["goal_id"]))
+                               src["goal_id"], ln.engine if ln else None))
             self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
                             it["task_id"], it["id"], con=con)
             return

@@ -222,7 +222,7 @@ def cmd_task(args: argparse.Namespace) -> None:
     s = store(c)
     if args.goal is not None and s.goal(args.goal)["state"] != "active":
         raise TowerError(f"goal #{args.goal} is not active")
-    tid = s.add_task(args.lane, args.title, args.brief, args.goal)
+    tid = s.add_task(args.lane, args.title, args.brief, args.goal, c.lanes[args.lane].engine)
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}" + (f" for goal #{args.goal}" if args.goal is not None else "")
           + (f" (after task #{live['id']} wraps)" if live else ""))
@@ -907,7 +907,8 @@ def cmd_lane(args: argparse.Namespace) -> None:
     c = cfg()
     if args.sub == "list":
         for lid, ln in c.lanes.items():
-            print(f"{lid:<10} {ln.kind:<6} {ln.runtime:<8} {ln.label}" + (f" :{ln.port}" if ln.port else ""))
+            print(f"{lid:<10} {ln.kind:<6} {ln.runtime:<8} {ln.label}" + (f" :{ln.port}" if ln.port else "")
+                  + (f" [{ln.engine}]" if ln.engine else ""))
         return
     if args.id in (HUB, INFRA) and args.sub == "remove":
         raise TowerError("hub and infra are built in")
@@ -925,6 +926,10 @@ def cmd_lane(args: argparse.Namespace) -> None:
             if args.runtime == "codex":
                 raise TowerError("codex has no agents; set \"args\": [\"--profile\", NAME] in tower.json instead")
             entry["agent"] = args.agent
+        if args.engine:
+            if args.engine not in c.engines or c.engines[args.engine].implicit:
+                raise TowerError(f"--engine: no engine {args.engine} (`dah engine list`; `dah engine add NAME`)")
+            entry["engine"] = args.engine
         edit_config(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
         c = config_mod.load(c.home)
         path = c.instructions(args.id)
@@ -934,6 +939,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
         wrote: list[str] = []
         write_shims(c, list(c.lanes), False, wrote)  # a new runtime gets every lane's shortcut, too
         print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "")
+              + (f", engine {args.engine}" if args.engine else "")
               + (", in its own git worktree" if args.worktree else "") + "). "
               f"Fill in {path.relative_to(c.home)}: what it owns and its done criteria. "
               f"Open it by hand with /{SHIM_PREFIX}{args.id}.")
@@ -945,6 +951,39 @@ def cmd_lane(args: argparse.Namespace) -> None:
     edit_config(c.home, lambda d: d["lanes"].pop(args.id))
     remove_shims(c, args.id)
     print(f"lane {args.id} removed (its instruction file is kept)")
+
+
+def cmd_engine(args: argparse.Namespace) -> None:
+    c = cfg()
+    if args.sub == "list":
+        for eid, e in c.engines.items():
+            print(f"{eid:<12} lanes={len(e.lanes)}  {e.label}" + ("  (implicit)" if e.implicit else "")
+                  + (f"  {', '.join(e.lanes)}" if e.lanes else ""))
+        return
+    if args.sub == "show":
+        if args.id not in c.engines:
+            raise TowerError(f"no engine {args.id} (`dah engine list`)")
+        e = c.engines[args.id]
+        print(f"{e.id}: {e.label}" + (" (implicit: every team lane without an engine)" if e.implicit else ""))
+        for key in ("dir", "library", "skills", "map"):
+            print(f"  {key + ':':<9} {getattr(e, key) or '-'}")
+        print(f"  lanes:    {', '.join(e.lanes) or '-'}")
+        return
+    if not args.id.replace("-", "").replace("_", "").isalnum():
+        raise TowerError("engine id: use letters, digits, - and _")
+    if args.id in c.engines and not c.engines[args.id].implicit:
+        raise TowerError(f"engine {args.id} exists")
+    entry = {k: v for k, v in (("label", args.label), ("dir", args.dir), ("library", args.library),
+                               ("skills", args.skills), ("map", args.map)) if v}
+    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
+    before = path.read_text(encoding="utf-8")
+    edit_config(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
+    try:
+        config_mod.load(c.home)
+    except config_mod.ConfigError as e:
+        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
+        raise TowerError(str(e))
+    print(f"engine {args.id} added. Put lanes in it with `dah lane add ID --runtime R --engine {args.id}`.")
 
 
 def cmd_member(args: argparse.Namespace) -> None:
@@ -1130,11 +1169,24 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--runtime", required=True, help=f"{', '.join(RUNTIMES)}, or one an extension registers")
     q.add_argument("--worktree", action="store_true", help="work in a git worktree of its own (branch dah/ID)")
     q.add_argument("--label")
+    q.add_argument("--engine", help="the engine this lane belongs to (`dah engine list`); default: the implicit one")
     q.add_argument("--model")
     q.add_argument("--agent", help="run the role on one of your own agents (an OpenCode agent or a Claude --agent "
                                    "name); default: the agent you normally get")
     q = lsub.add_parser("remove")
     q.add_argument("id")
+    p = sub.add_parser("engine", help="list, show or add engines (a set of lanes with its own skills and process)")
+    gsub = p.add_subparsers(dest="sub", required=True)
+    gsub.add_parser("list")
+    q = gsub.add_parser("show")
+    q.add_argument("id")
+    q = gsub.add_parser("add")
+    q.add_argument("id")
+    q.add_argument("--label")
+    q.add_argument("--dir", help="engine folder inside the workspace")
+    q.add_argument("--library", help="pattern library markdown, path inside the workspace")
+    q.add_argument("--skills", help="skills folder inside the workspace")
+    q.add_argument("--map", help="hand-written engine.json, path inside the workspace")
     p = sub.add_parser("member", help="people who use the board")
     esub = p.add_subparsers(dest="sub", required=True)
     esub.add_parser("list")
@@ -1153,7 +1205,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo,
     "status": cmd_status, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "goal": cmd_goal, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 
