@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import sqlite3
 import time
@@ -20,6 +21,7 @@ HUMAN = "human"
 TOWER = "tower"
 
 TASK_LIVE = ("running", "wrapping")
+OUTCOMES = ("adopted", "redirected", "dropped")
 VERDICTS = ("ok", "no", "hold", "answer")  # answer = a human wrote their own answer; the note is the decision
 MULTI_SEP = " + "
 
@@ -149,6 +151,26 @@ CREATE TABLE IF NOT EXISTS retros(
   raw TEXT NOT NULL DEFAULT '',
   created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS deliverable_events(
+  id INTEGER PRIMARY KEY,
+  key TEXT NOT NULL,
+  outcome TEXT NOT NULL,            -- adopted | redirected | dropped
+  note TEXT NOT NULL DEFAULT '',    -- when redirected: the human's own words
+  by TEXT NOT NULL,
+  created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS blames(
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL,
+  stage TEXT NOT NULL,              -- the stage the lane says should have caught this failure
+  cause TEXT NOT NULL DEFAULT '',
+  by TEXT NOT NULL,
+  created REAL NOT NULL,
+  confirmed_stage TEXT,             -- the hub's confirmed (or changed) stage
+  confirmed_by TEXT,
+  confirmed REAL
+);
+CREATE INDEX IF NOT EXISTS deliverable_events_key ON deliverable_events(key, id);
 CREATE INDEX IF NOT EXISTS messages_pending ON messages(target, delivered);
 CREATE INDEX IF NOT EXISTS items_state ON items(state, audience);
 CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
@@ -158,11 +180,20 @@ CREATE INDEX IF NOT EXISTS tasks_lane ON tasks(lane, state);
 LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NOT NULL DEFAULT 0"),
                   ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
-LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"))  # the brief's Line: header and `dah stage`
+LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
+                ("deliverable", "TEXT"))  # the brief's Line: header and `dah stage`
 
 
 class StoreError(Exception):
     pass
+
+
+def valid_key(key: str) -> str:
+    """A deliverable key is one short word without spaces (`ui:shop`, `hero:sketch-3`); `T12` and `#12` shapes are refused."""
+    key = key.strip()
+    if not re.fullmatch(r"\S{1,60}", key) or re.fullmatch(r"[Tt]\d+|#?\d+", key):
+        raise StoreError(f"a deliverable key is a word of at most 60 characters without spaces (e.g. ui:shop): {key!r}")
+    return key
 
 
 def _id(cur: sqlite3.Cursor) -> int:
@@ -317,11 +348,12 @@ class Store:
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None) -> int:
+    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) "
-                                   "VALUES(?,?,?,?,?,?)",
-                                   (lane, title, brief, "queued", self.clock(), engine)))
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable) "
+                                   "VALUES(?,?,?,?,?,?,?)",
+                                   (lane, title, brief, "queued", self.clock(), engine,
+                                    valid_key(deliverable) if deliverable else None)))
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -600,6 +632,58 @@ class Store:
                 f"SELECT * FROM tasks WHERE {task_at}>? AND {task_at}<=? ORDER BY {task_at}, id",
                 (marks.get("task", now["task"]), now["task"])))]
         return out, now
+
+    # ---------- deliverables and blame ----------
+
+    def add_outcome(self, key: str, outcome: str, by: str, note: str = "") -> None:
+        """The human's result for a deliverable: adopted, redirected (note = their words) or dropped. The last one counts."""
+        key = valid_key(key)
+        if outcome not in OUTCOMES:
+            raise StoreError(f"the outcome is one of {', '.join(OUTCOMES)}")
+        with self.conn() as con:
+            if not con.execute("SELECT 1 FROM tasks WHERE deliverable=? UNION SELECT 1 FROM deliverable_events WHERE key=? LIMIT 1",
+                               (key, key)).fetchone():
+                raise StoreError(f"no task carries the key {key} (`dah task --deliverable {key}`)")
+            con.execute("INSERT INTO deliverable_events(key, outcome, note, by, created) VALUES(?,?,?,?,?)",
+                        (key, outcome, note.strip(), by, self.clock()))
+
+    def outcome_events(self, key: str) -> list[dict[str, Any]]:
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM deliverable_events WHERE key=? ORDER BY id", (key,)))
+
+    def add_blame(self, task_id: int, stage: str, cause: str, by: str) -> int:
+        """A lane names the stage that should have caught this task's failure. Writing again makes the new line the current one."""
+        with self.conn() as con:
+            return _id(con.execute("INSERT INTO blames(task_id, stage, cause, by, created) VALUES(?,?,?,?,?)",
+                                   (task_id, stage, cause, by, self.clock())))
+
+    def confirm_blame(self, task_id: int, by: str, stage: str | None = None, cause: str = "") -> int:
+        """The hub confirms the task's last blame (a stage changes it). With no blame yet, the stage writes and confirms one."""
+        with self.conn() as con:
+            row = _one(con.execute("SELECT * FROM blames WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)))
+            if not row:
+                if not stage:
+                    raise StoreError(f"task #{task_id} has no blame; give the stage too")
+                bid = _id(con.execute("INSERT INTO blames(task_id, stage, cause, by, created) VALUES(?,?,?,?,?)",
+                                      (task_id, stage, cause, by, self.clock())))
+                row = {"stage": stage}
+            else:
+                bid = row["id"]
+            con.execute("UPDATE blames SET confirmed_stage=?, confirmed_by=?, confirmed=?, "
+                        "cause=CASE WHEN ?<>'' THEN ? ELSE cause END WHERE id=?",
+                        (stage or row["stage"], by, self.clock(), cause, cause, bid))
+            return bid
+
+    def blames(self) -> dict[int, dict[str, Any]]:
+        """Task id -> its last blame (`effective` = the hub's confirmed stage, else the lane's)."""
+        out: dict[int, dict[str, Any]] = {}
+        with self.conn() as con:
+            for r in con.execute("SELECT * FROM blames ORDER BY id"):
+                d = dict(r)
+                d["effective"] = d["confirmed_stage"] or d["stage"]
+                d["is_confirmed"] = d["confirmed"] is not None
+                out[d["task_id"]] = d
+        return out
 
     # ---------- lanes ----------
 

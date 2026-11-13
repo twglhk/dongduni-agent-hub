@@ -231,7 +231,10 @@ def cmd_task(args: argparse.Namespace) -> None:
     s = store(c)
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
-    tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine)
+    try:
+        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable)
+    except StoreError as e:
+        raise TowerError(str(e))
     s.update_task(tid, **engines_mod.line_fields(args.brief))
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}"
@@ -381,6 +384,100 @@ def cmd_stats(args: argparse.Namespace) -> None:
     s = store(cfg())
     tasks = stats.collect(s, args.lane, day_arg(args.since))
     print(stats.render(stats.summarize(tasks, args.by), args.lane, args.since))
+
+
+def cmd_blame(args: argparse.Namespace) -> None:
+    """Lane: name the stage that should have caught this task's failure. Hub: --confirm --task N [STAGE] confirms or changes it."""
+    from . import rating
+    c = cfg()
+    me = who(args, c)
+    s = store(c)
+    stage = rating.blame_stage(args.stage) if args.stage else None
+    cause = clip(" ".join((args.cause or "").split()), 200)
+    try:
+        if args.confirm:
+            need(args, c, HUB)
+            if not args.task:
+                raise TowerError("--confirm needs --task N")
+            s.task(args.task)
+            s.confirm_blame(args.task, me, stage, cause)
+            cur = s.blames()[args.task]
+            print(f"task #{args.task} blame confirmed: stage {cur['effective']}"
+                  + (f" (the lane wrote {cur['stage']})" if cur["stage"] != cur["effective"] else ""))
+            return
+        if not stage:
+            raise TowerError("name the stage, e.g. `dah blame 3 --cause 'one line'`")
+        if me == HUB:
+            if not args.task:
+                raise TowerError("the hub gives --task N (to confirm use --confirm)")
+            tid = args.task
+        else:
+            need_team(c, me)
+            live = s.live_task(me)
+            tid = args.task or (live["id"] if live else None)
+            if not tid:
+                raise TowerError(f"{me} has no running task; give --task N")
+            if s.task(tid)["lane"] != me:
+                raise TowerError("that is not your task")
+        s.task(tid)
+        s.add_blame(tid, stage, cause, me)
+    except StoreError as e:
+        raise TowerError(str(e))
+    print(f"task #{tid} blame: stage {stage}" + (f" · {cause}" if cause else "") + " (the hub confirms or changes it with `dah blame --confirm --task N`)")
+
+
+def cmd_deliverable(args: argparse.Namespace) -> None:
+    """Hub or infra: record the human's result for a deliverable. With no result: its lineage of tasks, items and results."""
+    c = cfg()
+    s = store(c)
+    try:
+        if args.outcome:
+            me = need(args, c, HUB, INFRA)
+            if args.outcome == "redirected" and not (args.note or "").strip():
+                raise TowerError("a redirected result needs --note with the human's own words")
+            s.add_outcome(args.key, args.outcome, me, args.note or "")
+            print(f"{args.key} -> {args.outcome}")
+            return
+        with s.conn() as con:
+            tasks = [dict(r) for r in con.execute("SELECT * FROM tasks WHERE deliverable=? ORDER BY id", (args.key,))]
+            items = [dict(r) for r in con.execute(
+                "SELECT i.* FROM items i JOIN tasks t ON t.id=i.task_id WHERE t.deliverable=? ORDER BY i.id", (args.key,))]
+        events = s.outcome_events(args.key)
+    except StoreError as e:
+        raise TowerError(str(e))
+    if not (tasks or events):
+        raise TowerError(f"no task carries the key {args.key}")
+    last = events[-1]["outcome"] if events else "in progress"
+    tok = lambda f: stats.mtok(sum(t[f] or 0 for t in tasks))  # noqa: E731
+    print(f"{args.key} · {last} · {len(tasks)} task(s) · new {tok('tok_new')} · cache read {tok('tok_cache')} · out {tok('tok_out')} "
+          f"· turns {sum(t['turns'] or 0 for t in tasks)}")
+    for t in tasks:
+        print(f"  task #{t['id']:<5} {t['state']:9} {clip(t['title'], 40)} {hhmm(t['created'])}"
+              + (f" · row {t['line_row']} stage {t['line_stage']} {t['line_mode']}" if t["line_row"] else ""))
+    for it in items:
+        print(f"  item #{it['id']:<5} {it['state'] if it['state'] == 'open' else it['verdict']:9} {clip(it['title'], 40)} {hhmm(it['created'])}")
+    for e in events:
+        print(f"  result {hhmm(e['created'])} {e['outcome']} ({e['by']})" + (f" - {e['note']}" if e["note"] else ""))
+
+
+def cmd_ratings(args: argparse.Namespace) -> None:
+    """First-pass rate per stage and per process, per engine: bars, tokens per attempt and per adopted deliverable."""
+    from . import engines as engines_mod
+    from . import rating
+    c = cfg()
+    rows: dict[str, list[dict[str, Any]]] = {}
+    skills: dict[str, Path] = {}
+    for eid, e in c.engines.items():
+        if (args.engine and eid != args.engine) or not e.library:
+            continue
+        skills[eid] = c.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+        rows[eid] = engines_mod.build(c.home / e.library, skills[eid])
+    if args.engine and args.engine not in c.engines:
+        raise TowerError(f"no engine {args.engine} (`dah engine list`)")
+    rated = rating.attach(rows, store(c), c.home, skills)
+    if args.lane:
+        rated = [r for r in rated if r["lane"] == args.lane]
+    print(rating.render(rated, lang=c.lang.split("-")[0], weak=args.weak))
 
 
 def cmd_retros(args: argparse.Namespace) -> None:
@@ -1049,7 +1146,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("lane")
     p.add_argument("--title", required=True)
     p.add_argument("--goal", type=int, metavar="GOAL_ID", help="removed in 0.8.0; ignored with a notice")
+    p.add_argument("--deliverable", metavar="KEY", help="deliverable key (e.g. ui:shop): ties the tasks that rework the same deliverable together")
     p.add_argument("brief")
+    p = sub.add_parser("blame", help="lane: name the stage that should have caught this task's failure; hub: --confirm [STAGE]")
+    p.add_argument("stage", nargs="?", help="stage number or name, e.g. 3")
+    p.add_argument("--task", type=int)
+    p.add_argument("--cause", help="one line")
+    p.add_argument("--confirm", action="store_true", help="hub: confirm (or change to STAGE) the lane's blame on --task")
+    p = sub.add_parser("deliverable", help="hub/infra: record the human's result (adopted|redirected|dropped); with no result, the lineage")
+    p.add_argument("key")
+    p.add_argument("outcome", nargs="?", choices=("adopted", "redirected", "dropped"))
+    p.add_argument("--note", help="redirected: the human's own words")
+    p = sub.add_parser("ratings", help="first-pass rate per stage and process, bars, token cost per attempt and per adopted deliverable")
+    p.add_argument("--engine")
+    p.add_argument("--lane")
+    p.add_argument("--weak", action="store_true", help="only rows that need fixing or rework")
     p = sub.add_parser("doing", help="hub: one line shown on the board")
     p.add_argument("text")
     p = sub.add_parser("stage", help="lane: name the stage of your process card you are on now (shown on the board)")
@@ -1198,7 +1309,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "stage": cmd_stage, "tell": cmd_tell,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
