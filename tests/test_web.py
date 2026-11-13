@@ -83,7 +83,7 @@ class LocalModeTest(unittest.TestCase):
         import re
         from pathlib import Path
         html = (Path(__file__).resolve().parent.parent / "agent_hub" / "board" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("const TABS = ['hub', 'lanes', 'history'];", html)
+        self.assertIn("const TABS = ['hub', 'engine', 'lanes', 'history'];", html)
         self.assertNotIn('id="v-infra"', html)
         self.assertIn('id="chat-ta"', html)
         ui = html[html.index("const UI = {"):html.index("const LANGS =")]

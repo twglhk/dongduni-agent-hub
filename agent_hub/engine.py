@@ -164,6 +164,9 @@ def ask_answer(it: dict[str, Any]) -> list[str]:
     return [f"On hold: {note}" if note else "On hold: no answer for now, move on."]
 
 
+SNAPSHOT_EVERY = 3600
+
+
 class Engine:
     def __init__(self, cfg: Config, store: Store, rt: Any, notify: Callable[[list[dict[str, Any]]], None],
                  clock: Callable[[], float] = time.time, log: Callable[[str], None] = print,
@@ -186,6 +189,7 @@ class Engine:
         self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
+        self.snap_at: float = -SNAPSHOT_EVERY  # last check for the weekly engine snapshot
 
     # ---------- prompts ----------
 
@@ -296,7 +300,19 @@ class Engine:
 
     # ---------- extensions ----------
 
+    def _weekly(self) -> None:
+        """Once an hour check that each engine has this week's snapshot (the board's "what changed" reads them)."""
+        now = self.clock()
+        if now - self.snap_at < SNAPSHOT_EVERY:
+            return
+        self.snap_at = now
+        try:
+            engines_mod.weekly(self.cfg, now, self.log)
+        except Exception as e:  # a bad skills folder must not stop the tick
+            self.log(f"weekly snapshot: {e}")
+
     def _extensions(self, statuses: dict[str, str]) -> None:
+        self._weekly()
         on_event, on_tick = self.ext.hooks("on_event"), self.ext.hooks("on_tick")
         if not on_event:
             self.marks = self.ext_lanes = None

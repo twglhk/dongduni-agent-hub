@@ -24,9 +24,16 @@ gate on for `dah task`; without it the header is read when it is there and nothi
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .config import Config
 
 MODES = ("prepare", "make", "fix")
 GREEN = ("confirmed", "tuned")
@@ -264,3 +271,164 @@ def pipelines(rows: list[dict[str, Any]]) -> str:
                        + (f"  [{c['status'] or 'no status'}{' v' + str(c['version']) if c['version'] else ''}]" if c and c["exists"]
                           else "  [no pattern card]" if c else ""))
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------- the engine map: skills, hand-written part, snapshots
+
+SNAP_KEEP = 60           # weekly snapshots kept per engine
+HASH_FILES = 200         # files read per skill when fingerprinting
+HASH_BYTES = 1 << 18
+
+
+def read_map(path: Path) -> dict[str, Any]:
+    """The hand-written part of an engine map (`engine.json`): {notes, tools: [{name, note}], experiments: [{name, status, note}]}.
+    Anything else in the file is ignored; a missing or broken file gives empty lists."""
+    try:
+        raw = json.loads(_read(path) or "{}")
+    except ValueError:
+        raw = {}
+    raw = raw if isinstance(raw, dict) else {}
+
+    def rows(key: str, fields: tuple[str, ...]) -> list[dict[str, str]]:
+        v = raw.get(key)
+        return [{f: str(x.get(f) or "") for f in fields} for x in (v if isinstance(v, list) else []) if isinstance(x, dict) and x.get("name")]
+
+    return {"notes": str(raw.get("notes") or ""), "tools": rows("tools", ("name", "note")),
+            "experiments": rows("experiments", ("name", "status", "note"))}
+
+
+def skill_files(skills: Path, name: str) -> list[Path]:
+    root = skills / name
+    return sorted(p for p in root.rglob("*") if p.is_file() and not any(x.startswith(".") for x in p.relative_to(root).parts))[:HASH_FILES]
+
+
+def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Every folder of the skills directory: {name, files, hash, lanes: [lane ids whose role file or library rows name it]}."""
+    try:
+        names = sorted(p.name for p in skills.iterdir() if p.is_dir() and not p.name.startswith("."))
+    except OSError:
+        names = []
+    out = []
+    for n in names:
+        files = skill_files(skills, n)
+        h = hashlib.sha1()
+        for f in files:
+            h.update(str(f.relative_to(skills)).encode())
+            try:
+                h.update(f.read_bytes()[:HASH_BYTES])
+            except OSError:
+                pass
+        out.append({"name": n, "files": len(files), "hash": h.hexdigest()[:12],
+                    "lanes": [ln for ln, ss in lane_skills_by_lane.items() if any(s["name"] == n for s in ss)]})
+    return out
+
+
+def _card_text(c: dict[str, Any] | None) -> str:
+    return "" if not c or not c["exists"] else " ".join(x for x in (f"v{c['version']}" if c["version"] else "", c["status"]) if x)
+
+
+def snapshot(lanes: list[str], skills: list[dict[str, Any]], rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
+    """What a week-to-week comparison reads: lanes, skill fingerprints, and per library row the card versions and statuses."""
+    return {"at": now, "lanes": sorted(lanes), "skills": {s["name"]: s["hash"] for s in skills},
+            "rows": {r["n"]: {"type": r["type"], "process": " ".join(x for x in (f"v{r['process']['version']}" if r["process"] and r["process"]["version"] else "",
+                                                                                r["process_status"]) if x),
+                              "stages": {str(s["n"]): [s["name"], _card_text(s["card"])] for s in (r["process"]["stages"] if r["process"] else [])}}
+                     for r in rows}}
+
+
+def diff(old: dict[str, Any], new: dict[str, Any]) -> list[dict[str, str]]:
+    """Changes from snapshot `old` to `new`, as {kind, name, from, to} (the board words them in the reader's language).
+    Kinds: lane_added/removed, skill_added/changed/removed, row_added/removed, process (version or status), card (a stage's pattern card)."""
+    out: list[dict[str, str]] = []
+
+    def add(kind: str, name: str, a: str = "", b: str = "") -> None:
+        out.append({"kind": kind, "name": name, "from": a, "to": b})
+
+    for ln in sorted(set(new["lanes"]) - set(old["lanes"])):
+        add("lane_added", ln)
+    for ln in sorted(set(old["lanes"]) - set(new["lanes"])):
+        add("lane_removed", ln)
+    for k in sorted(set(new["skills"]) - set(old["skills"])):
+        add("skill_added", k)
+    for k in sorted(set(old["skills"]) - set(new["skills"])):
+        add("skill_removed", k)
+    for k in sorted(set(new["skills"]) & set(old["skills"])):
+        if new["skills"][k] != old["skills"][k]:
+            add("skill_changed", k)
+    for n in sorted(set(new["rows"]) - set(old["rows"])):
+        add("row_added", new["rows"][n]["type"], "", n)
+    for n in sorted(set(old["rows"]) - set(new["rows"])):
+        add("row_removed", old["rows"][n]["type"], n)
+    for n in sorted(set(new["rows"]) & set(old["rows"])):
+        a, b = old["rows"][n], new["rows"][n]
+        if a["process"] != b["process"]:
+            add("process", b["type"], a["process"], b["process"])
+        for s in sorted(set(a["stages"]) & set(b["stages"])):
+            if a["stages"][s][1] != b["stages"][s][1]:
+                add("card", f"{b['type']} · {s} {b['stages'][s][0]}", a["stages"][s][1], b["stages"][s][1])
+    return out
+
+
+def week_key(now: float) -> str:
+    y, w, _ = datetime.fromtimestamp(now).isocalendar()
+    return f"{y}-W{w:02d}"
+
+
+def snap_dir(cfg: Config, eid: str) -> Path:
+    return cfg.state_dir / "snapshots" / eid
+
+
+def snap_files(cfg: Config, eid: str) -> list[Path]:
+    try:
+        return sorted(snap_dir(cfg, eid).glob("*.json"))
+    except OSError:
+        return []
+
+
+def load_snapshot(path: Path) -> dict[str, Any] | None:
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) and {"at", "lanes", "skills", "rows"} <= set(d) else None
+
+
+def baseline(cfg: Config, eid: str, now: float) -> dict[str, Any] | None:
+    """The snapshot "what changed" compares with: the newest one from an earlier week, else the oldest there is."""
+    files = [(p, load_snapshot(p)) for p in snap_files(cfg, eid)]
+    files = [(p, d) for p, d in files if d]
+    if not files:
+        return None
+    this = week_key(now)
+    older = [d for p, d in files if p.stem < this]
+    return older[-1] if older else files[0][1]
+
+
+def live_snapshot(cfg: Config, eid: str, now: float) -> dict[str, Any]:
+    e = cfg.engines[eid]
+    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    rows = build(cfg.home / e.library, skills_dir) if e.library else []
+    return snapshot(list(e.lanes), skill_list(skills_dir, {}), rows, now)
+
+
+def weekly(cfg: Config, now: float | None = None, log: Any = None) -> list[str]:
+    """Write this ISO week's snapshot of every engine that has none yet (the tower calls this from its tick; cheap when done).
+    Returns the files written. Old snapshots beyond SNAP_KEEP are removed."""
+    now = time.time() if now is None else now
+    wrote: list[str] = []
+    for eid in cfg.engines:
+        path = snap_dir(cfg, eid) / f"{week_key(now)}.json"
+        if path.exists():
+            continue
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(live_snapshot(cfg, eid, now), ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+            for old in snap_files(cfg, eid)[:-SNAP_KEEP]:
+                old.unlink(missing_ok=True)
+            wrote.append(str(path))
+        except OSError as ex:
+            if log:
+                log(f"weekly snapshot of engine {eid} failed: {ex}")
+    return wrote

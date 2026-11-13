@@ -135,7 +135,23 @@ def _version(title: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_BUMPS: dict[tuple[str, str, int], list[float]] = {}
+
+
 def version_bumps(repo: Path, rel: str) -> list[float]:
+    """Cached by the file's modification time, so the board can ask on every poll without a git log per card each time."""
+    try:
+        key = (str(repo), rel, (repo / rel).stat().st_mtime_ns)
+    except OSError:
+        return _version_bumps(repo, rel)
+    if key not in _BUMPS:
+        if len(_BUMPS) > 500:
+            _BUMPS.clear()
+        _BUMPS[key] = _version_bumps(repo, rel)
+    return list(_BUMPS[key])
+
+
+def _version_bumps(repo: Path, rel: str) -> list[float]:
     """Commit times (ascending) at which the card's title `— vN` went up. The commit that created the file and commits that did
     not change the version do not count. No git or no history gives []."""
     try:

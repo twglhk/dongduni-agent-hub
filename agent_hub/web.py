@@ -7,6 +7,9 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
   GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
+  GET  /api/engines               every engine: id, label, lanes, library rows
+  GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
+                                  engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
@@ -27,9 +30,11 @@ Every POST must carry `x-tower: 1` (a custom header forces a CORS preflight, so 
 from __future__ import annotations
 
 import getpass
+import hashlib
 import json
 import mimetypes
 import re
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -38,6 +43,7 @@ from urllib.parse import parse_qs, unquote
 from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
+from . import rating
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -122,6 +128,68 @@ def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
             "days": s.usage_days(lid, 7),
             "recent": [{"id": t["id"], "title": t["title"], "state": t["state"], "model": t["model"], "effort": t["effort"],
                         "line_row": t["line_row"], "tokens": tok(t)} for t in recent]}
+
+
+def engines_view(cfg: Config) -> list[dict[str, Any]]:
+    out = []
+    for eid, e in cfg.engines.items():
+        rows = engines_mod.library(cfg.home / e.library) if e.library else []
+        out.append({"id": eid, "label": e.label or eid, "lanes": list(e.lanes), "rows": len(rows), "implicit": e.implicit})
+    return out
+
+
+def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
+    """Everything the AI Engine tab shows for one engine."""
+    e = cfg.engines[eid]
+    skills_dir = cfg.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+    rows = engines_mod.build(cfg.home / e.library, skills_dir) if e.library else []
+    rated = {r["row"]: r for r in rating.attach({eid: rows}, s, cfg.home, {eid: skills_dir})} if rows else {}
+    by_lane: dict[str, list[dict[str, Any]]] = {}
+    lanes = []
+    for lid in e.lanes:
+        ln = cfg.lanes[lid]
+        try:
+            role = cfg.instructions(lid).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            role = ""
+        sk = engines_mod.lane_skills(role, skills_dir, rows, lid)
+        by_lane[lid] = sk
+        st = s.lane(lid)
+        task = s.live_task(lid)
+        lanes.append({"lane": lid, "label": ln.label or lid, "status": st.get("status") or "closed", "skills": sk,
+                      "rows": [r["n"] for r in rows if r["lane"] == lid], "task_id": task["id"] if task else None,
+                      "process": next((r["type"] for r in rows if task and r["n"] == task["line_row"]), None)})
+    pipes = []
+    for r in rows:
+        p, g = r["process"], rated.get(r["n"])
+        stages = []
+        for i, st in enumerate(p["stages"] if p else []):
+            gs = g["stages"][i]["rating"] if g and i < len(g["stages"]) else None
+            c = st["card"]
+            stages.append({"n": st["n"], "name": st["name"], "by": st["by"],
+                           "card": {"status": c["status"], "version": c["version"], "color": c["color"]} if c and c["exists"] else None,
+                           "rating": ({k: gs[k] for k in ("n", "pct", "state", "color", "pending")} if gs else None),
+                           "weakest": bool(g and g["stages"][i].get("weakest"))})
+        pr = g["process"] if g else None
+        pipes.append({"row": r["n"], "type": r["type"], "lane": r["lane"], "skill": r["skill"], "version": p["version"] if p else None,
+                      "process_status": r["process_status"], "pattern_status": r["pattern_status"], "model": r["model_text"],
+                      "rating": {k: pr[k] for k in ("n", "pct", "state", "color", "fixes")} if pr else None, "stages": stages})
+    skills = engines_mod.skill_list(skills_dir, by_lane)
+    days: dict[str, dict[str, Any]] = {}
+    for lid in e.lanes:
+        for d in s.usage_days(lid, 7):
+            slot = days.setdefault(d["day"], {"day": d["day"], "tokens_in": 0, "tokens_out": 0})
+            slot["tokens_in"] += d["tokens_in"] or 0
+            slot["tokens_out"] += d["tokens_out"] or 0
+    base = engines_mod.baseline(cfg, eid, now)
+    live = engines_mod.snapshot(list(e.lanes), skills, rows, now)
+    hand = engines_mod.read_map(cfg.home / e.map) if e.map else engines_mod.read_map(cfg.home / e.dir / "engine.json") if e.dir else \
+        engines_mod.read_map(cfg.home / "engine.json")
+    return {"id": eid, "label": e.label or eid, "implicit": e.implicit, "lanes": lanes, "pipelines": pipes,
+            "skills": [{k: x[k] for k in ("name", "files", "lanes")} for x in skills],
+            "tools": hand["tools"], "experiments": hand["experiments"], "notes": hand["notes"],
+            "usage": sorted(days.values(), key=lambda x: x["day"]),
+            "changes": {"since": base["at"] if base else None, "items": engines_mod.diff(base, live) if base else []}}
 
 
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -345,6 +413,22 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
             self.wfile.write(data)
 
+        def _json_tagged(self, body: Any) -> None:
+            """A GET whose answer rarely changes: ETag over the body, 304 when the browser already has it."""
+            data = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
+            tag = '"' + hashlib.sha1(data).hexdigest()[:16] + '"'
+            self.send_response(304 if self.headers.get("if-none-match") == tag else 200)
+            self.send_header("etag", tag)
+            self.send_header("cache-control", "no-cache")
+            if self.headers.get("if-none-match") == tag:
+                self.send_header("content-length", "0")
+                self.end_headers()
+                return
+            self.send_header("content-type", "application/json; charset=utf-8")
+            self.send_header("content-length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def _static(self, path: Path, ctype: str) -> None:
             data = path.read_bytes()
             self.send_response(200)
@@ -383,6 +467,14 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
+            if path == "/api/engines":
+                return self._json(200, {"engines": engines_view(c)})
+            m = re.fullmatch(r"/api/engines/([^/]+)/map", path)
+            if m:
+                eid = unquote(m.group(1))
+                if eid not in c.engines:
+                    return self._json(404, {"error": f"no engine {eid}"})
+                return self._json_tagged(engine_map(c, st, eid, time.time()))
             m = re.fullmatch(r"/api/lanes/([^/]+)", path)
             if m:
                 lid = unquote(m.group(1))

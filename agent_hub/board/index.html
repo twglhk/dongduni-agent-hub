@@ -177,6 +177,16 @@ body.has-last{--chat-h:104px}
 .kv .k{color:var(--text-3);min-width:64px;flex:none}
 .stages{display:flex;flex-wrap:wrap;gap:6px;margin:var(--s2) 0}
 .stg{padding:4px 8px;border-radius:var(--r-xs);background:var(--grey-weak);color:var(--grey-ink);font-size:var(--t6);font-weight:600}
+.seg{display:flex;gap:6px;overflow-x:auto;margin:0 0 var(--s4);padding:0 var(--s1);scrollbar-width:none}
+.seg button{height:36px;padding:0 14px;border-radius:18px;background:var(--surface);color:var(--text-2);font-weight:600;font-size:var(--t5);white-space:nowrap;flex:none}
+.seg button.on{background:var(--blue);color:#fff}
+.chip.rt-green,.stg.rt-green{background:var(--green-weak);color:var(--green-ink)}
+.chip.rt-blue,.stg.rt-blue{background:var(--blue-weak);color:var(--blue-ink)}
+.chip.rt-amber,.stg.rt-amber{background:var(--orange-weak);color:var(--orange-ink)}
+.chip.rt-red,.stg.rt-red{background:var(--red-weak);color:var(--red-ink)}
+.stg.weak{box-shadow:inset 0 0 0 1.5px var(--orange)}
+.pl .stages{margin:0}
+#v-engine .days{margin-bottom:var(--s6)}
 .stg.now{background:var(--blue-weak);color:var(--blue-ink)}
 .days{display:flex;gap:6px;align-items:flex-end;height:72px}
 .day{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:var(--t6);color:var(--text-3)}
@@ -420,6 +430,7 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 </div></header>
 <main>
   <section id="v-hub"></section>
+  <section id="v-engine" class="hidden"></section>
   <section id="v-lanes" class="hidden"></section>
   <section id="v-history" class="hidden"></section>
 </main>
@@ -437,7 +448,7 @@ const BASE = location.pathname.replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
-    tabs: { hub: 'Hub', lanes: 'Lanes', history: 'History' },
+    tabs: { hub: 'Hub', engine: 'Engine', lanes: 'Lanes', history: 'History' },
     sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
       usage: 'Usage today' },
     empty: { yours: 'Nothing to decide', reqs: 'No requests yet', tasks: 'No live tasks',
@@ -473,13 +484,14 @@ const UI = {
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
     lv: { skills: 'Skills', noSkills: 'No skills named in its role file', process: 'Process', stage: 'Stage', stageN: 'stage {n}', noProc: 'No process yet', fixing: 'Fixing', fixBy: { 'send-back': 'Send-back', blame: 'Blamed stage' }, model: 'Model', tokens: 'Tokens', week: 'Last 7 days', recent: 'Recent tasks', engine: 'Engine', missing: 'folder not found', none: 'Nothing yet' },
+    eg: { engines: 'Engines', lanes: 'Lanes', pipes: 'Pipelines', skills: 'Skills', tools: 'Tools', exps: 'Experiments', changes: 'What changed', since: 'Since {d}', same: 'Nothing changed since then', noSnap: 'No snapshot yet; the tower writes one within the hour', usage: 'Tokens, last 7 days', noLib: 'No pattern library yet', rated: '{n} rated', unrated: 'not rated', process: 'Process', noCard: 'no card', files: 'files', s_new: 'new', s_best: 'best', s_good: 'good', s_fix: 'needs fixing', s_rework: 'needs rework', c_lane_added: 'Lane {name} added', c_lane_removed: 'Lane {name} removed', c_skill_changed: 'Skill {name} edited', c_skill_added: 'Skill {name} added', c_skill_removed: 'Skill {name} removed', c_row_added: 'Process {name} added', c_row_removed: 'Process {name} removed', c_process: '{name}: {a} → {b}', c_card: '{name} card: {a} → {b}', none: 'none', empty: 'No engines', noRows: 'No library rows', fixedN: 'fixed {n}x', open: 'Open the lane sheet' },
     use: { day: 'Today', io: '{i} / {o}', task: 'Task {n} new · {c} cache · {o} out · {t} turns',
       today: 'Today {i} in · {o} out',
       hint: 'Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it.' },
     x: { err: 'Extension error' },
   },
   ko: {
-    tabs: { hub: '허브', lanes: '레인', history: '기록' },
+    tabs: { hub: '허브', engine: '엔진', lanes: '레인', history: '기록' },
     sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
       usage: '오늘 사용량' },
     empty: { yours: '정할 게 없어요', reqs: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
@@ -515,13 +527,14 @@ const UI = {
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
     lv: { skills: '스킬', noSkills: '역할 파일에 적힌 스킬이 없어요', process: '공정', stage: '단계', stageN: '{n}단계', noProc: '아직 공정이 없어요', fixing: '고치는 중', fixBy: { 'send-back': '되돌려 받음', blame: '지목된 단계' }, model: '모델', tokens: '토큰', week: '최근 7일', recent: '최근 작업', engine: '엔진', missing: '폴더를 찾지 못했어요', none: '아직 없어요' },
+    eg: { engines: '엔진', lanes: '레인', pipes: '파이프라인', skills: '스킬', tools: '도구', exps: '실험', changes: '바뀐 것', since: '{d} 이후', same: '그 뒤로 바뀐 게 없어요', noSnap: '아직 스냅숏이 없어요. 관제가 한 시간 안에 만들어요', usage: '토큰, 최근 7일', noLib: '아직 패턴 라이브러리가 없어요', rated: '{n}건 평가', unrated: '평가 전', process: '공정', noCard: '카드 없음', files: '파일', s_new: '신규', s_best: '최적', s_good: '양호', s_fix: '보완 필요', s_rework: '리팩토링 필요', c_lane_added: '레인 {name} 추가', c_lane_removed: '레인 {name} 삭제', c_skill_changed: '스킬 {name} 수정', c_skill_added: '스킬 {name} 추가', c_skill_removed: '스킬 {name} 삭제', c_row_added: '공정 {name} 추가', c_row_removed: '공정 {name} 삭제', c_process: '{name}: {a} → {b}', c_card: '{name} 카드: {a} → {b}', none: '없음', empty: '엔진이 없어요', noRows: '라이브러리 행이 없어요', fixedN: '{n}번 고침', open: '레인 시트 열기' },
     use: { day: '오늘', io: '{i} / {o}', task: '작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴',
       today: '오늘 {i} 입력 · {o} 출력',
       hint: '입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요.' },
     x: { err: '확장 기능 오류' },
   },
   ja: {
-    tabs: { hub: 'ハブ', lanes: 'レーン', history: '履歴' },
+    tabs: { hub: 'ハブ', engine: 'エンジン', lanes: 'レーン', history: '履歴' },
     sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
       usage: '今日の使用量' },
     empty: { yours: '決めることはありません', reqs: 'まだ依頼はありません',
@@ -558,13 +571,14 @@ const UI = {
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
     lv: { skills: 'スキル', noSkills: '役割ファイルにスキルの記載がありません', process: '工程', stage: 'ステージ', stageN: 'ステージ {n}', noProc: 'まだ工程がありません', fixing: '修正中', fixBy: { 'send-back': '差し戻し', blame: '指摘されたステージ' }, model: 'モデル', tokens: 'トークン', week: '直近7日', recent: '最近の作業', engine: 'エンジン', missing: 'フォルダが見つかりません', none: 'まだありません' },
+    eg: { engines: 'エンジン', lanes: 'レーン', pipes: 'パイプライン', skills: 'スキル', tools: 'ツール', exps: '実験', changes: '変更点', since: '{d} 以降', same: 'それ以降の変更はありません', noSnap: 'スナップショットはまだありません。タワーが1時間以内に作ります', usage: 'トークン、直近7日', noLib: 'パターンライブラリはまだありません', rated: '{n}件 評価', unrated: '未評価', process: '工程', noCard: 'カードなし', files: 'ファイル', s_new: '新規', s_best: '最適', s_good: '良好', s_fix: '要改善', s_rework: '再設計が必要', c_lane_added: 'レーン {name} を追加', c_lane_removed: 'レーン {name} を削除', c_skill_changed: 'スキル {name} を編集', c_skill_added: 'スキル {name} を追加', c_skill_removed: 'スキル {name} を削除', c_row_added: '工程 {name} を追加', c_row_removed: '工程 {name} を削除', c_process: '{name}: {a} → {b}', c_card: '{name} カード: {a} → {b}', none: 'なし', empty: 'エンジンがありません', noRows: 'ライブラリの行がありません', fixedN: '改訂 {n}回', open: 'レーンシートを開く' },
     use: { day: '今日', io: '{i} / {o}', task: 'タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン',
       today: '今日 入力 {i} · 出力 {o}',
       hint: '入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。' },
     x: { err: '拡張機能のエラー' },
   },
   zh: {
-    tabs: { hub: '中枢', lanes: '通道', history: '记录' },
+    tabs: { hub: '中枢', engine: '引擎', lanes: '通道', history: '记录' },
     sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
       usage: '今日用量' },
     empty: { yours: '没有待决定的事', reqs: '还没有请求', tasks: '没有进行中的任务',
@@ -600,13 +614,14 @@ const UI = {
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
     lv: { skills: '技能', noSkills: '职责文件里没有写技能', process: '流程', stage: '阶段', stageN: '第 {n} 阶段', noProc: '还没有流程', fixing: '修正中', fixBy: { 'send-back': '被退回', blame: '被点名的阶段' }, model: '模型', tokens: '令牌', week: '最近 7 天', recent: '最近的任务', engine: '引擎', missing: '找不到文件夹', none: '暂无' },
+    eg: { engines: '引擎', lanes: '通道', pipes: '流水线', skills: '技能', tools: '工具', exps: '实验', changes: '变更', since: '自 {d} 起', same: '此后没有变化', noSnap: '还没有快照,塔会在一小时内生成', usage: '令牌,最近 7 天', noLib: '还没有模式库', rated: '已评 {n} 项', unrated: '未评级', process: '流程', noCard: '无卡片', files: '文件', s_new: '新建', s_best: '最佳', s_good: '良好', s_fix: '需改进', s_rework: '需要重构', c_lane_added: '新增通道 {name}', c_lane_removed: '删除通道 {name}', c_skill_changed: '修改技能 {name}', c_skill_added: '新增技能 {name}', c_skill_removed: '删除技能 {name}', c_row_added: '新增流程 {name}', c_row_removed: '删除流程 {name}', c_process: '{name}: {a} → {b}', c_card: '{name} 卡片: {a} → {b}', none: '无', empty: '没有引擎', noRows: '没有库条目', fixedN: '已修订 {n} 次', open: '打开通道详情' },
     use: { day: '今天', io: '{i} / {o}', task: '任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮',
       today: '今天 输入 {i} · 输出 {o}',
       hint: '输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。' },
     x: { err: '扩展出错' },
   },
   es: {
-    tabs: { hub: 'Hub', lanes: 'Carriles', history: 'Historial' },
+    tabs: { hub: 'Hub', engine: 'Motor', lanes: 'Carriles', history: 'Historial' },
     sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', lanes: 'Carriles', tasks: 'Tareas en curso',
       reports: 'Informes recientes', usage: 'Uso de hoy' },
     empty: { yours: 'Nada que decidir', reqs: 'Aún no hay peticiones',
@@ -643,6 +658,7 @@ const UI = {
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
     lv: { skills: 'Habilidades', noSkills: 'Su archivo de rol no nombra ninguna', process: 'Proceso', stage: 'Etapa', stageN: 'etapa {n}', noProc: 'Aún sin proceso', fixing: 'Corrigiendo', fixBy: { 'send-back': 'Devuelto', blame: 'Etapa señalada' }, model: 'Modelo', tokens: 'Tokens', week: 'Últimos 7 días', recent: 'Tareas recientes', engine: 'Motor', missing: 'carpeta no encontrada', none: 'Aún nada' },
+    eg: { engines: 'Motores', lanes: 'Carriles', pipes: 'Pipelines', skills: 'Habilidades', tools: 'Herramientas', exps: 'Experimentos', changes: 'Qué cambió', since: 'Desde {d}', same: 'Nada cambió desde entonces', noSnap: 'Aún no hay instantánea; la torre la escribe en una hora', usage: 'Tokens, últimos 7 días', noLib: 'Aún sin biblioteca de patrones', rated: '{n} valorados', unrated: 'sin valorar', process: 'Proceso', noCard: 'sin tarjeta', files: 'archivos', s_new: 'nuevo', s_best: 'óptimo', s_good: 'bueno', s_fix: 'a corregir', s_rework: 'a rehacer', c_lane_added: 'Carril {name} añadido', c_lane_removed: 'Carril {name} eliminado', c_skill_changed: 'Habilidad {name} editada', c_skill_added: 'Habilidad {name} añadida', c_skill_removed: 'Habilidad {name} eliminada', c_row_added: 'Proceso {name} añadido', c_row_removed: 'Proceso {name} eliminado', c_process: '{name}: {a} → {b}', c_card: 'Tarjeta {name}: {a} → {b}', none: 'ninguno', empty: 'No hay motores', noRows: 'Sin filas en la biblioteca', fixedN: 'corregido {n} veces', open: 'Abrir la hoja del carril' },
     use: { day: 'Hoy', io: '{i} / {o}',
       task: 'Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos',
       today: 'Hoy {i} entrada · {o} salida', hint: 'Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa.' },
@@ -653,13 +669,14 @@ const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', e
 // Product names stay as they are in every language.
 const RUNTIMES = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
 const LANE_ID = /^[A-Za-z0-9_-]+$/;
-const TABS = ['hub', 'lanes', 'history'];
+const TABS = ['hub', 'engine', 'lanes', 'history'];
 const HIST_KINDS = ['decided', 'reports', 'closed', 'memos', 'requests'];
 const WS_MS = 30000;
 const POLL_MS = 5000;
 const IMG = /\.(png|jpe?g|gif|webp|avif|svg)$/i, VID = /\.(mp4|webm|mov|m4v)$/i, TXT = /\.(md|txt|json|log)$/i;
 const ICON = {
   hub: 'M3 12l2-7h14l2 7v7H3zM3 12h5l2 3h4l2-3h5',
+  engine: 'M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 12l8-4.5M12 12v9M12 12L4 7.5',
   lanes: 'M4 5h16v5H4zM4 14h16v5H4z',
   history: 'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
   chev: 'M9 5l7 7-7 7', prev: 'M15 5l-7 7 7 7', next: 'M9 5l7 7-7 7',
@@ -697,7 +714,7 @@ function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? '
 // ---------- state ----------
 const S = {
   data: null, raw: '', ok: null, loading: false, auth: false,
-  view: 'hub', item: null, lane: null, laneData: {}, menu: null, pushed: false, sheetKey: '', sheetId: null,
+  view: 'hub', eng: null, engs: null, engsRaw: '', maps: {}, engBusy: false, item: null, lane: null, laneData: {}, menu: null, pushed: false, sheetKey: '', sheetId: null,
   drafts: {}, busy: {}, extra: {}, tried: {}, open: {}, hubOpen: false, laneAdd: false, capFocus: 0, ws: [],
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
@@ -825,6 +842,7 @@ async function load() {
   S.loading = false;
   render();
   if (fresh) xLoaded();
+  if (fresh && S.view === 'engine') loadEngine();
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
@@ -842,10 +860,12 @@ async function loadWs() {
 // ---------- routing ----------
 function route() {
   const hs = location.hash.replace(/^#/, '');
-  const mi = /^item-(\d+)$/.exec(hs), ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs), m = mi || ml, prev = S.view;
+  const mi = /^item-(\d+)$/.exec(hs), ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs), me = /^engine-([A-Za-z0-9_-]+)$/.exec(hs), m = mi || ml, prev = S.view;
+  if (me) S.eng = me[1];
   S.item = mi ? Number(mi[1]) : null; S.lane = ml ? ml[1] : null; S.menu = null;
   if (ml) loadLane(ml[1]);
-  if (!m) { S.pushed = false; S.view = TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
+  if (!m) { S.pushed = false; S.view = me ? 'engine' : TABS.includes(hs) || X_VIEW.test(hs) ? hs : 'hub'; }
+  if (S.view === 'engine') loadEngine();
   if (S.view === 'history' && prev !== 'history') resetHist(S.hist.kind);
   render();
   if (!m && prev !== S.view) window.scrollTo(0, 0);
@@ -869,7 +889,7 @@ function render() {
   for (const el of [...TABS.map(t => $('#v-' + t)), ...[...X.tabs.values()].map(t => t.el), X.wait]) if (el) el.classList.toggle('hidden', el !== v);
   if (!S.data || !TABS.includes(S.view) && !xt) { v._lang = null; paint(v, 'loading' + LANG, () => h('div', { class: 'empty' }, L.empty.loading)); }
   else if (xt) xPaint(v, xt.id, xt.render);
-  else { ({ hub: viewHub, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
+  else { ({ hub: viewHub, engine: viewEngine, lanes: viewLanes, history: viewHistory })[S.view](); xSections(S.view, v); }
   renderSheet();
 }
 function viewEl(view) {
@@ -905,7 +925,7 @@ function renderNav() {
   renderUse();
   const n = counts(), nav = $('#nav .in'), xt = [...X.tabs.values()];
   const btn = (view, icon, label, badge) => h('button', {
-    class: S.view === view ? 'on' : '', 'aria-current': S.view === view ? 'page' : null, onclick: () => go(view) },
+    class: S.view === view ? 'on' : '', 'aria-current': S.view === view ? 'page' : null, onclick: () => go(view === 'engine' && S.eng ? 'engine-' + S.eng : view) },
     icon, h('span', null, label), badge ? h('span', { class: 'badge' }, badge) : null);
   nav.classList.toggle('x', xt.length > 0);
   paint(nav, LANG + S.view + JSON.stringify(n) + X.gen, () => [TABS.map(t => btn(t, svg(ICON[t]), L.tabs[t], n[t])),
@@ -1084,6 +1104,79 @@ function laneCard(l) {
     l.ctx_k > 0 ? h('div', { class: 'meta' }, `${L.label.ctx} ${l.ctx_k}K`) : null,
     taskTokLine(l.task_tokens),
     useLine(l.usage));
+}
+// ---------- AI Engine tab ----------
+function curEng() { const l = S.engs || []; return (l.find(e => e.id === S.eng) || l[0] || {}).id || null; }
+function pickEngine(id) { S.eng = id; location.hash = 'engine-' + id; }
+async function loadEngine() {
+  if (S.auth || S.engBusy) return;
+  S.engBusy = true;
+  try {
+    const j = await get(BASE + 'api/engines'), raw = JSON.stringify(j.engines);
+    if (raw !== S.engsRaw) { S.engsRaw = raw; S.engs = j.engines; }
+    const id = curEng(), old = id && S.maps[id];
+    if (id) {
+      const r = await fetch(BASE + 'api/engines/' + encodeURIComponent(id) + '/map', { cache: 'no-store', headers: old ? { 'if-none-match': old.tag } : {} });
+      if (r.status === 401) needLogin();
+      else if (r.status === 200) S.maps[id] = { tag: r.headers.get('etag') || String(Date.now()), data: await r.json() };
+    }
+  } catch (e) { /* the next poll tries again */ }
+  S.engBusy = false;
+  if (S.view === 'engine') render();
+}
+function rtChip(color, text, title) { return h('span', { class: 'chip rt-' + (color || 'none'), title: title || null }, text); }
+function cardColor(word) { return ['confirmed', 'tuned'].includes(word) ? 'green' : ['collecting', 'draft', 'reviewed'].includes(word) ? 'amber' : 'none'; }
+function pipeCard(p) {
+  const r = p.rating, E = L.eg;
+  return h('div', { class: 'lc pl' },
+    h('div', { class: 'hd' }, h('span', { class: 'nm' }, '#' + p.row + ' ' + p.type),
+      r && r.n ? rtChip(r.color, r.pct + '% · ' + (E['s_' + r.state] || r.state)) : rtChip('none', E.unrated)),
+    h('div', { class: 'meta' }, p.lane ? h('span', { class: 'chip lane' }, laneLabel(p.lane)) : null,
+      rtChip(cardColor(p.process_status), E.process + ' ' + (p.version ? 'v' + p.version + ' ' : '') + (p.process_status || '—')),
+      p.pattern_status ? rtChip(cardColor(p.pattern_status), p.pattern_status) : null,
+      p.model ? h('span', { class: 'chip' }, p.model) : null),
+    p.stages.length ? h('div', { class: 'stages' }, p.stages.map(s => {
+      const g = s.rating, c = s.card;
+      return h('span', { class: 'stg rt-' + (g && g.n ? g.color : 'none') + (s.weakest ? ' weak' : ''),
+        title: [s.by, c ? (c.version ? 'v' + c.version + ' ' : '') + c.status : E.noCard, g && g.n ? fmt(E.rated, { n: g.n }) : E.unrated].filter(Boolean).join(' · ') },
+        s.n + ' ' + s.name + (g && g.n ? ' ' + g.pct + '%' : ''));
+    })) : null,
+    r && r.fixes ? h('div', { class: 'meta' }, fmt(E.fixedN, { n: r.fixes })) : null);
+}
+function changeLine(c) {
+  const E = L.eg;
+  return fmt(E['c_' + c.kind] || '{name}', { name: c.name, a: c.from || E.none, b: c.to || E.none });
+}
+function engineBody(d) {
+  const E = L.eg, out = [], max = Math.max(1, ...d.usage.map(x => x.tokens_in + x.tokens_out));
+  out.push(h('div', { class: 'sec-h wrap' }, h('h2', null, d.label)));
+  if (d.notes) out.push(h('div', { class: 'hint' }, d.notes));
+  out.push(h('div', { class: 'h3' }, E.usage));
+  out.push(h('div', { class: 'days' }, d.usage.map(x => h('div', { class: 'day', title: x.day + ' ' + fmt(L.use.io, { i: fmtTok(x.tokens_in), o: fmtTok(x.tokens_out) }) },
+    h('i', { style: `height:${Math.round(100 * (x.tokens_in + x.tokens_out) / max)}%` }), h('span', null, x.day.slice(8))))));
+  out.push(sec(E.pipes, d.pipelines.length, d.pipelines.length ? h('div', { class: 'grid' }, d.pipelines.map(pipeCard)) : empty(E.noRows)));
+  const ch = d.changes;
+  out.push(sec(E.changes, ch.items.length || null, !ch.since ? empty(E.noSnap) : h('div', { class: 'stack' },
+    h('div', { class: 'hint' }, fmt(E.since, { d: fmtT(ch.since) })),
+    ch.items.length ? h('div', { class: 'list' }, ch.items.map(c => h('div', { class: 'row static' }, h('div', { class: 'body' }, h('div', { class: 'title' }, changeLine(c)))))) : empty(E.same))));
+  out.push(sec(E.lanes, d.lanes.length, d.lanes.length ? h('div', { class: 'grid' }, d.lanes.map(l => h('button', { class: 'lc', type: 'button', title: E.open, onclick: () => openLane(l.lane) },
+    h('div', { class: 'hd' }, h('span', { class: 'nm' }, l.label), statusChip(l.status)),
+    l.process ? h('div', { class: 'meta' }, l.process) : null,
+    l.skills.length ? h('div', { class: 'meta' }, l.skills.map(s => h('span', { class: 'chip' + (s.found ? '' : ' st-asking') }, s.name))) : null))) : empty(L.empty.lanes)));
+  out.push(sec(E.skills, d.skills.length, d.skills.length ? h('div', { class: 'meta' }, d.skills.map(s => h('span', { class: 'chip', title: s.files + ' ' + E.files + (s.lanes.length ? ' · ' + s.lanes.map(laneLabel).join(', ') : '') }, s.name))) : empty(L.lv.none)));
+  if (d.tools.length) out.push(sec(E.tools, d.tools.length, h('div', { class: 'list' }, d.tools.map(x => h('div', { class: 'row static' }, h('div', { class: 'body' }, h('div', { class: 'title' }, x.name), x.note ? h('div', { class: 'sub' }, x.note) : null))))));
+  if (d.experiments.length) out.push(sec(E.exps, d.experiments.length, h('div', { class: 'list' }, d.experiments.map(x => h('div', { class: 'row static' }, h('div', { class: 'body' },
+    h('div', { class: 'title' }, x.name + (x.status ? ' · ' + x.status : '')), x.note ? h('div', { class: 'sub' }, x.note) : null))))));
+  return out;
+}
+function viewEngine() {
+  const v = $('#v-engine');
+  shell(v, () => [h('div', { id: 'eg-sw' }), h('div', { id: 'eg-body' })]);
+  const engs = S.engs || [], cur = curEng(), m = cur && S.maps[cur];
+  paint($('#eg-sw'), LANG + JSON.stringify([engs.map(e => [e.id, e.label]), cur]), () => engs.length > 1
+    ? h('div', { class: 'seg', role: 'tablist' }, engs.map(e => h('button', { type: 'button', role: 'tab', class: e.id === cur ? 'on' : '', 'aria-selected': String(e.id === cur), onclick: () => pickEngine(e.id) }, e.label)))
+    : null);
+  paint($('#eg-body'), LANG + (m ? m.tag : S.engs ? 'e' : 'l'), () => !S.engs || (cur && !m) ? empty(L.empty.loading) : !cur ? empty(L.eg.empty) : engineBody(m.data));
 }
 async function loadLane(id) {
   try { const j = await get(BASE + 'api/lanes/' + encodeURIComponent(id)); S.laneData[id] = j; if (S.lane === id) renderSheet(); }
