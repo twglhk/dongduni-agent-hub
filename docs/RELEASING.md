@@ -62,6 +62,8 @@ A patch: every answer to a request reaches a person as a review card.
 
 - **Hub answers are review cards.** `dah memo reply N "..."` from the hub, to a request a person wrote in the board's box, now also posts a review card for humans (title: their request, body: the answer and the request quoted; push notification as for other human items). A second reply to the same request revises the open card; after it is decided, a new reply posts a new card. Infra replies and replies to non-human senders are unchanged. Confirming a card (`ok`, no note) wakes nobody; any other verdict, or a note, reaches the hub as a decision.
 - The blue "last reply" strip above the request box is gone from the board (and the thread sheet it opened); the box stays.
+- The request box is a floating island over the page instead of a full-width band.
+- The Engine tab no longer lists lanes: an engine shows its method (pipelines, changes, skills, tools, experiments); lanes, the workers, stay on the Lanes tab. `/api/engines/<id>` still returns `lanes`.
 
 **Upgrade**
 
