@@ -114,6 +114,19 @@ class CliTest(unittest.TestCase):
         self.assertIn("only infra", self.tower("memo", "forward", "2", lane="hub", ok=False))
         self.assertIn("infra only uses", self.tower("report", "done", "x", lane="infra", ok=False))
 
+    def test_hub_memo_reply_posts_a_review_card_for_a_human_request(self) -> None:
+        from agent_hub.store import Store
+        s = Store(self.home / ".tower/state/tower.db")
+        mid = s.push("hub", "ana", "memo", "tidy the docs")
+        out = self.tower("memo", "reply", str(mid), "Tidied.", lane="hub")
+        self.assertIn("review card #1", out)
+        it = s.item(1)
+        self.assertEqual((it["audience"], it["memo_id"], it["title"]), ("human", mid, "tidy the docs"))
+        self.assertIn("review card #1", self.tower("memo", "reply", str(mid), "More.", lane="hub"))
+        self.assertEqual(len(s.items()), 1)
+        self.assertNotIn("review card", self.tower("memo", "reply", str(s.push("infra", "ana", "memo", "x")), "ok",
+                                                    lane="infra"))
+
     def test_infra_takes_requests_from_the_hub_only(self) -> None:
         from agent_hub.store import Store
         s = Store(self.home / ".tower/state/tower.db")

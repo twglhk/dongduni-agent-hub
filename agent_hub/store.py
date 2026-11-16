@@ -13,7 +13,7 @@ import secrets
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Collection, Iterable
 
 HUB = "hub"
 INFRA = "infra"
@@ -237,6 +237,8 @@ class Store:
             for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
+            if "memo_id" not in {r[1] for r in con.execute("PRAGMA table_info(items)")}:
+                con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
@@ -337,7 +339,9 @@ class Store:
             raise StoreError(f"memo #{memo_id} not found")
         return row
 
-    def reply_memo(self, memo_id: int, text: str, by: str) -> None:
+    def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = ()) -> int | None:
+        """Record the reply. A hub reply to a person's request also becomes a review card for humans
+        (one open card per request: a second reply revises it). Returns that item's id, else None."""
         memo = self.memo(memo_id)
         if memo["target"] != by:
             raise StoreError(f"memo #{memo_id} was sent to {memo['target']}, not {by}")
@@ -345,6 +349,24 @@ class Store:
         with self.conn() as con:
             con.execute("INSERT INTO messages(target, sender, kind, item_id, text, created, delivered) "
                         "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", memo_id, text, now, now))
+        if by != HUB or memo["sender"] in (HUB, INFRA, TOWER, "dah update", *machines):
+            return None
+        return self.post_memo_card(memo, text)
+
+    def post_memo_card(self, memo: dict[str, Any], reply: str) -> int:
+        quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in memo["text"].strip().splitlines())
+        with self.conn() as con:
+            row = con.execute("SELECT id FROM items WHERE memo_id=? AND state='open' ORDER BY id DESC LIMIT 1",
+                              (memo["id"],)).fetchone()
+        if row:
+            old = self.item(row[0])
+            return self.revise_item(row[0], body=f"{old['body']}\n\n---\n\n{reply}")["id"]
+        title = " ".join(memo["text"].split())
+        title = title if len(title) <= 80 else title[:79] + "…"
+        iid = self.add_item(HUB, None, "review", title, f"{reply}\n\n{quoted}", [], [], HUMAN)
+        with self.conn() as con:
+            con.execute("UPDATE items SET memo_id=? WHERE id=?", (memo["id"], iid))
+        return iid
 
     # ---------- tasks ----------
 

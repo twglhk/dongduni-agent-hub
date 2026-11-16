@@ -231,6 +231,25 @@ class EngineTest(unittest.TestCase):
         self.assertEqual([x for x in self.s.tasks(("queued",)) if x["lane"] == "docs"], [])
         self.assertTrue(any(m["kind"] == "decision" for m in self.s.pending(HUB)))
 
+    def memo_card(self) -> int:
+        mid = self.s.push(HUB, "ana", "memo", "ship it")
+        return self.s.reply_memo(mid, "Shipped.", HUB) or 0
+
+    def test_confirming_a_memo_card_wakes_nobody(self) -> None:
+        iid = self.memo_card()
+        self.s.decide(iid, "ok", "ana")
+        self.e.tick()
+        self.assertEqual([m for m in self.s.pending(HUB) if m["kind"] == "decision"], [])
+        self.assertIsNotNone(self.s.item(iid)["delivered"])
+
+    def test_rejecting_or_noting_a_memo_card_reaches_the_hub(self) -> None:
+        for verdict, note in (("no", ""), ("hold", ""), ("ok", "also add the footer")):
+            iid = self.memo_card()
+            self.s.decide(iid, verdict, "ana", note=note)
+            self.e.tick()
+            self.assertTrue(any(m["kind"] == "decision" and f"Decision #{iid}" in m["text"]
+                                for m in self.s.pending(HUB)), (verdict, note))
+
     def test_infra_decision_goes_to_infra_inbox(self) -> None:
         iid = self.item(INFRA, None, HUMAN)
         self.s.decide(iid, "ok", "ana")

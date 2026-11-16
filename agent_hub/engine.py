@@ -485,6 +485,8 @@ class Engine:
     def _route(self, con: Any, it: dict[str, Any]) -> None:
         line = decision_line(it)
         lane = it["lane"]
+        if it.get("memo_id") and it["verdict"] == "ok" and not (it.get("note") or "").strip():
+            return  # a person confirmed the hub's answer to their request: nothing for the hub to do
         if lane == INFRA and self.has_infra:
             self.store.push(INFRA, TOWER, "decision", line + f"\n(`dah show {it['id']}` for the full item.)",
                             it["task_id"], it["id"], con=con)

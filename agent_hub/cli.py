@@ -364,8 +364,9 @@ def cmd_memo(args: argparse.Namespace) -> None:
     s = store(c)
     try:
         if args.sub == "reply":
-            s.reply_memo(args.id, args.text, me)
-            print(f"Answered #{args.id}; it shows on the board.")
+            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes))
+            print(f"Answered #{args.id}; posted as review card #{card} for humans to confirm." if card
+                  else f"Answered #{args.id}; it shows on the board.")
         elif args.sub == "forward":
             if me != INFRA:
                 raise TowerError("only infra forwards memos")

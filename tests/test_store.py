@@ -108,6 +108,61 @@ class StoreTest(unittest.TestCase):
         with s.conn() as c:  # the table is left as it was: a downgrade to 0.7.x still finds its goals
             self.assertEqual(c.execute("SELECT title FROM goals").fetchone()[0], "old")
 
+    def test_hub_reply_to_a_human_request_becomes_a_review_card(self) -> None:
+        mid = self.s.push(HUB, "ana", "memo", "  make the   docs\nshorter  ")
+        iid = self.s.reply_memo(mid, "Done in docs/a.md.", HUB)
+        it = self.s.item(iid)
+        self.assertEqual((it["kind"], it["audience"], it["lane"], it["task_id"], it["memo_id"], it["state"]),
+                         ("review", HUMAN, HUB, None, mid, "open"))
+        self.assertEqual(it["title"], "make the docs shorter")
+        self.assertEqual(it["body"], "Done in docs/a.md.\n\n> make the   docs\n> shorter")
+        self.assertEqual([it["id"]], [x["id"] for x in self.s.unnotified()])  # push notification pending
+        self.assertEqual(self.s.memos(HUB)[0]["replies"][0]["text"], "Done in docs/a.md.")  # history kept
+
+    def test_long_request_title_is_clipped(self) -> None:
+        mid = self.s.push(HUB, "ana", "memo", "word " * 60)
+        self.assertEqual(len(self.s.item(self.s.reply_memo(mid, "ok", HUB))["title"]), 80)
+
+    def test_second_reply_revises_the_open_card_and_notifies_again(self) -> None:
+        mid = self.s.push(HUB, "ana", "memo", "req")
+        first = self.s.reply_memo(mid, "one", HUB)
+        self.s.update_item(first, notified=5.0)
+        self.assertEqual(self.s.reply_memo(mid, "two", HUB), first)
+        it = self.s.item(first)
+        self.assertEqual(it["body"], "one\n\n> req\n\n---\n\ntwo")
+        self.assertEqual(len(self.s.items()), 1)
+        self.assertEqual([x["id"] for x in self.s.unnotified()], [first])
+
+    def test_reply_after_the_card_is_decided_posts_a_new_one(self) -> None:
+        mid = self.s.push(HUB, "ana", "memo", "req")
+        first = self.s.reply_memo(mid, "one", HUB)
+        self.s.decide(first, "ok", "ana")
+        second = self.s.reply_memo(mid, "two", HUB)
+        self.assertNotEqual(first, second)
+        self.assertEqual(self.s.item(second)["body"], "two\n\n> req")
+
+    def test_no_card_for_infra_replies_or_non_human_senders(self) -> None:
+        self.assertIsNone(self.s.reply_memo(self.s.push(INFRA, "ana", "memo", "fix"), "done", INFRA))
+        self.assertIsNone(self.s.reply_memo(self.s.push(HUB, "tower", "memo", "x"), "ok", HUB))
+        self.assertIsNone(self.s.reply_memo(self.s.push(HUB, "docs", "memo", "x"), "ok", HUB, {"docs"}))
+        self.assertEqual(self.s.items(), [])
+
+    def test_old_database_without_memo_id_still_opens(self) -> None:
+        import sqlite3
+        path = make_home().db
+        path.parent.mkdir(parents=True, exist_ok=True)
+        from agent_hub.store import SCHEMA
+        con = sqlite3.connect(path)
+        con.executescript(SCHEMA)  # the schema as 0.9.3 made it: items has no memo_id
+        con.execute("INSERT INTO items(lane, kind, title, body, audience, state, created) "
+                    "VALUES('hub', 'review', 'old', 'b', 'human', 'open', 1)")
+        con.commit()
+        con.close()
+        s = Store(path)
+        self.assertIsNone(s.item(1)["memo_id"])
+        mid = s.push(HUB, "ana", "memo", "req")
+        self.assertEqual(s.item(s.reply_memo(mid, "ok", HUB))["memo_id"], mid)
+
     def test_a_new_database_has_no_goals_table(self) -> None:
         with Store(make_home().db).conn() as c:
             self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='goals'").fetchone())

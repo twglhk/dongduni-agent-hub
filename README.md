@@ -129,7 +129,7 @@ Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 | **lane** | a role with its own session: `hub`, `infra`, and any team lanes you add (`dah lane add docs --runtime codex`). A lane is not a new agent: it is a role file (`.tower/lanes/<lane>.md`, edit freely) put on the agent you already use, with your hooks, skills and plugins. Every lane also gets a `/dah-<lane>` shortcut so you can open the role by hand in Claude Code, OpenCode or Codex. |
 | **task** | a brief the hub gives a team lane, usually for one stage of a process card. Each task runs in a fresh session; the tower closes it when the lane wraps. |
 | **item** | something a human or the hub must decide: a `decision` with options or a `review` of an artifact. |
-| **request** | what people write in the box on every board tab: to the hub (the work, priorities). Each gets a reply on the board. Changes to the system itself (lanes, models, access) go through the hub to infra. |
+| **request** | what people write in the box on every board tab: to the hub (the work, priorities). Your answer to each arrives as a review card to confirm. Changes to the system itself (lanes, models, access) go through the hub to infra. |
 | **infra** | the lane that maintains the tower itself: adds lanes, changes models, sets up access, one request per fresh session. Only the hub sends it work. |
 
 **Memory is yours.** agent-hub keeps the board's history (decisions, reports, requests, the ledger of tasks and ratings) and nothing else. Where your team keeps decisions and notes (a memory MCP, a wiki, a docs folder) is your choice: setup writes it into the lane instructions, and lanes record there the way you normally do.

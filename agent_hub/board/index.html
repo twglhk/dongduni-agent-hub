@@ -91,12 +91,10 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 /* ---- pinned chat: the same request box on every tab ---- */
 #chat{position:fixed;left:0;right:0;bottom:var(--nav-h);z-index:19;background:var(--bg);border-top:1px solid var(--line)}
 #chat .in{max-width:var(--col);margin:0 auto;padding:var(--s2) var(--s5);display:grid;gap:var(--s1)}
-#chat-last{display:block;width:100%;text-align:left;font-size:var(--t6);line-height:1.4;color:var(--text-2);background:var(--blue-weak);border-radius:var(--r-s);padding:6px var(--s3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chat .row{display:flex;gap:var(--s2);align-items:flex-end}
 #chat textarea{flex:1;min-width:0;height:var(--tap);max-height:120px;border:0;outline:none;resize:none;background:var(--surface);border-radius:var(--r-s);padding:12px var(--s4);font-size:var(--fs);line-height:1.3}
 #chat textarea::placeholder{color:var(--text-4)}
 #chat textarea:focus{box-shadow:inset 0 0 0 1.5px var(--blue)}
-body.has-last{--chat-h:104px}
 .btn-s{height:var(--tap);padding:0 var(--s5);border-radius:var(--r-s);background:var(--blue);color:#fff;font-weight:700;font-size:var(--t5);transition:opacity .15s,transform .12s}
 .btn-s:disabled{opacity:.35;cursor:default}
 .btn-s:active:not(:disabled){transform:scale(.97);background:var(--blue-dn)}
@@ -448,7 +446,7 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
   <section id="v-lanes" class="hidden"></section>
   <section id="v-history" class="hidden"></section>
 </main>
-<div id="chat" class="hidden"><div class="in"><button id="chat-last" type="button" class="hidden"></button><div class="row"><textarea id="chat-ta" rows="1"></textarea><button id="chat-send" class="btn-s" type="button" disabled></button></div></div></div>
+<div id="chat" class="hidden"><div class="in"><div class="row"><textarea id="chat-ta" rows="1"></textarea><button id="chat-send" class="btn-s" type="button" disabled></button></div></div></div>
 <nav id="nav"><div id="use" role="status"></div><div class="in"></div></nav>
 <div id="sheet-bd"></div>
 <div id="sheet" role="dialog" aria-modal="true"></div>
@@ -465,7 +463,7 @@ const UI = {
     tabs: { hub: 'Hub', engine: 'Engine', lanes: 'Lanes', history: 'History' },
     sec: { asks: 'Waiting for your answer', yours: 'For you', handling: 'Hub is handling {n}', lanes: 'Lanes', tasks: 'Live tasks', reports: 'Recent reports',
       usage: 'Usage today' },
-    empty: { yours: 'Nothing to decide', reqs: 'No requests yet', tasks: 'No live tasks',
+    empty: { yours: 'Nothing to decide', tasks: 'No live tasks',
       reports: 'No reports yet', lanes: 'No lanes', hist: 'Nothing here yet', loading: 'Loading', end: 'That’s all' },
     status: { busy: 'Working', asking: 'Asking', idle: 'Idle', closed: 'Closed', unknown: 'No response' },
     task: { queued: 'Queued', running: 'Running', wrapping: 'Wrapping up', closed: 'Closed', cancelled: 'Cancelled' },
@@ -474,7 +472,7 @@ const UI = {
     verdict: { ok: 'Decided', okReview: 'Approved', no: 'Rejected', hold: 'On hold', answer: 'Answered', merged: 'Merged' },
     hist: { decided: 'Decided', reports: 'Reports', closed: 'Closed', memos: 'Infra requests', requests: 'Hub requests' },
     memo: { wait: 'Waiting', delivered: 'Delivered', replied: 'Replied' },
-    chat: { title: 'Request to the hub', open: 'Open the thread' },
+    chat: { title: 'Request to the hub' },
     label: { why: 'Why it came to you', question: 'Question', options: 'Options', pickMany: 'Pick any', note: 'Note', answer: 'Answer',
       attachments: 'Attachments', noTask: 'No task', cap: '{u}/{c} busy', paused: 'Paused', reply: 'Reply', hubSide: 'Hub', ctx: 'ctx' },
     ph: { answer: 'Your answer or a note', review: 'Leave empty to approve', token: 'Access token' },
@@ -493,7 +491,7 @@ const UI = {
       label: 'Display name (optional)', labelPh: 'e.g. Docs', role: 'Role',
       rolePh: 'What it owns, the files it works on, when it is done, what it must not touch',
       model: 'Model (optional)', agent: 'Agent (optional)', optPh: 'Empty uses the default', send: 'Ask the hub to add it', sent: 'Sent to the hub',
-      hint: 'The hub has infra create the lane and fill in its role file, then answers in the chat.',
+      hint: 'The hub has infra create the lane and fill in its role file, then sends you a card to confirm.',
       memo: 'Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\n'
         + 'Run `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch.' },
     cap: { at: 'At once', less: 'One fewer', more: 'One more', hint: 'Team lanes that may work at the same time. Hub and infra don’t count.' },
@@ -509,7 +507,7 @@ const UI = {
     tabs: { hub: '허브', engine: '엔진', lanes: '레인', history: '기록' },
     sec: { asks: '답을 기다리는 질문', yours: '내가 정할 것', handling: '허브가 처리 중 {n}건', lanes: '레인', tasks: '진행 중인 작업', reports: '최근 보고',
       usage: '오늘 사용량' },
-    empty: { yours: '정할 게 없어요', reqs: '보낸 요청이 없어요', tasks: '진행 중인 작업이 없어요',
+    empty: { yours: '정할 게 없어요', tasks: '진행 중인 작업이 없어요',
       reports: '보고가 없어요', lanes: '레인이 없어요', hist: '아직 없어요', loading: '불러오는 중', end: '여기까지예요' },
     status: { busy: '작업 중', asking: '질문 중', idle: '쉬는 중', closed: '닫힘', unknown: '응답 없음' },
     task: { queued: '대기', running: '진행 중', wrapping: '정리 중', closed: '끝남', cancelled: '취소됨' },
@@ -518,7 +516,7 @@ const UI = {
     verdict: { ok: '결정함', okReview: '승인', no: '반려', hold: '보류', answer: '직접 답', merged: '합침' },
     hist: { decided: '결정', reports: '보고', closed: '작업', memos: '인프라 요청', requests: '허브 요청' },
     memo: { wait: '대기', delivered: '전달됨', replied: '답 옴' },
-    chat: { title: '허브에 요청', open: '대화 열기' },
+    chat: { title: '허브에 요청' },
     label: { why: '나에게 온 이유', question: '질문', options: '선택지', pickMany: '여러 개 선택', note: '메모', answer: '내 답',
       attachments: '첨부', noTask: '맡은 작업 없음', cap: '{u}/{c} 사용 중', paused: '일시 정지', reply: '답', hubSide: '허브', ctx: '컨텍스트' },
     ph: { answer: '직접 답하거나 메모를 남겨 주세요', review: '비우면 승인돼요', token: '토큰' },
@@ -537,7 +535,7 @@ const UI = {
       label: '표시 이름 (선택)', labelPh: '예: 문서', role: '역할',
       rolePh: '맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것',
       model: '모델 (선택)', agent: '에이전트 (선택)', optPh: '비우면 기본값을 써요', send: '허브에 추가 요청', sent: '허브에 요청했어요',
-      hint: '허브가 인프라에 맡겨 레인을 만들고 역할 파일을 채운 뒤 채팅으로 답해요.',
+      hint: '허브가 인프라에 맡겨 레인을 만들고 역할 파일을 채운 뒤 확인할 카드로 알려줘요.',
       memo: '인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요.' },
     cap: { at: '동시 실행', less: '하나 줄이기', more: '하나 늘리기', hint: '동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요.' },
@@ -553,7 +551,7 @@ const UI = {
     tabs: { hub: 'ハブ', engine: 'エンジン', lanes: 'レーン', history: '履歴' },
     sec: { asks: '回答待ちの質問', yours: 'あなたが決めること', handling: 'ハブが対応中 {n}件', lanes: 'レーン', tasks: '進行中の作業', reports: '最近の報告',
       usage: '今日の使用量' },
-    empty: { yours: '決めることはありません', reqs: 'まだ依頼はありません',
+    empty: { yours: '決めることはありません',
       tasks: '進行中の作業はありません', reports: 'まだ報告はありません', lanes: 'レーンがありません', hist: 'まだありません', loading: '読み込み中',
       end: 'ここまでです' },
     status: { busy: '作業中', asking: '質問中', idle: '待機中', closed: '停止', unknown: '応答なし' },
@@ -563,7 +561,7 @@ const UI = {
     verdict: { ok: '決定済み', okReview: '承認', no: '差し戻し', hold: '保留', answer: '自分で回答', merged: '統合' },
     hist: { decided: '決定', reports: '報告', closed: '作業', memos: 'インフラへの依頼', requests: 'ハブへの依頼' },
     memo: { wait: '待ち', delivered: '届いた', replied: '返信あり' },
-    chat: { title: 'ハブに依頼', open: 'やり取りを開く' },
+    chat: { title: 'ハブに依頼' },
     label: { why: 'あなたに来た理由', question: '質問', options: '選択肢', pickMany: '複数選択可', note: 'メモ', answer: '回答',
       attachments: '添付', noTask: '担当作業なし', cap: '{u}/{c} 使用中', paused: '一時停止', reply: '返信', hubSide: 'ハブ', ctx: 'コンテキスト' },
     ph: { answer: '自分の回答かメモを書いてください', review: '空欄なら承認になります', token: 'トークン' },
@@ -582,7 +580,7 @@ const UI = {
       label: '表示名(任意)', labelPh: '例: ドキュメント', role: '役割',
       rolePh: '担当範囲、扱うファイル、完了の条件、触れてはいけないもの',
       model: 'モデル(任意)', agent: 'エージェント(任意)', optPh: '空欄なら既定値を使います', send: 'ハブに追加を依頼', sent: 'ハブに依頼しました',
-      hint: 'ハブがインフラに頼んでレーンを作り、役割ファイルを埋めてからチャットで返信します。',
+      hint: 'ハブがインフラに頼んでレーンを作り、役割ファイルを埋めてから確認用のカードで知らせます。',
       memo: 'インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n'
         + '`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。' },
     cap: { at: '同時実行', less: '1つ減らす', more: '1つ増やす', hint: '同時に作業できるチームレーンの数です。ハブとインフラは数えません。' },
@@ -598,7 +596,7 @@ const UI = {
     tabs: { hub: '中枢', engine: '引擎', lanes: '通道', history: '记录' },
     sec: { asks: '等你回答的问题', yours: '待你决定', handling: '中枢正在处理 {n} 项', lanes: '通道', tasks: '进行中的任务', reports: '最近的报告',
       usage: '今日用量' },
-    empty: { yours: '没有待决定的事', reqs: '还没有请求', tasks: '没有进行中的任务',
+    empty: { yours: '没有待决定的事', tasks: '没有进行中的任务',
       reports: '还没有报告', lanes: '没有通道', hist: '暂无内容', loading: '加载中', end: '就这些' },
     status: { busy: '工作中', asking: '提问中', idle: '空闲', closed: '已关闭', unknown: '无响应' },
     task: { queued: '排队中', running: '进行中', wrapping: '收尾中', closed: '已完成', cancelled: '已取消' },
@@ -607,7 +605,7 @@ const UI = {
     verdict: { ok: '已决定', okReview: '已批准', no: '已驳回', hold: '暂缓', answer: '自行回答', merged: '已合并' },
     hist: { decided: '决定', reports: '报告', closed: '任务', memos: '基础设施请求', requests: '中枢请求' },
     memo: { wait: '等待中', delivered: '已送达', replied: '已回复' },
-    chat: { title: '向中枢提请求', open: '打开对话' },
+    chat: { title: '向中枢提请求' },
     label: { why: '为什么交给你', question: '问题', options: '选项', pickMany: '可多选', note: '备注', answer: '回答',
       attachments: '附件', noTask: '暂无任务', cap: '{u}/{c} 使用中', paused: '已暂停', reply: '回复', hubSide: '中枢', ctx: '上下文' },
     ph: { answer: '写下你的回答或备注', review: '留空即批准', token: '访问令牌' },
@@ -626,7 +624,7 @@ const UI = {
       label: '显示名称(可选)', labelPh: '例如 文档', role: '职责',
       rolePh: '负责什么、处理哪些文件、怎样算完成、不能碰什么',
       model: '模型(可选)', agent: '代理(可选)', optPh: '留空则用默认值', send: '请中枢添加', sent: '已发给中枢',
-      hint: '中枢会让基础设施创建通道、填好职责文件,然后在聊天里回复。',
+      hint: '中枢会让基础设施创建通道、填好职责文件,然后用待确认的卡片通知你。',
       memo: '请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n'
         + '请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。' },
     cap: { at: '同时运行', less: '减少一个', more: '增加一个', hint: '可以同时工作的团队通道数。中枢和基础设施不计在内。' },
@@ -642,7 +640,7 @@ const UI = {
     tabs: { hub: 'Hub', engine: 'Motor', lanes: 'Carriles', history: 'Historial' },
     sec: { asks: 'Esperan tu respuesta', yours: 'Para ti', handling: 'El hub atiende {n}', lanes: 'Carriles', tasks: 'Tareas en curso',
       reports: 'Informes recientes', usage: 'Uso de hoy' },
-    empty: { yours: 'Nada que decidir', reqs: 'Aún no hay peticiones',
+    empty: { yours: 'Nada que decidir',
       tasks: 'No hay tareas en curso', reports: 'Aún no hay informes', lanes: 'Sin carriles', hist: 'Aún no hay nada', loading: 'Cargando',
       end: 'Eso es todo' },
     status: { busy: 'Trabajando', asking: 'Preguntando', idle: 'Libre', closed: 'Cerrado', unknown: 'Sin respuesta' },
@@ -652,7 +650,7 @@ const UI = {
     verdict: { ok: 'Decidido', okReview: 'Aprobado', no: 'Rechazado', hold: 'En espera', answer: 'Respondido', merged: 'Unido' },
     hist: { decided: 'Decididos', reports: 'Informes', closed: 'Tareas', memos: 'Peticiones a infra', requests: 'Peticiones al hub' },
     memo: { wait: 'Esperando', delivered: 'Entregada', replied: 'Respondida' },
-    chat: { title: 'Petición al hub', open: 'Abrir la conversación' },
+    chat: { title: 'Petición al hub' },
     label: { why: 'Por qué te llega', question: 'Pregunta', options: 'Opciones', pickMany: 'Varias posibles', note: 'Nota', answer: 'Respuesta',
       attachments: 'Adjuntos', noTask: 'Sin tarea', cap: '{u}/{c} ocupados', paused: 'En pausa', reply: 'Respuesta', hubSide: 'Hub', ctx: 'contexto' },
     ph: { answer: 'Tu respuesta o una nota', review: 'Déjalo vacío para aprobar', token: 'Token de acceso' },
@@ -671,7 +669,7 @@ const UI = {
       label: 'Nombre visible (opcional)', labelPh: 'p. ej. Docs', role: 'Rol',
       rolePh: 'Qué le toca, con qué archivos trabaja, cuándo está hecho, qué no debe tocar',
       model: 'Modelo (opcional)', agent: 'Agente (opcional)', optPh: 'Vacío usa el valor por defecto', send: 'Pedir al hub que lo añada',
-      sent: 'Enviado al hub', hint: 'El hub encarga a infra crear el carril y rellenar su archivo de rol, y responde en el chat.',
+      sent: 'Enviado al hub', hint: 'El hub encarga a infra crear el carril y rellenar su archivo de rol, y te avisa con una tarjeta para confirmar.',
       memo: 'Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\n'
         + 'Ejecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar.' },
     cap: { at: 'A la vez', less: 'Uno menos', more: 'Uno más', hint: 'Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan.' },
@@ -1002,15 +1000,11 @@ function cardList(list, emptyText) {
 
 // ---------- pinned chat ----------
 // One request box fixed above the nav on every tab; it writes to the hub. The textarea lives in the page, not in a view, so typing survives repaints.
-const chatLast = () => { const m = ((S.data && S.data.memos.hub) || []).find(x => (x.replies || []).length); return m ? m.replies[m.replies.length - 1].text : ''; };
 function renderChat() {
-  const box = $('#chat'), ta = $('#chat-ta'), last = $('#chat-last'), txt = S.data ? chatLast().replace(/\s+/g, ' ').trim() : '';
+  const box = $('#chat'), ta = $('#chat-ta');
   box.classList.toggle('hidden', !S.data);
   ta.placeholder = L.chat.title; ta.setAttribute('aria-label', L.chat.title);
   $('#chat-send').textContent = L.btn.send;
-  last.textContent = txt; last.classList.toggle('hidden', !txt);
-  last.setAttribute('aria-label', `${L.chat.open}: ${txt}`);
-  document.body.classList.toggle('has-last', !!txt);
 }
 function initChat() {
   const ta = $('#chat-ta'), btn = $('#chat-send');
@@ -1023,7 +1017,6 @@ function initChat() {
     catch (e) { if (e.status !== 401) toast(e.message, true); }
     btn.disabled = !ta.value.trim();
   });
-  $('#chat-last').addEventListener('click', () => openMenu('thread'));
 }
 function clampToggle(key, el) {
   const long = el.textContent.length > 220 || el.textContent.split('\n').length > 5;
@@ -1066,7 +1059,6 @@ function menuHead(title) {
     h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
 }
 function menuBody() {
-  if (S.menu === 'thread') { const list = S.data.memos.hub; return list.length ? [h('div', { class: 'sent' }, list.map(memoRow))] : [empty(L.empty.reqs)]; }
   if (S.menu === 'lang') return [h('div', { class: 'menu', role: 'listbox' }, Object.entries(LANGS).map(([c, nm]) =>
     h('button', { class: 'mrow' + (c === LANG ? ' on' : ''), type: 'button', role: 'option', 'aria-selected': String(c === LANG), lang: c, onclick: () => chooseLang(c) },
       h('div', { class: 'body' }, h('div', { class: 'nm' }, nm), h('div', { class: 'sub' }, c.toUpperCase())), c === LANG ? svg(ICON.check, 'ck') : null))),
@@ -1467,8 +1459,8 @@ function closeSheetDom() {
 }
 function sheetView() {
   if (S.menu) {
-    const title = S.menu === 'lang' ? L.lang.title : S.menu === 'thread' ? L.chat.title : L.ws.title;
-    const dep = S.menu === 'ws' ? S.ws : S.menu === 'thread' ? S.data && S.data.memos.hub : LANG;
+    const title = S.menu === 'lang' ? L.lang.title : L.ws.title;
+    const dep = S.menu === 'ws' ? S.ws : LANG;
     return { id: 'm-' + S.menu, key: [S.menu, dep], label: title, head: () => menuHead(title), build: () => ({ body: menuBody(), cta: null }) };
   }
   if (S.lane) {

@@ -54,6 +54,19 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
+### Unreleased
+
+A patch: every answer to a request reaches a person as a review card.
+
+**New**
+
+- **Hub answers are review cards.** `dah memo reply N "..."` from the hub, to a request a person wrote in the board's box, now also posts a review card for humans (title: their request, body: the answer and the request quoted; push notification as for other human items). A second reply to the same request revises the open card; after it is decided, a new reply posts a new card. Infra replies and replies to non-human senders are unchanged. Confirming a card (`ok`, no note) wakes nobody; any other verdict, or a note, reaches the hub as a decision.
+- The blue "last reply" strip above the request box is gone from the board (and the thread sheet it opened); the box stays.
+
+**Upgrade**
+
+`dah update` refreshes `lanes/hub.md` and `PROTOCOL.md` when untouched; an edited `hub.md` gets a `.new` next to it to merge by hand. Database: `items.memo_id` is added (nullable); columns are only added, so a downgrade to 0.9.x still opens it.
+
 ### 0.9.3
 
 A patch release: the six candidates from `docs/audit/0.9.3-candidates.md`, ported as neutral code with tests.
