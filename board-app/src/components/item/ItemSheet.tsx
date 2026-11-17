@@ -8,6 +8,7 @@ import { closeItem } from '../../state/route';
 import { useToast } from '../../state/toast';
 import { Chip, KindChip, LaneChip, Meta, When } from '../Chips';
 import { Prose } from '../Prose';
+import { AttachStrip } from '../AttachStrip';
 import { SheetHead, type SheetContent } from '../Sheet';
 import { Answer, type Verdict as Choice } from './Answer';
 import { Attachments } from './Attachments';
@@ -56,6 +57,7 @@ function Body({ it, onImage }: { it: Item; onImage: (imgs: string[], i: number) 
       {it.question && <Box tone="q" label={L.label.question} text={it.question} />}
       {it.escalation && <Box tone="esc" label={L.label.why} text={it.escalation} />}
       {it.body && <Prose text={it.body} />}
+      <AttachStrip text={it.body} players />
       {it.attachments.length > 0 && <Attachments paths={it.attachments} onImage={onImage} />}
       {it.kind === 'decision' && it.options.length > 0 && <Options it={it} picks={picks} busy={d.busy} onPick={pick} />}
       {!act && it.note && <>

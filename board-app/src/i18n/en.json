@@ -73,6 +73,20 @@
   "chat": {
     "title": "Request to the hub"
   },
+  "up": {
+    "attach": "Attach files",
+    "remove": "Remove",
+    "badType": "{name}: this kind of file cannot be attached",
+    "tooBig": "{name} is over {mb} MB",
+    "tooMany": "At most {n} files per request",
+    "run": "Uploading file {i} of {n}",
+    "done": "Sent with {n} attachment(s)",
+    "partial": "{f} of {n} attachments did not upload",
+    "failed": "Failed",
+    "leave": "Files are still uploading. Leave anyway?",
+    "noView": "No preview",
+    "noEtag": "The storage did not return an upload receipt: allow the ETag header in its CORS settings"
+  },
   "label": {
     "why": "Why it came to you",
     "question": "Question",

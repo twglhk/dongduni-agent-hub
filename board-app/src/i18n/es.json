@@ -73,6 +73,20 @@
   "chat": {
     "title": "Petición al hub"
   },
+  "up": {
+    "attach": "Adjuntar archivos",
+    "remove": "Quitar",
+    "badType": "{name}: este tipo de archivo no se puede adjuntar",
+    "tooBig": "{name} supera los {mb} MB",
+    "tooMany": "Como máximo {n} archivos por solicitud",
+    "run": "Subiendo el archivo {i} de {n}",
+    "done": "Enviado con {n} adjunto(s)",
+    "partial": "{f} de {n} adjuntos no se subieron",
+    "failed": "Error",
+    "leave": "Los archivos aún se están subiendo. ¿Salir de todos modos?",
+    "noView": "Sin vista previa",
+    "noEtag": "El almacenamiento no devolvió el recibo de la subida: permite la cabecera ETag en su configuración CORS"
+  },
   "label": {
     "why": "Por qué te llega",
     "question": "Pregunta",

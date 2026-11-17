@@ -109,6 +109,7 @@
     font-size: 1rem; line-height: 1.5; -webkit-font-smoothing: antialiased; word-break: keep-all; overflow-wrap: anywhere;
   }
   body.locked, body.sheet-open { overflow: hidden; }
+  body.has-tray { --chat-h: 120px; }
   body.has-use { --nav-h: calc(88px + env(safe-area-inset-bottom)); }
   button { cursor: pointer; min-height: 44px; }
   :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }

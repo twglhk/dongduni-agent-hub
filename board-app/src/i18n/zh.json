@@ -73,6 +73,20 @@
   "chat": {
     "title": "向中枢提请求"
   },
+  "up": {
+    "attach": "添加附件",
+    "remove": "移除",
+    "badType": "{name}：不能附加这种文件",
+    "tooBig": "{name} 超过 {mb} MB",
+    "tooMany": "每次请求最多附加 {n} 个文件",
+    "run": "正在上传第 {i} 个文件，共 {n} 个",
+    "done": "已连同 {n} 个附件发送",
+    "partial": "{n} 个附件中有 {f} 个未能上传",
+    "failed": "失败",
+    "leave": "文件仍在上传。仍要离开吗？",
+    "noView": "无预览",
+    "noEtag": "存储没有返回上传回执：请在其 CORS 设置中允许 ETag 头"
+  },
   "label": {
     "why": "为什么交给你",
     "question": "问题",
