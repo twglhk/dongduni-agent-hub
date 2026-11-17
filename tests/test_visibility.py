@@ -1,9 +1,13 @@
+import json
+import threading
 import unittest
-
+from http.server import ThreadingHTTPServer
 from unittest import mock
 
+from agent_hub import config as config_mod
 from agent_hub import visibility
-from agent_hub.store import HUB, HUMAN, INFRA
+from agent_hub.store import HUB, HUMAN, INFRA, TOWER, Store
+from agent_hub.web import make_handler
 from tests.test_web import POST, Board
 
 H = "X-Forwarded-Email"
@@ -116,8 +120,8 @@ class CardVisibilityTest(unittest.TestCase):
             self.b.s.push(HUB, "cy", "memo", f"cy {i}")
         self.b.s.push(HUB, "bo", "memo", "bo asks")
 
-        def own(me, target, memo):
-            return memo["sender"] == me["name"]
+        def own(gate, target, memo):
+            return memo["sender"] == gate.name
 
         with mock.patch.object(visibility, "MEMO_RULES", (own,)):
             _, st, _ = self.get("/api/state", "bo@x.com")
@@ -141,6 +145,188 @@ class CardVisibilityTest(unittest.TestCase):
     def test_report_attachment_stays_public(self) -> None:
         self.b.s.add_report(None, INFRA, "done", "shipped", ["docs/board/d/cy/shot.png"])
         self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "bo@x.com")[0], 200)
+
+
+def scoped_board(requester: bool, person_hubs: bool) -> Board:
+    b = Board(auth={"mode": "header", "header": H})
+    for name, role in (("ana", "owner"), ("bo", "member"), ("cy", "member")):
+        b.s.add_member(name, role, f"{name}@x.com")
+    path = b.cfg.home / ".tower" / "tower.json"
+    data = json.loads(path.read_text())
+    data["requester"] = requester
+    if person_hubs:
+        data["person_hubs"] = {"max": 3}
+    path.write_text(json.dumps(data))
+    cfg = config_mod.load(b.cfg.home)
+    b.srv.shutdown()
+    b.srv.server_close()
+    b.cfg, b.s = cfg, Store(cfg.db)
+    b.srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(cfg, b.s, lambda _: None))
+    threading.Thread(target=b.srv.serve_forever, daemon=True).start()
+    b.base = f"http://127.0.0.1:{b.srv.server_address[1]}"
+    return b
+
+
+class ScopeCase(unittest.TestCase):
+    requester, person_hubs = True, True
+
+    def setUp(self) -> None:
+        self.b = scoped_board(self.requester, self.person_hubs)
+        self.seed()
+
+    def seed(self) -> None:
+        s = self.b.s
+        work = self.b.cfg.workdir
+        for who in ("bo", "cy"):
+            (work / f"docs/board/d/{who}").mkdir(parents=True)
+            (work / f"docs/board/d/{who}/shot.png").write_bytes(b"\x89PNG....")
+        self.task = {w: s.add_task("docs", f"{w} task", "brief", requester=w, hub=f"hub-{w}") for w in ("bo", "cy")}
+        self.hub_card = {w: s.add_item("docs", self.task[w], "review", f"{w} triage", f"{w} secret", [],
+                                       [f"docs/board/d/{w}/shot.png"], audience=HUB) for w in ("bo", "cy")}
+        self.shared_card = s.add_item("docs", None, "review", "no owner", "triage", [], [], audience=HUB)
+        self.human_card = {w: s.add_item(f"hub-{w}", None, "decision", f"{w} asks", f"{w} ask", OPTS, [],
+                                         audience=HUMAN, assignee=w) for w in ("bo", "cy")}
+        self.everyone = s.add_item(INFRA, None, "review", "for all", "all", [], [], audience=HUMAN)
+        s.push(HUB, "bo", "memo", "bo asks shared")
+        s.push(HUB, "cy", "memo", "cy asks shared")
+        s.push(HUB, TOWER, "memo", "tower notice")
+        s.push("hub-bo", "bo", "memo", "bo asks own hub")
+        s.push("hub-bo", TOWER, "memo", "notice in bo hub")
+        s.push("hub-cy", "cy", "memo", "cy asks own hub")
+        s.push(INFRA, "hub-bo", "memo", "bo hub tells infra")
+        s.push(INFRA, "hub-cy", "memo", "cy hub tells infra")
+        s.push(INFRA, HUB, "memo", "shared hub tells infra")
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def get(self, path: str, who: str):
+        return self.b.req("GET", path, headers={H: f"{who}@x.com"})
+
+    def card_ids(self, who: str) -> set[int]:
+        return {it["id"] for it in self.get("/api/state", who)[1]["items"]}
+
+    def chat(self, who: str) -> set[str]:
+        return {m["text"] for m in self.get("/api/history?kind=requests", who)[1]["rows"]}
+
+    def infra(self, who: str) -> set[str]:
+        return {m["text"] for m in self.get("/api/history?kind=memos", who)[1]["rows"]}
+
+
+class RequesterScopeTest(ScopeCase):
+    def test_a_member_sees_their_own_hub_cards_and_addressed_cards(self) -> None:
+        self.assertEqual(self.card_ids("bo"), {self.hub_card["bo"], self.human_card["bo"], self.everyone})
+        self.assertEqual(self.card_ids("cy"), {self.hub_card["cy"], self.human_card["cy"], self.everyone})
+
+    def test_the_owner_sees_every_card(self) -> None:
+        got = self.card_ids("ana")
+        self.assertTrue({*self.hub_card.values(), *self.human_card.values(), self.shared_card, self.everyone} <= got)
+
+    def test_another_members_card_is_not_fetched_or_answered(self) -> None:
+        for cid in (self.hub_card["cy"], self.human_card["cy"], self.shared_card):
+            self.assertEqual(self.get(f"/api/items/{cid}", "bo")[0], 404, cid)
+            code, _, _ = self.b.req("POST", f"/api/items/{cid}/decide", {"verdict": "ok", "choice": "x"},
+                                    {**POST, H: "bo@x.com"})
+            self.assertEqual(code, 404, cid)
+            self.assertEqual(self.b.s.item(cid)["state"], "open")
+        self.assertEqual(self.get(f"/api/items/{self.hub_card['bo']}", "bo")[0], 200)
+        self.assertEqual(self.get(f"/api/items/{self.hub_card['cy']}", "ana")[0], 200)
+
+    def test_a_card_for_a_task_the_member_requested_is_theirs_even_in_the_shared_hub(self) -> None:
+        tid = self.b.s.add_task("docs", "t", "brief", requester="bo")
+        cid = self.b.s.add_item("docs", tid, "review", "shared hub triage", "x", [], [], audience=HUB)
+        self.assertIn(cid, self.card_ids("bo"))
+        self.assertNotIn(cid, self.card_ids("cy"))
+
+    def test_decided_history_pages_and_counts_follow_the_same_rule(self) -> None:
+        for cid in (*self.hub_card.values(), self.shared_card):
+            self.b.s.decide(cid, "ok", "ana")
+        for cid in self.human_card.values():
+            self.b.s.decide(cid, "ok", "ana", "A")
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertEqual(st["counts"]["decided"], 2)
+        rows = self.get("/api/history?kind=decided", "bo")[1]["rows"]
+        self.assertEqual({r["id"] for r in rows}, {self.hub_card["bo"], self.human_card["bo"]})
+        self.assertEqual(self.get("/api/history?kind=decided&offset=2", "bo")[1]["rows"], [])
+        self.assertEqual(self.get("/api/state", "ana")[1]["counts"]["decided"], 5)
+
+    def test_attachments_follow_their_card(self) -> None:
+        self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "bo")[0], 404)
+        self.assertEqual(self.get("/f/docs/board/d/bo/shot.png", "bo")[0], 200)
+        self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "ana")[0], 200)
+
+    def test_chat_is_the_members_own_requests_and_their_own_hub(self) -> None:
+        self.assertEqual(self.chat("bo"), {"bo asks shared", "bo asks own hub", "notice in bo hub"})
+        self.assertEqual(self.chat("cy"), {"cy asks shared", "cy asks own hub"})
+        self.assertEqual(len(self.chat("ana")), 6)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertEqual({m["text"] for m in st["memos"][HUB]}, {"bo asks own hub", "notice in bo hub"})
+        self.assertEqual(st["counts"]["requests"], 3)
+        self.assertEqual(self.get("/api/state", "ana")[1]["counts"]["requests"], 6)
+
+    def test_chat_pages_after_filtering(self) -> None:
+        for i in range(25):
+            self.b.s.push(HUB, "cy", "memo", f"cy more {i}")
+        self.assertEqual(self.chat("bo"), {"bo asks shared", "bo asks own hub", "notice in bo hub"})
+        self.assertEqual(self.get("/api/history?kind=requests&offset=20", "bo")[1]["rows"], [])
+
+    def test_infra_memos_are_the_ones_the_members_hub_caused(self) -> None:
+        self.assertEqual(self.infra("bo"), {"bo hub tells infra"})
+        self.assertEqual(self.infra("cy"), {"cy hub tells infra"})
+        self.assertEqual(len(self.infra("ana")), 3)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertEqual([m["text"] for m in st["memos"][INFRA]], ["bo hub tells infra"])
+        self.assertEqual((st["counts"]["memos"], self.get("/api/state", "ana")[1]["counts"]["memos"]), (1, 3))
+
+
+class RequesterWithoutPersonHubsTest(ScopeCase):
+    person_hubs = False
+
+    def seed(self) -> None:
+        s = self.b.s
+        self.task = s.add_task("docs", "t", "brief", requester="bo")
+        self.hub_card = s.add_item("docs", self.task, "review", "triage", "x", [], [], audience=HUB)
+        s.push(HUB, "bo", "memo", "bo asks")
+        s.push(HUB, "cy", "memo", "cy asks")
+        s.push(INFRA, HUB, "memo", "hub tells infra")
+
+    def test_hub_side_cards_stay_hidden_from_members(self) -> None:
+        self.assertNotIn(self.hub_card, self.card_ids("bo"))
+        self.assertEqual(self.get(f"/api/items/{self.hub_card}", "bo")[0], 404)
+        self.assertIn(self.hub_card, self.card_ids("ana"))
+
+    def test_chat_is_the_members_own_requests(self) -> None:
+        self.assertEqual(self.chat("bo"), {"bo asks"})
+        self.assertEqual(self.chat("ana"), {"bo asks", "cy asks"})
+        self.assertEqual(self.get("/api/state", "cy")[1]["counts"]["requests"], 1)
+
+    def test_infra_memos_stay_the_owners(self) -> None:
+        self.assertEqual(self.infra("bo"), set())
+        self.assertEqual(self.infra("ana"), {"hub tells infra"})
+
+    def test_a_member_cannot_fetch_the_hub_side_card_through_state_history_or_files(self) -> None:
+        self.b.s.decide(self.hub_card, "ok", "ana")
+        self.assertEqual(self.get("/api/history?kind=decided", "bo")[1]["rows"], [])
+
+
+class FlagsOffTest(ScopeCase):
+    requester, person_hubs = False, False
+
+    def seed(self) -> None:
+        ScopeCase.seed(self)
+
+    def test_a_member_sees_the_human_side_cards_and_all_hub_chat_but_no_infra_memos(self) -> None:
+        self.assertEqual(self.card_ids("bo"), {self.human_card["bo"], self.everyone})
+        self.assertEqual(self.chat("bo"), {"bo asks shared", "cy asks shared", "tower notice", "bo asks own hub",
+                                           "notice in bo hub", "cy asks own hub"})
+        self.assertEqual(self.infra("bo"), set())
+        self.assertEqual(len(self.infra("ana")), 3)
+
+    def test_hub_side_cards_stay_with_the_owner(self) -> None:
+        for cid in (*self.hub_card.values(), self.shared_card):
+            self.assertEqual(self.get(f"/api/items/{cid}", "bo")[0], 404)
+            self.assertEqual(self.get(f"/api/items/{cid}", "ana")[0], 200)
+
 
 
 class LocalModeSeesAllTest(unittest.TestCase):

@@ -420,7 +420,7 @@ class Store:
     def memos(self, target: str, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
         with self.conn() as con:
             where, vals = _target_sql(target)
-            rows = _rows(con.execute("SELECT id, text, sender, created, delivered FROM messages "
+            rows = _rows(con.execute("SELECT id, text, sender, target, created, delivered FROM messages "
                                      f"WHERE {where} AND kind='memo' ORDER BY id DESC LIMIT ? OFFSET ?",
                                      (*vals, limit, offset)))
             if not rows:

@@ -365,24 +365,24 @@ def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[s
     return {"day": day, "runtimes": list(rows.values())}
 
 
-def counts_view(s: Store, me: dict[str, Any] | None) -> dict[str, int]:
+def counts_view(g: vis.Gate) -> dict[str, int]:
     out = {}
     for k in (*Store.HISTORY, *Store.MEMO_HISTORY):
         if k == "decided":
-            out[k] = vis.decided_count(s, me)
+            out[k] = vis.decided_count(g)
         elif k in Store.MEMO_HISTORY:
-            out[k] = vis.memo_count(s, me, Store.MEMO_HISTORY[k])
+            out[k] = vis.memo_count(g, Store.MEMO_HISTORY[k])
         else:
-            out[k] = s.history_count(k)
+            out[k] = g.s.history_count(k)
     return out
 
 
-def history_rows(s: Store, me: dict[str, Any] | None, kind: str, offset: int) -> list[dict[str, Any]]:
+def history_rows(g: vis.Gate, kind: str, offset: int) -> list[dict[str, Any]]:
     if kind == "decided":
-        return vis.decided(s, me, offset, PAGE)
+        return vis.decided(g, offset, PAGE)
     if kind in Store.MEMO_HISTORY:
-        return vis.memos(s, me, Store.MEMO_HISTORY[kind], PAGE, offset)
-    return s.history(kind, offset, PAGE)
+        return vis.memos(g, Store.MEMO_HISTORY[kind], PAGE, offset)
+    return g.s.history(kind, offset, PAGE)
 
 
 def with_hubs(s: Store, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -416,6 +416,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     day = s.day()
     used = s.usage(day)
     my_hub = cfg.hub_of(str(me["name"])) if me else HUB
+    g = vis.Gate.of(cfg, s, me)
     return {
         "title": cfg.name,
         "lang": cfg.lang,
@@ -435,11 +436,11 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
         "lanes": lanes_view(cfg, s, used),
-        "items": with_hubs(s, vis.mine(me, s.items(state="open", limit=500)) + vis.decided(s, me, 0, PREVIEW)),
+        "items": with_hubs(s, vis.mine(g, s.items(state="open", limit=500)) + vis.decided(g, 0, PREVIEW)),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
-        "memos": {INFRA: vis.memos(s, me, INFRA, PREVIEW), HUB: vis.memos(s, me, my_hub, PREVIEW)},
-        "counts": counts_view(s, me),
+        "memos": {INFRA: vis.memos(g, INFRA, PREVIEW), HUB: vis.memos(g, my_hub, PREVIEW)},
+        "counts": counts_view(g),
     }
 
 
@@ -754,7 +755,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
-                    rows = history_rows(st, me, (q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])))
+                    rows = history_rows(vis.Gate.of(c, st, me), (q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])))
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
@@ -788,11 +789,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     it = st.item(int(m.group(1)))
                 except StoreError as e:
                     return self._json(404, {"error": str(e)})
-                if not vis.can_see(me, it):
+                if not vis.can_see(vis.Gate.of(c, st, me), it):
                     return self._json(404, {"error": f"item #{it['id']} not found"})
                 return self._json(200, it)
             if path.startswith("/f/"):
-                if not vis.file_allowed(st, me, unquote(path[3:])):
+                if not vis.file_allowed(vis.Gate.of(c, st, me), unquote(path[3:])):
                     return self._json(404, {"error": "not found"})
                 return self._file(path[3:])
             if path.startswith("/x/"):
@@ -929,7 +930,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             try:
                 m = re.fullmatch(r"/api/items/(\d+)/decide", path)
                 if m:
-                    if not vis.can_see(me, st.item(int(m.group(1)))):
+                    if not vis.can_see(vis.Gate.of(c, st, me), st.item(int(m.group(1)))):
                         return self._json(404, {"error": f"item #{m.group(1)} not found"})
                     choices = body.get("choices")
                     it = st.decide(int(m.group(1)), str(body.get("verdict")), who,
