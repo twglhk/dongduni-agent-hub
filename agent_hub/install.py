@@ -5,15 +5,17 @@ in Codex). A lane is a role put on top of the agent the person already uses, not
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, template
+from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, from_raw, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 SHIM_PREFIX = "dah-"
@@ -294,11 +296,41 @@ def init(home: Path, name: str, lang: str, hub: str, infra: str, project: str | 
     return path
 
 
-def edit_config(home: Path, fn) -> None:
+def _lock(path: Path) -> Path:
+    lock = path.with_name(path.name + ".lock")
+    deadline = time.time() + 10
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lock
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 30:
+                    lock.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.time() > deadline:
+                raise OSError(f"{lock} is held by another dah process; remove it if none is running")
+            time.sleep(0.05)
+
+
+def edit_config(home: Path, fn) -> bool:
     path = home / TOWER_DIR / CONFIG_NAME
-    data = json.loads(path.read_text(encoding="utf-8"))
-    fn(data)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    lock = _lock(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        before = copy.deepcopy(data)
+        fn(data)
+        if data == before:
+            return False
+        from_raw(home, data)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        return True
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 SHIPPED = TEMPLATES / "shipped.json"  # every released text of each template, oldest first, the current one last

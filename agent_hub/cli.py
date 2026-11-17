@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import config as config_mod
 from . import procs, stagemodel, stats
@@ -36,6 +36,13 @@ class TowerError(Exception):
 
 def cfg() -> Config:
     return config_mod.load()
+
+
+def edit_tower_json(home: Path, fn: Callable[[dict[str, Any]], None]) -> bool:
+    try:
+        return edit_config(home, fn)
+    except config_mod.ConfigError as e:
+        raise TowerError(str(e))
 
 
 def store(c: Config | None = None) -> Store:
@@ -1114,7 +1121,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
             if args.engine not in c.engines or c.engines[args.engine].implicit:
                 raise TowerError(f"--engine: no engine {args.engine} (`dah engine list`; `dah engine add NAME`)")
             entry["engine"] = args.engine
-        edit_config(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
+        edit_tower_json(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
         c = config_mod.load(c.home)
         path = c.instructions(args.id)
         if not path.exists():
@@ -1132,7 +1139,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
         raise TowerError(f"no lane {args.id}")
     if store(c).live_task(args.id):
         raise TowerError(f"{args.id} has a running task; wrap or cancel it first")
-    edit_config(c.home, lambda d: d["lanes"].pop(args.id))
+    edit_tower_json(c.home, lambda d: d["lanes"].pop(args.id))
     remove_shims(c, args.id)
     print(f"lane {args.id} removed (its instruction file is kept)")
 
@@ -1165,14 +1172,7 @@ def cmd_engine(args: argparse.Namespace) -> None:
         return scaffold_engine_cmd(c, args)
     entry = {k: v for k, v in (("label", args.label), ("dir", args.dir), ("library", args.library),
                                ("skills", args.skills), ("map", args.map), ("cap", args.cap)) if v}
-    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
-    before = path.read_text(encoding="utf-8")
-    edit_config(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
-    try:
-        config_mod.load(c.home)
-    except config_mod.ConfigError as e:
-        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
-        raise TowerError(str(e))
+    edit_tower_json(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
     print(f"engine {args.id} added. Put lanes in it with `dah lane add ID --runtime R --engine {args.id}`.")
 
 
@@ -1185,19 +1185,13 @@ def scaffold_engine_cmd(c: Any, args: argparse.Namespace) -> None:
                                args.skills or "", args.cap or "")
     except ValueError as e:
         raise TowerError(str(e))
-    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
-    before = path.read_text(encoding="utf-8")
 
     def add(d: dict[str, Any]) -> None:
         d.setdefault("engines", {})[args.id] = made["entry"]
         d["lanes"].update(made["lanes"])
 
-    edit_config(c.home, add)
-    try:
-        c2 = config_mod.load(c.home)
-    except config_mod.ConfigError as e:
-        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
-        raise TowerError(str(e))
+    edit_tower_json(c.home, add)
+    c2 = config_mod.load(c.home)
     for f, text in made["files"].items():
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8")

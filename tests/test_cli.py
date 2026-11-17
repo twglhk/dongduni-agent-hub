@@ -37,6 +37,15 @@ class CliTest(unittest.TestCase):
             self.fail(f"tower {' '.join(args)} failed: {p.stderr}")
         return p.stdout + p.stderr
 
+    def test_a_lane_with_an_invalid_id_leaves_tower_json_untouched(self) -> None:
+        path = self.home / ".tower" / "tower.json"
+        before = path.read_bytes()
+        out = self.tower("lane", "add", "bad id!", "--runtime", "claude", ok=False)
+        self.assertIn("lane id", out)
+        self.assertEqual(path.read_bytes(), before)
+        self.tower("engine", "add", "bad id!", ok=False)
+        self.assertEqual(path.read_bytes(), before)
+
     def test_files_written(self) -> None:
         for rel in (".tower/tower.json", ".tower/PROTOCOL.md", ".tower/lanes/hub.md", ".tower/lanes/infra.md",
                     ".tower/lanes/docs.md", ".opencode/command/dah-hub.md", ".claude/commands/dah-infra.md"):
@@ -266,3 +275,42 @@ class RestartTest(unittest.TestCase):
         self.assertIn("the tower was not running", out)
         self.assertEqual(self.calls, ["start"])
         self.assertEqual(self.cli.time.sleep.call_count, 0)
+
+
+class EditConfigTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from tests.helpers import make_home
+        self.home = make_home().home
+        self.path = self.home / ".tower" / "tower.json"
+
+    def test_an_edit_that_changes_nothing_does_not_rewrite_the_file(self) -> None:
+        from agent_hub.install import edit_config
+        self.path.write_text('{"name":"Test","lanes":{"hub":{"runtime":"claude"}}}', encoding="utf-8")
+        self.assertFalse(edit_config(self.home, lambda d: d.__setitem__("name", "Test")))
+        self.assertEqual(self.path.read_text(encoding="utf-8"), '{"name":"Test","lanes":{"hub":{"runtime":"claude"}}}')
+        self.assertTrue(edit_config(self.home, lambda d: d.__setitem__("name", "Other")))
+        self.assertIn('"name": "Other"', self.path.read_text(encoding="utf-8"))
+
+    def test_an_invalid_result_is_never_written_and_no_lock_or_tmp_is_left(self) -> None:
+        from agent_hub.config import ConfigError
+        from agent_hub.install import edit_config
+        before = self.path.read_bytes()
+        with self.assertRaises(ConfigError):
+            edit_config(self.home, lambda d: d["lanes"].__setitem__("bad id", {"runtime": "claude"}))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in self.path.parent.iterdir() if p.name.startswith("tower.json")), ["tower.json"])
+
+    def test_a_held_lock_is_waited_for_and_a_stale_one_is_removed(self) -> None:
+        import os
+        import threading
+        import time
+        from agent_hub.install import edit_config
+        lock = self.path.with_name("tower.json.lock")
+        lock.write_text("")
+        old = time.time() - 60
+        os.utime(lock, (old, old))
+        edit_config(self.home, lambda d: d.__setitem__("name", "A"))
+        lock.write_text("")
+        threading.Timer(0.3, lock.unlink).start()
+        edit_config(self.home, lambda d: d.__setitem__("name", "B"))
+        self.assertIn('"B"', self.path.read_text(encoding="utf-8"))

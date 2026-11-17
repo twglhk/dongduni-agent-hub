@@ -296,6 +296,12 @@ def load(home: Path | None = None) -> Config:
         raise ConfigError(f"{path} does not exist. Run `dah init`.")
     except json.JSONDecodeError as e:
         raise ConfigError(f"{path} is not valid JSON: {e}")
+    return from_raw(home, raw)
+
+
+def from_raw(home: Path, raw: Any) -> Config:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{home / TOWER_DIR / CONFIG_NAME} must hold a JSON object")
     lanes_raw = raw.get("lanes") or {}
     if HUB not in lanes_raw:
         raise ConfigError("tower.json needs a `hub` lane.")

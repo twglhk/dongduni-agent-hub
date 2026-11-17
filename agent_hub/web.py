@@ -802,7 +802,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                 f"may run tasks at once.")
                         log(f"{who} max_lanes {old} → {raw}")
                     return self._json(200, {"ok": True, "max_lanes": raw})
-            except StoreError as e:
+            except (StoreError, ConfigError, OSError) as e:
                 return self._json(409, {"error": str(e)})
             if path.startswith("/api/x/"):
                 return self._ext("POST", path[7:], me, body)
