@@ -675,6 +675,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     from .runtimes import Runtimes
     from .web import server
 
+    os.environ.pop("TOWER_LANE", None)
     c = cfg()
     if tower_pid(c) and tower_pid(c) != os.getpid():
         raise TowerError(f"the tower already runs (pid {tower_pid(c)})")
@@ -753,7 +754,8 @@ def start_tower(c: Config) -> None:
     log = (c.state_dir / "tower.log").open("ab")
     proc = subprocess.Popen([sys.executable, "-m", "agent_hub", "run"], cwd=c.home, stdout=log, stderr=log,
                             stdin=subprocess.DEVNULL, **procs.detached(),
-                            env={**os.environ, "TOWER_HOME": str(c.home),
+                            env={**{k: v for k, v in os.environ.items() if k != "TOWER_LANE"},
+                                 "TOWER_HOME": str(c.home),
                                  "PYTHONPATH": str(Path(__file__).resolve().parents[1])
                                  + os.pathsep + os.environ.get("PYTHONPATH", "")})
     for _ in range(20):

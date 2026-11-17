@@ -266,3 +266,36 @@ class RestartTest(unittest.TestCase):
         self.assertIn("the tower was not running", out)
         self.assertEqual(self.calls, ["start"])
         self.assertEqual(self.cli.time.sleep.call_count, 0)
+
+
+class TowerLaneTest(unittest.TestCase):
+    def test_the_tower_does_not_inherit_the_lane_that_started_it(self) -> None:
+        from unittest import mock
+        from agent_hub import cli
+        from agent_hub.config import load
+        home = Path(tempfile.mkdtemp())
+        (home / ".tower").mkdir()
+        (home / ".tower" / "tower.json").write_text('{"name": "T", "lanes": {"hub": {"runtime": "claude"}}}')
+        c = load(home)
+        proc = mock.Mock(pid=1, poll=lambda: None)
+        with mock.patch.dict(os.environ, {"TOWER_LANE": "infra"}), \
+                mock.patch.object(cli.subprocess, "Popen", return_value=proc) as popen, \
+                mock.patch.object(cli, "tower_pid", side_effect=[None, None, 5, 5, 5, 5]), \
+                mock.patch.object(cli.time, "sleep"):
+            cli.start_tower(c)
+        env = popen.call_args.kwargs["env"]
+        self.assertNotIn("TOWER_LANE", env)
+        self.assertEqual(env["TOWER_HOME"], str(home))
+
+    def test_run_drops_a_lane_it_was_started_from(self) -> None:
+        from unittest import mock
+        from agent_hub import cli
+        seen: list[str | None] = []
+
+        def boom() -> None:
+            seen.append(os.environ.get("TOWER_LANE"))
+            raise RuntimeError("stop")
+        with mock.patch.dict(os.environ, {"TOWER_LANE": "infra"}), mock.patch.object(cli, "cfg", boom):
+            with self.assertRaises(RuntimeError):
+                cli.cmd_run(mock.Mock())
+        self.assertEqual(seen, [None])

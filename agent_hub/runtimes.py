@@ -79,6 +79,10 @@ def pid_alive(pid: int | None) -> bool:
     return procs.alive(pid)
 
 
+def claude_base() -> Path:
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
 def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     env = dict(os.environ)
     env.update(lane.env)
@@ -925,8 +929,7 @@ class ClaudeTerm(TerminalSession, Claude):
         sid = self.store.lane(self.lane.id).get("session")
         if not sid:
             return ""
-        base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
+        return str(claude_base() / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
 
     def _transcript(self, whole: bool = False) -> list[dict[str, Any]]:
         path = self._transcript_path()

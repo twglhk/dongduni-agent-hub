@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from pathlib import Path
 from typing import Any
 
-CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 UNKNOWN = "unknown"
 _TAIL = 262144
 _MAX_SCAN = 8 * _TAIL
 _ID = re.compile(r"^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$")
+_MISS_TTL = 15.0
 _paths: dict[str, Path] = {}
+_missed: dict[str, float] = {}
 _read: dict[str, tuple[int, int, dict[str, Any] | None]] = {}
 
 
@@ -23,19 +25,32 @@ def label(model: str | None) -> str | None:
     return model.capitalize() if model.isalpha() else model
 
 
-def transcript(sid: str | None, projects: Path = CLAUDE_PROJECTS) -> Path | None:
+def claude_projects() -> Path:
+    from .runtimes import claude_base
+    return claude_base() / "projects"
+
+
+def transcript(sid: str | None, projects: Path | None = None) -> Path | None:
     if not sid:
         return None
-    p = _paths.get(sid)
+    projects = projects or claude_projects()
+    key = f"{sid}@{projects}"
+    p = _paths.get(key)
     if p is not None and p.exists():
         return p
+    if time.monotonic() - _missed.get(key, -_MISS_TTL) < _MISS_TTL:
+        return None
     p = next(iter(projects.glob(f"*/{sid}.jsonl")), None) if projects.is_dir() else None
     if p is not None:
-        _paths[sid] = p
+        _paths[key] = p
+        _missed.pop(key, None)
+    else:
+        _missed[key] = time.monotonic()
     return p
 
 
-def from_transcript(sid: str | None, projects: Path = CLAUDE_PROJECTS) -> dict[str, Any] | None:
+def from_transcript(sid: str | None, projects: Path | None = None) -> dict[str, Any] | None:
+    projects = projects or claude_projects()
     p = transcript(sid, projects)
     if p is None:
         return None
@@ -86,7 +101,7 @@ def _tail_read(p: Path) -> dict[str, Any] | None:
 
 
 def describe(runtime: str, sid: str | None = None, last_sid: str | None = None, opts: dict[str, Any] | None = None,
-             configured: str | None = None, projects: Path = CLAUDE_PROJECTS) -> dict[str, Any]:
+             configured: str | None = None, projects: Path | None = None) -> dict[str, Any]:
     opts = opts or {}
     if runtime != "claude":
         model, effort = opts.get("model") or configured, opts.get("effort")
@@ -105,7 +120,7 @@ def describe(runtime: str, sid: str | None = None, last_sid: str | None = None, 
 
 
 def for_lane(cfg: Any, store: Any, lane: str, runtime: str, model: str | None, session: str | None,
-             projects: Path = CLAUDE_PROJECTS) -> dict[str, Any]:
+             projects: Path | None = None) -> dict[str, Any]:
     try:
         opts = json.loads((cfg.state_dir / "logs" / f"{lane}.opts.json").read_text(encoding="utf-8")) if session else {}
     except (OSError, ValueError):

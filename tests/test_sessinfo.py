@@ -1,7 +1,10 @@
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_hub import sessinfo
 from agent_hub.cli import TowerError, send_infra
@@ -41,6 +44,22 @@ class TranscriptTest(unittest.TestCase):
     def test_reads_across_chunks(self) -> None:
         self.write("b", [turn("claude-opus-5-5", "xhigh")] + [json.dumps({"type": "user", "pad": "y" * 1000})] * 600)
         self.assertEqual(sessinfo.from_transcript("b", self.root)["effort"], "xhigh")
+
+    def test_the_claude_config_dir_decides_where_transcripts_are(self) -> None:
+        base = Path(tempfile.mkdtemp(prefix="claude-base-"))
+        (base / "projects" / "-p").mkdir(parents=True)
+        (base / "projects" / "-p" / "cfgdir.jsonl").write_text(turn("claude-opus-5-5", "high") + "\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(base)}):
+            self.assertEqual(sessinfo.claude_projects(), base / "projects")
+            self.assertEqual(sessinfo.from_transcript("cfgdir"), {"model": "claude-opus-5-5", "effort": "high"})
+
+    def test_a_missing_transcript_is_not_searched_again_at_once(self) -> None:
+        with mock.patch.object(Path, "glob", return_value=iter(())) as glob:
+            self.assertIsNone(sessinfo.transcript("nope-1", self.root))
+            self.assertIsNone(sessinfo.transcript("nope-1", self.root))
+        self.assertEqual(glob.call_count, 1)
+        with mock.patch.object(sessinfo.time, "monotonic", return_value=time.monotonic() + 60):
+            self.assertIsNone(sessinfo.transcript("nope-1", self.root))
 
     def test_live_last_next(self) -> None:
         self.write("live", [turn("claude-opus-5-5", "medium")])
