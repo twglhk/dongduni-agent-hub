@@ -20,9 +20,6 @@ TERMINAL_ADAPTERS = {"opencode": OpenCodeTerm, "claude": ClaudeTerm, "codex": Co
 
 
 class Unavailable(Adapter):
-    """A lane whose runtime an extension registered, but no extension registers now (the file was removed or
-    fails to load): reported as unknown, never opened."""
-
     def _why(self) -> RuntimeFailure:
         return RuntimeFailure(f"{self.lane.id}: no runtime {self.lane.runtime!r} (an extension in .tower/ext/ must "
                               f"register it; see .tower/state/tower.log)")
@@ -48,8 +45,6 @@ def adapter_class(lane: Lane, ext: Extensions) -> type[Adapter]:
 
 
 class Runtimes:
-    """What the engine talks to: one adapter per configured lane."""
-
     def __init__(self, cfg: Config, store: Store, ext: Extensions | None = None):
         self.cfg = cfg
         ext = ext or registry(cfg.home)
@@ -73,7 +68,7 @@ class Runtimes:
     def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None,
              account: Path | None = None) -> str:
         ln = self.cfg.all_lanes[lane]
-        self._a(lane).set_opts(model, effort, account)  # OpenCode lanes keep their configured model; claude and codex honour these
+        self._a(lane).set_opts(model, effort, account)
         if ln.worktree:
             lane_cwd(self.cfg, ln)
             prompt = worktree_note(self.cfg, ln) + prompt

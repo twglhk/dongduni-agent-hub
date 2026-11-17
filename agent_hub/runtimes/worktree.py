@@ -22,9 +22,6 @@ def worktree_branch(lane: Lane) -> str:
 
 
 def lane_cwd(cfg: Config, lane: Lane) -> Path:
-    """Where the lane's agent runs, ready to use: the workspace, or the session's own git worktree (created on first
-    use on branch dah/<lane> or dah/<lane>-N, from the workspace's current commit; an existing branch is checked out
-    as it is)."""
     path = cfg.lane_dir(lane.id)
     if not lane.worktree or (path / ".git").exists():
         return path
@@ -46,7 +43,6 @@ def _base_branch(cfg: Config) -> str:
 
 
 def worktree_note(cfg: Config, lane: Lane) -> str:
-    """What a lane in its own worktree is told before its first message."""
     base = _base_branch(cfg)
     if base and cfg.branch_sync:
         sync = f"The tower merged `{base}` into it before this task. Commit"

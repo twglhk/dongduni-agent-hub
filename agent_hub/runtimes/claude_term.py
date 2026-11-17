@@ -22,7 +22,7 @@ def _epoch(stamp: str) -> float | None:
     return base + float(m.group(2) or 0)
 
 
-WHOLE_BYTES = 256 * 1024 * 1024  # the ledger reads a transcript whole
+WHOLE_BYTES = 256 * 1024 * 1024
 
 
 def _tail(path: str | Path, size: int = 262144) -> list[str]:
@@ -32,7 +32,7 @@ def _tail(path: str | Path, size: int = 262144) -> list[str]:
             start = max(0, f.tell() - size)
             f.seek(start)
             lines = f.read().decode("utf-8", errors="replace").splitlines()
-            return lines[1:] if start else lines  # the first line of a cut is partial
+            return lines[1:] if start else lines
     except OSError:
         return []
 
@@ -45,8 +45,7 @@ class ClaudeTerm(TerminalSession, Claude):
         return st
 
     def _turn_ended(self) -> bool:
-        """A turn a person interrupts (Esc, or No on a permission menu) ends without a Stop hook; Claude still
-        closes it in the transcript with a turn_duration entry."""
+        # a turn a person interrupts (Esc, or No on a permission menu) has no Stop hook; Claude still closes it with a turn_duration entry
         sig = self._signal()
         for line in reversed(_tail(self._transcript_path(), 65536)):
             try:
@@ -90,7 +89,6 @@ class ClaudeTerm(TerminalSession, Claude):
         return sid
 
     def _transcript_path(self) -> str:
-        """From the hooks, or where Claude Code keeps it: ~/.claude/projects/<cwd, non-alphanumerics as ->/<id>.jsonl"""
         path = self._signal().get("transcript")
         if path:
             return str(path)
@@ -114,7 +112,6 @@ class ClaudeTerm(TerminalSession, Claude):
         return out
 
     def _calls(self, whole: bool = False) -> list[dict[str, Any]]:
-        """One entry per API call: the transcript's last line for each message id."""
         last: dict[str, dict[str, Any]] = {}
         for i, m in enumerate(self._transcript(whole)):
             last[str(m.get("id") or i)] = m
@@ -142,7 +139,6 @@ class ClaudeTerm(TerminalSession, Claude):
         return {"tokens_in": tin, "tokens_out": tout, "cost": None, "ctx_k": self.context_k(sid)}
 
     def ledger(self, sid: str | None) -> dict[str, int | None] | None:
-        """The whole transcript (not just its tail): each API call once; a turn is one assistant message."""
         msgs = self._calls(whole=True)
         if not msgs:
             return None

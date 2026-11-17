@@ -1,57 +1,3 @@
-"""Review board web server (a thread inside `dah run`). Binds 127.0.0.1 by default; expose it through a proxy
-that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, ...) or use token sign-in.
-
-  GET  /                          board: the React app (board_next/, built from board-app/), or the workspace's
-                                  .tower/board/index.html; /?builtin always opens the built-in one; /assets/<file>
-  GET  /old/                      the single-file board (board/index.html) that came before the React app
-  GET  /api/state                 lanes · each lane's queue (`queues`) · open items · tasks · reports · memos · counts
-                                  (a member gets only the cards, memos and files visibility.py allows)
-  GET  /api/history?kind=K&offset=N   requests | decided | work (also reports | closed | memos), 20 per page
-  GET  /api/items/<id>
-  GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
-  GET  /api/engines               every engine: id, label, lanes, library rows
-  GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
-                                  engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
-  GET  /api/engines/<id>/doc?path=P   {path, text}: a card or skill document the map names (nothing else is served)
-  GET  /api/processes             the process library (processes.view): full processes with their sub-processes, each
-                                  sub-process's stages and skills, who uses what, and each step's and stage's rating (ETag)
-  GET  /api/processes/doc?path=P  {path, text}: a document the library names (nothing else is served)
-  GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
-  GET  /api/machine               load, CPU, memory, swap graded g/a/r (machine.py) · why queued tasks wait ·
-                                  Claude usage percent when tower.json sets usage_percent (claudeusage.py)
-  GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
-  POST /api/items/<id>/decide     {verdict, choice | choices[], note}
-  GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
-  GET  /api/me/claude             the viewer's own Claude account: {state: none|pending|connected|expired, url?, email?, plan?,
-                                  expires?, ended?}; 404 unless tower.json sets claude_accounts (accountroutes.py)
-  POST /api/me/claude             {action: start|code|cancel|disconnect, code?}: sign the viewer's account folder in or out; the
-                                  code goes straight to `claude auth login`, never stored or logged
-  POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
-  POST /api/uploads/start         {text, files: [{name, type, size}]} → {id, files: [{n, mode: chunks, chunk} |
-                                  {n, mode: put, url, headers} | {n, mode: multipart, part_size, parts}]}: the request is
-                                  held until finish; the server fixes every path, type and size (uploads.py)
-  POST /api/uploads/chunk?id=&n=&offset=   raw bytes of a `chunks` file, at most 4 MB → {received}; 409 {received} = out of order
-  POST /api/uploads/parts         {id, n, parts: [1..]} → {urls: {part: url}} for one multipart S3 file
-  POST /api/uploads/finish        {id, results?: [{n, etags?}]} → {sent, failed, total}: the request goes to the hub
-  GET  /api/uploads/view?key=K    {url, type, thumb?} for an attachment path a request names (members: only their own)
-  GET  /api/uploads/file?key=K    an attachment streamed through the board (drive, s3; Range supported)
-  *    /api/goals...              410 Gone (goals were removed in 0.8.0)
-  POST /api/settings              {max_lanes: 1..10} or {lane, sessions: 1..5} (a team lane's or infra's max_instances;
-                                   hubs stay at one session each) · written to tower.json, the tower picks it up
-  POST /api/login {token} · POST /api/logout      (auth.mode = token)
-  GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
-  GET  /api/sessions/<key>        what a lane session (`docs`, `docs#2`, `infra#2`) holds or last held, and its newest report
-  GET|POST /api/x/<name>          routes from the workspace's .tower/ext/*.py (see ext.py)
-
-Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
-project on the machine. Each workspace keeps its own auth; a `local` workspace is only served next to another
-`local` one (local mode trusts whoever reaches it).
-
-Every request must carry a Host the board knows (loopback with its port, the public_url host, or the bind address; else 421:
-DNS rebinding). Every POST must carry `x-tower: 1` and, when the browser says where it came from (Origin, Sec-Fetch-Site),
-come from the board's own origin.
-"""
-
 from __future__ import annotations
 
 import getpass
@@ -95,7 +41,7 @@ BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "secrets
 BLOCKED_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pem", ".key", ".p12", ".pfx", ".pkcs12", ".ppk",
                     ".jks", ".keystore", ".gpg", ".kdbx", ".tfstate", ".tfvars"}
 BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials.")
-MAX_BODY = 1024 * 1024  # a cap on the request, not on the words: board posts are text only
+MAX_BODY = 1024 * 1024
 PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
@@ -161,7 +107,6 @@ def is_ip(name: str) -> bool:
 
 
 def engine_rows(cfg: Config, lane: str) -> tuple[list[dict[str, Any]], Path]:
-    """(library rows with their process cards, skills directory) of a lane's engine; no engine or library -> ([], default dir)."""
     ln = cfg.all_lanes.get(lane)
     eng = cfg.engines.get(ln.engine) if ln and ln.engine else None
     skills = engines_mod.skills_root(cfg.home, eng.skills if eng else "")
@@ -173,7 +118,6 @@ def tok(t: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict[str, Any] | None) -> dict[str, Any] | None:
-    """What the lane is fixing: a send-back task (`Line: … fix`) or a task whose blame names a stage; None otherwise."""
     if not t:
         return None
     if t.get("line_mode") == "fix":
@@ -186,7 +130,6 @@ def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict
 
 
 def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
-    """Everything the lane sheet shows. `lid` is a configured lane or a person hub."""
     ln = cfg.all_lanes[lid]
     row = s.lane(lid)
     live = row.get("status") not in (None, "closed")
@@ -237,7 +180,6 @@ def _skill_doc(cfg: Config, skills_dir: Path, name: str) -> str | None:
 
 
 def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
-    """Everything the AI Engine tab shows for one engine."""
     e = cfg.engines[eid]
     skills_dir = engines_mod.skills_root(cfg.home, e.skills)
     rows = engines_mod.build(cfg.home / e.library, skills_dir) if e.library else []
@@ -430,7 +372,6 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Ga
 
 
 def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Today's totals per runtime in use, in lane order."""
     rows: dict[str, dict[str, Any]] = {}
     for lid, ln in {**cfg.lanes, **cfg.person_hubs}.items():
         r = rows.setdefault(ln.runtime, {"runtime": ln.runtime, "lanes": [], "tokens_in": 0, "tokens_out": 0,
@@ -557,11 +498,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
     siblings: dict[str, Site] = {}
     from .claudeusage import ClaudeUsage
     from .machine import Machine
-    mach, cusage = Machine(), ClaudeUsage()  # one machine and one Claude login for every workspace served here
+    mach, cusage = Machine(), ClaudeUsage()
     sweepers: dict[str, uploadroutes.Sweeper] = {}
 
     def fresh_own() -> Site:
-        """This workspace's config as tower.json has it now (infra adds lanes, the board sets max_lanes)."""
         try:
             mtime = own_cfg_path.stat().st_mtime
         except OSError:
@@ -671,7 +611,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.send_header("content-security-policy", csp or ("frame-ancestors 'none'" if frame_only else page_csp(self.site.cfg)))
 
         def _resolve(self) -> bool:
-            """Pick the workspace from the path. False when a response (redirect, 404) was already sent."""
             path, _, query = self.path.partition("?")
             m = re.fullmatch(r"/w/([a-z0-9-]+)(/.*)?", path)
             if not m:
@@ -698,7 +637,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
         def cookie(self) -> str:
             return COOKIE if self.site is own else f"{COOKIE}_{self.site.slug}"
 
-        # ----- auth -----
 
         def _me(self) -> dict[str, Any] | None:
             c, st = self.site.cfg, self.site.s
@@ -716,7 +654,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if c.hub_auto and joinable(c, ident):
                     return self._join(ident)
                 if any(x["ident"] for x in st.members()):
-                    return None  # an allow-list exists and this person is not on it
+                    return None
                 return {"name": ident, "role": "member"}
             token = ""
             auth = self.headers.get("authorization") or ""
@@ -754,7 +692,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 log(f"{ident} joined as member {name} · {hub}")
                 return st.member_by_ident(ident)
 
-        # ----- responses -----
 
         def _json(self, code: int, body: Any, headers: dict[str, str] | None = None) -> None:
             data = json.dumps(body, ensure_ascii=False).encode()
@@ -769,7 +706,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.wfile.write(data)
 
         def _json_tagged(self, body: Any) -> None:
-            """A GET whose answer rarely changes: ETag over the body, 304 when the browser already has it."""
             data = json.dumps(body, ensure_ascii=False, sort_keys=True).encode()
             tag = '"' + hashlib.sha1(data).hexdigest()[:16] + '"'
             self.send_response(304 if self.headers.get("if-none-match") == tag else 200)
@@ -806,7 +742,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
             self.wfile.write(data)
 
-        # ----- GET -----
 
         def do_GET(self) -> None:
             if not self._guard() or not self._resolve():
@@ -930,7 +865,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 out = fn(ctx, body)
                 code, data = out if isinstance(out, tuple) and len(out) == 2 and isinstance(out[0], int) else (200, out)
                 json.dumps(data)
-            except Exception as e:  # an extension's bug is its own 500, never the board's
+            except Exception as e:
                 log(f"extension route {method} /api/x/{name} failed: {type(e).__name__}: {e}")
                 return self._json(500, {"error": f"extension failed: {type(e).__name__}: {e}"})
             return self._json(code, data)
@@ -990,7 +925,6 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     self.wfile.write(chunk)
                     left -= len(chunk)
 
-        # ----- POST -----
 
         def do_POST(self) -> None:
             if not self._guard():

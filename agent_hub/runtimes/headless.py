@@ -15,8 +15,6 @@ COMPACT_SENT, COMPACT_PENDING, COMPACT_TYPED = "sent", "pending", "typed"
 
 
 class Headless(Adapter):
-    """A session is an id; each prompt is one CLI run that resumes it. Busy while that run is alive."""
-
     def status(self) -> str:
         if not self.store.lane(self.lane.id).get("session"):
             return "closed"
@@ -65,7 +63,7 @@ class Claude(Headless):
         argv = [*procs.command(os.environ.get("TOWER_CLAUDE_BIN", "claude")), "-p", "--output-format", "json", *self.lane.args]
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]  # an option follows: --add-dir takes many
         argv += ["--agent", self.lane.agent] if self.lane.agent else []
-        argv += ["--settings", str(hooks_mod.settings_file(self.cfg.home, self.lane.id))]  # gates, urgent tells, API errors
+        argv += ["--settings", str(hooks_mod.settings_file(self.cfg.home, self.lane.id))]
         effort = self.opts().get("effort")
         return argv + self.model_arg() + (["--effort", effort] if effort else [])
 
@@ -115,7 +113,7 @@ class Claude(Headless):
         if not runs:
             return None
         new = cache = out = turns = 0
-        for e in runs:  # one result event per run of the session (the first and each resume)
+        for e in runs:
             u = e.get("usage") or {}
             new += int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
             cache += int(u.get("cache_read_input_tokens") or 0)

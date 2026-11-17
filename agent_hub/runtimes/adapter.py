@@ -13,9 +13,6 @@ from .worktree import lane_cwd
 
 
 class Adapter:
-    """Shared plumbing: one lane, its child processes, its log file. Extensions subclass it (or Headless) to add a
-    runtime: status() -> closed|idle|busy|asking|unknown, open(prompt) -> session id, send(sid, text), close()."""
-
     def __init__(self, cfg: Config, store: Store, lane: Lane):
         self.cfg, self.store, self.lane = cfg, store, lane
         self.procs: dict[int, subprocess.Popen[bytes]] = {}
@@ -27,7 +24,6 @@ class Adapter:
         return self.logs / f"{self.lane.id}.jsonl"
 
     def set_opts(self, model: str | None, effort: str | None, account: Path | str | None = None) -> None:
-        """A task's own model and effort (stagemodel.py), kept so every resume of the session runs with them."""
         data = {"model": model, "effort": effort, **({"account": str(account)} if account else {})}
         hooks_mod.write_if_changed(self.logs / f"{self.lane.id}.opts.json", json.dumps(data))
 
@@ -49,12 +45,9 @@ class Adapter:
 
     @property
     def cwd(self) -> Path:
-        """Where the agent runs (its worktree when the lane has one); lane_cwd() creates the worktree."""
         return self.cfg.lane_dir(self.lane.id)
 
     def _tower_outside(self) -> list[str]:
-        """`.tower/` when the agent works outside it (a worktree, a `project` subfolder): lane files, the protocol
-        and briefs live there, and an agent that guards reads outside its folder must be allowed to read them."""
         tower = self.cfg.home / TOWER_DIR
         return [] if tower.resolve().is_relative_to(self.cwd.resolve()) else [str(tower)]
 
@@ -76,7 +69,7 @@ class Adapter:
             return proc.poll() is None
         if not self._ours(pid):
             return False
-        if procs.reap(pid):  # a child of this process we lost the handle for (config reload) that finished
+        if procs.reap(pid):
             return False
         return pid_alive(pid)
 
@@ -95,7 +88,6 @@ class Adapter:
     def owned(self) -> bool:
         return True
 
-    # optional capabilities
     def questions(self) -> list[dict[str, Any]] | None:
         return []
 
@@ -112,12 +104,9 @@ class Adapter:
         return None
 
     def usage(self, sid: str | None) -> dict[str, Any] | None:
-        """Totals for one session: tokens_in (cache included), tokens_out, cost (USD or None), ctx_k."""
         return None
 
     def ledger(self, sid: str | None) -> dict[str, int | None] | None:
-        """One session's totals split for the task ledger: new (input + cache writes), cache (cache reads), out, turns
-        (None when the runtime does not count them). The default reads usage(): everything counts as new."""
         u = self.usage(sid)
         if not u:
             return None

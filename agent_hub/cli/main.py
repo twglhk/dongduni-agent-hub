@@ -28,8 +28,7 @@ HANDLERS = {
 
 
 def utf8_output() -> None:
-    """Agents read dah's output through a pipe; on Windows that defaults to the ANSI code page, which cannot
-    hold Korean or Japanese text. Board text is UTF-8 everywhere."""
+    # Windows pipes default to the ANSI code page, which cannot hold Korean or Japanese text
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower().replace("-", "") != "utf8":
             stream.reconfigure(encoding="utf-8", errors="replace")

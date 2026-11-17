@@ -14,7 +14,6 @@ from .terminal import TerminalSession, write_signal
 
 
 def _toml_strings(value: str) -> list[str]:
-    """The strings of a TOML array such as ["notify-send", 'Codex'] (basic and literal strings)."""
     out = []
     for basic, literal in re.findall(r'"((?:[^"\\]|\\.)*)"|\'([^\']*)\'', value):
         if literal or not basic:
@@ -28,16 +27,15 @@ def _toml_strings(value: str) -> list[str]:
 
 
 def _toml_notify(text: str, profile: str) -> list[str]:
-    """`notify` from a Codex config.toml: the profile's when it sets one, else the top-level one."""
     try:
-        import tomllib  # Python 3.11+
+        import tomllib
         data = tomllib.loads(text)
         prof = (data.get("profiles") or {}).get(profile) or {} if profile else {}
         value = prof.get("notify") or data.get("notify")
         return [str(v) for v in value] if isinstance(value, list) else []
     except ImportError:
         pass
-    except ValueError:  # tomllib.TOMLDecodeError: Codex would not start either
+    except ValueError:
         return []
     sections: dict[str, str] = {}
     name, start = "", 0
@@ -53,8 +51,6 @@ def _toml_notify(text: str, profile: str) -> list[str]:
 
 
 def codex_notify(args: list[str]) -> tuple[list[str], list[str]]:
-    """The lane's args without a `-c notify=...`, and the notify program the person set (that one, their profile's,
-    or their config.toml's), which `dah signal` passes each notification on to."""
     rest, own, profile = [], [], ""
     i = 0
     while i < len(args):
@@ -78,7 +74,7 @@ def codex_notify(args: list[str]) -> tuple[list[str], list[str]]:
         except OSError:
             own = []
     if any("agent_hub" in a for a in own) and "signal" in own:
-        own = []  # already ours
+        own = []
     return rest, own
 
 

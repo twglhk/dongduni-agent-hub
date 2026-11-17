@@ -1,9 +1,3 @@
-"""Tower state in one SQLite file: tasks, board items, message queues, reports, lanes, members.
-
-An item row is the single source of truth for a decision. Messages only say whom to wake and what to tell:
-`target` is a lane id (hub, infra, a team lane) or `human` (replies shown on the board).
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -25,11 +19,11 @@ ALL_HUBS = "hub*"
 INFRA = "infra"
 HUMAN = "human"
 TOWER = "tower"
-HOLD = "hold:"  # target prefix of a board request whose attachments are still arriving: no lane takes it
+HOLD = "hold:"
 
 TASK_LIVE = ("running", "wrapping")
 OUTCOMES = ("adopted", "redirected", "dropped")
-VERDICTS = ("ok", "no", "hold", "answer")  # answer = a human wrote their own answer; the note is the decision
+VERDICTS = ("ok", "no", "hold", "answer")
 MULTI_SEP = " + "
 
 def is_hub_name(lane: str) -> bool:
@@ -227,7 +221,7 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
-                ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
+                ("deliverable", "TEXT"),
                 ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"),
                 ("paths", "TEXT"))
 
@@ -243,7 +237,6 @@ class StoreError(Exception):
 
 
 def valid_key(key: str) -> str:
-    """A deliverable key is one short word without spaces (`ui:shop`, `post:sketch-3`); `T12` and `#12` shapes are refused."""
     key = key.strip()
     if not re.fullmatch(r"\S{1,60}", key) or re.fullmatch(r"[Tt]\d+|#?\d+", key):
         raise StoreError(f"a deliverable key is a word of at most 60 characters without spaces (e.g. ui:shop): {key!r}")
@@ -319,7 +312,7 @@ class Store:
             con.execute("PRAGMA journal_mode=WAL")
             con.executescript(SCHEMA)
         with self.tx() as con:
-            for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
+            for table in ("tasks", "lanes"):
                 if "engine" not in _columns(con, table):
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
             have_lanes = _columns(con, "lanes")
@@ -327,7 +320,7 @@ class Store:
                 if col not in have_lanes:
                     con.execute(f"ALTER TABLE lanes ADD COLUMN {col} {decl}")
             have = _columns(con, "tasks")
-            for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
+            for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             con.execute("CREATE TABLE IF NOT EXISTS schedule_runs(key TEXT PRIMARY KEY, period TEXT NOT NULL, "
@@ -338,7 +331,7 @@ class Store:
             con.execute("CREATE TABLE IF NOT EXISTS overlaps(work TEXT PRIMARY KEY, items TEXT NOT NULL DEFAULT '[]', "
                         "others TEXT NOT NULL DEFAULT '[]', state TEXT NOT NULL, created REAL NOT NULL, decided REAL)")
             if "memo_id" not in _columns(con, "items"):
-                con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
+                con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")
             if "message_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")
             if "message_id" not in _columns(con, "reports"):
@@ -376,7 +369,6 @@ class Store:
         finally:
             con.close()
 
-    # ---------- messages ----------
 
     def push(self, target: str, sender: str, kind: str, text: str, task_id: int | None = None,
              item_id: int | None = None, con: sqlite3.Connection | None = None, paths: str | None = None) -> int:
@@ -412,7 +404,6 @@ class Store:
             raise StoreError(f"message #{message_id} not found")
         return row
 
-    # ---------- infra inbox: one message per session; several sessions (infra, infra#2 ...) at once ----------
 
     def claim_inbox(self, lane: str, target: str | None = None, allow: Callable[[dict[str, Any]], bool] | None = None,
                     fair: bool = False) -> dict[str, Any] | None:
@@ -505,7 +496,6 @@ class Store:
             con.execute("UPDATE lanes SET last_message=COALESCE(active_message, last_message), active_message=NULL, "
                         "active_retries=0, closing=NULL WHERE lane=?", (lane,))
 
-    # ---------- memos: humans -> infra / hub; replies go to target=human with item_id = memo id ----------
 
     def memos(self, target: str, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
         with self.conn() as con:
@@ -537,8 +527,6 @@ class Store:
 
     def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = (),
                    assignee: str | None = None) -> int | None:
-        """Record the reply. A hub reply to a person's request also becomes a review card for humans
-        (one open card per request: a second reply revises it). Returns that item's id, else None."""
         memo = self.memo(memo_id)
         if memo["target"] != by:
             raise StoreError(f"memo #{memo_id} was sent to {memo['target']}, not {by}")
@@ -568,7 +556,6 @@ class Store:
                 (lane, "review", title, f"{reply}\n\n{quoted}", HUMAN,
                  self.clock(), memo["id"], assignee)))
 
-    # ---------- schedules ----------
 
     def schedule_period(self, key: str) -> str | None:
         with self.conn() as con:
@@ -581,7 +568,6 @@ class Store:
                         "ON CONFLICT(key) DO UPDATE SET period=excluded.period, fired=excluded.fired",
                         (key, period, self.clock()))
 
-    # ---------- tasks ----------
 
     def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None,
                  requester: str | None = None, hub: str | None = None) -> int:
@@ -647,19 +633,16 @@ class Store:
                                     "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
 
     def queued_for(self, lane: str) -> list[dict[str, Any]]:
-        """A lane's queued tasks, oldest first (the order they start in)."""
         with self.conn() as con:
             return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' "
                                      "ORDER BY COALESCE(rank, id), id", (lane,)))
 
     def last_closed_task(self, lane: str) -> dict[str, Any] | None:
-        """The task the lane most recently finished (closed, not cancelled)."""
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='closed' "
                                     "ORDER BY closed DESC, id DESC LIMIT 1", (lane,)))
 
     def busy_lanes(self) -> set[str]:
-        """Lanes holding a slot: a task running or wrapping, or a closing session whose turn has not ended."""
         with self.conn() as con:
             running = {r[0] for r in con.execute("SELECT lane FROM tasks WHERE state IN ('running','wrapping')")}
             closing = {r[0] for r in con.execute("SELECT lane FROM lanes WHERE closing IS NOT NULL")}
@@ -722,7 +705,6 @@ class Store:
         if task_id is not None:
             self.update_task(task_id, last_signal=self.clock(), nudges=0)
 
-    # ---------- items ----------
 
     def add_item(self, lane: str, task_id: int | None, kind: str, title: str, body: str,
                  options: list[dict[str, Any]], attachments: list[str], audience: str = HUB,
@@ -914,7 +896,6 @@ class Store:
         with self.conn() as con:
             return int(con.execute("SELECT count(*) FROM items WHERE task_id=? AND state='open'", (task_id,)).fetchone()[0])
 
-    # ---------- reports ----------
 
     def add_report(self, task_id: int | None, lane: str, kind: str, text: str, attachments: list[str],
                    message_id: int | None = None) -> int:
@@ -934,7 +915,6 @@ class Store:
             r["attachments"] = json.loads(r["attachments"] or "[]")
         return rows
 
-    # ---------- history (board "more") ----------
 
     HISTORY = {
         "decided": ("items WHERE state='decided'", "decided DESC, id DESC"),
@@ -972,12 +952,8 @@ class Store:
                 r["attachments"] = json.loads(r["attachments"] or "[]")
         return rows
 
-    # ---------- changes (extension events) ----------
 
     def changes(self, marks: dict[str, float] | None) -> tuple[list[tuple[str, dict[str, Any]]], dict[str, float]]:
-        """What happened since `marks` as (kind, row), grouped by kind in this order, oldest first within each:
-        report, item (created), decided, memo, task (queued, started, closed or cancelled).
-        Pass the returned marks next time; None only takes the marks (nothing before now is news)."""
         task_at = "max(created, coalesce(started, 0), coalesce(closed, 0))"
         with self.conn() as con:
             now = {"report": con.execute("SELECT coalesce(max(id), 0) FROM reports").fetchone()[0],
@@ -1005,10 +981,8 @@ class Store:
                 (marks.get("task", now["task"]), now["task"])))]
         return out, now
 
-    # ---------- deliverables and blame ----------
 
     def add_outcome(self, key: str, outcome: str, by: str, note: str = "") -> None:
-        """The human's result for a deliverable: adopted, redirected (note = their words) or dropped. The last one counts."""
         key = valid_key(key)
         if outcome not in OUTCOMES:
             raise StoreError(f"the outcome is one of {', '.join(OUTCOMES)}")
@@ -1024,13 +998,11 @@ class Store:
             return _rows(con.execute("SELECT * FROM deliverable_events WHERE key=? ORDER BY id", (key,)))
 
     def add_blame(self, task_id: int, stage: str, cause: str, by: str) -> int:
-        """A lane names the stage that should have caught this task's failure. Writing again makes the new line the current one."""
         with self.conn() as con:
             return _id(con.execute("INSERT INTO blames(task_id, stage, cause, by, created) VALUES(?,?,?,?,?)",
                                    (task_id, stage, cause, by, self.clock())))
 
     def confirm_blame(self, task_id: int, by: str, stage: str | None = None, cause: str = "") -> int:
-        """The hub confirms the task's last blame (a stage changes it). With no blame yet, the stage writes and confirms one."""
         with self.tx() as con:
             row = _one(con.execute("SELECT * FROM blames WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)))
             if not row:
@@ -1047,7 +1019,6 @@ class Store:
             return bid
 
     def blames(self) -> dict[int, dict[str, Any]]:
-        """Task id -> its last blame (`effective` = the hub's confirmed stage, else the lane's)."""
         out: dict[int, dict[str, Any]] = {}
         with self.conn() as con:
             for r in con.execute("SELECT * FROM blames ORDER BY id"):
@@ -1057,14 +1028,12 @@ class Store:
                 out[d["task_id"]] = d
         return out
 
-    # ---------- lanes ----------
 
     def lane(self, lane: str) -> dict[str, Any]:
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM lanes WHERE lane=?", (lane,))) or {"lane": lane}
 
     def sync_lane_engines(self, engines: dict[str, str]) -> None:
-        """Record each team lane's engine (lane id -> engine id) in the lanes table."""
         with self.conn() as con:
             for lane, engine in engines.items():
                 con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
@@ -1076,19 +1045,13 @@ class Store:
             if fields:
                 self._assign(con, "lanes", "lane", lane, fields)
 
-    # ---------- task ledger and retros ----------
 
     def task_for_session(self, lane: str, session: str) -> dict[str, Any] | None:
-        """The newest task of the lane that runs (or ran) in this session."""
         with self.conn() as con:
             return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND session=? AND started IS NOT NULL "
                                     "ORDER BY id DESC LIMIT 1", (lane, session)))
 
     def record_task_usage(self, task_id: int, session: str, new: int, cache: int, out: int, turns: int | None) -> None:
-        """A session's cumulative totals, as the task's own share. Tasks that followed each other in one session
-        (`after:`) split it: this task owns what the earlier tasks of the session did not. A total below what is
-        already written is a transcript that lost its head, so it never replaces the larger value. The task row
-        carries the sum over its sessions."""
         with self.tx() as con:
             before = con.execute("SELECT COALESCE(SUM(new),0), COALESCE(SUM(cache),0), COALESCE(SUM(out),0), "
                                  "COALESCE(SUM(turns),0) FROM task_sessions WHERE session=? AND task_id<?",
@@ -1110,7 +1073,6 @@ class Store:
                         (task_id, task_id, task_id, task_id, self.clock(), task_id))
 
     def task_rotations(self) -> dict[int, int]:
-        """Extra sessions a task went through (handoffs, reopened sessions): sessions seen minus one."""
         with self.conn() as con:
             return {r[0]: r[1] - 1 for r in con.execute("SELECT task_id, count(*) FROM task_sessions GROUP BY task_id")}
 
@@ -1128,14 +1090,12 @@ class Store:
             return _rows(con.execute(f"SELECT * FROM retros WHERE {' AND '.join(where)} ORDER BY id DESC LIMIT ?",
                                      (*args, limit)))
 
-    # ---------- usage ----------
 
     def day(self, ts: float | None = None) -> str:
         return time.strftime("%Y-%m-%d", time.localtime(self.clock() if ts is None else ts))
 
     def record_usage(self, lane: str, session: str, runtime: str, tokens_in: int, tokens_out: int,
                      cost: float | None, ctx_k: int | None) -> None:
-        """Session totals as the runtime reports them now; the day stays the one the session was first seen on."""
         with self.conn() as con:
             con.execute("INSERT INTO usage(lane, session, runtime, day, tokens_in, tokens_out, cost, ctx_k, updated) "
                         "VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(lane, session) DO UPDATE SET runtime=excluded.runtime, "
@@ -1144,7 +1104,6 @@ class Store:
                         (lane, session, runtime, self.day(), tokens_in, tokens_out, cost, ctx_k, self.clock()))
 
     def usage(self, day: str) -> dict[str, dict[str, Any]]:
-        """Per lane for one day: tokens in/out, cost (None when no session reported one), sessions."""
         with self.conn() as con:
             rows = _rows(con.execute("SELECT lane, runtime, SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out, "
                                      "SUM(cost) AS cost, COUNT(*) AS sessions FROM usage WHERE day=? "
@@ -1160,7 +1119,6 @@ class Store:
         return out
 
     def usage_days(self, lane: str, days: int = 7) -> list[dict[str, Any]]:
-        """A lane's last `days` days, oldest first, empty days included: {day, tokens_in, tokens_out, sessions}."""
         end = self.clock()
         names = [self.day(end - 86400 * i) for i in range(days - 1, -1, -1)]
         with self.conn() as con:
@@ -1172,7 +1130,6 @@ class Store:
                 for d in names]
 
     def lane_tasks(self, lane: str, limit: int = 5) -> list[dict[str, Any]]:
-        """A lane's latest tasks, newest first (any state)."""
         with self.conn() as con:
             return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
 
@@ -1199,7 +1156,6 @@ class Store:
             row = con.execute("SELECT ctx_k FROM usage WHERE lane=? AND session=?", (lane, session)).fetchone()
         return row[0] if row else None
 
-    # ---------- members ----------
 
     def add_member(self, name: str, role: str = "member", ident: str | None = None,
                    with_token: bool = False) -> str | None:

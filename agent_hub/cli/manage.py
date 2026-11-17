@@ -44,7 +44,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(lane_template(args.id), encoding="utf-8")
         wrote: list[str] = []
-        write_shims(c, list(c.lanes), False, wrote)  # a new runtime gets every lane's shortcut, too
+        write_shims(c, list(c.lanes), False, wrote)
         print(f"lane {args.id} added ({args.runtime}" + (f", agent {args.agent}" if args.agent else "")
               + (f", engine {args.engine}" if args.engine else "")
               + (", in its own git worktree" if args.worktree else "") + "). "

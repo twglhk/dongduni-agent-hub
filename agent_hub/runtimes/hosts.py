@@ -29,9 +29,6 @@ def tmux_session(cfg: Config) -> str:
 
 
 class Host:
-    """A terminal app the tower opens lane windows in. A handle names one window. Extensions subclass it to add
-    one: open() runs the launcher script in a new window in `cwd` and returns its handle."""
-
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
@@ -69,7 +66,7 @@ class Tmux(Host):
             if "no server running" in p.stderr or "error connecting" in p.stderr:
                 return False
             raise RuntimeFailure(f"tmux did not answer: {p.stderr.strip()}")
-        return any(line.split()[:2] == [handle, "0"] for line in p.stdout.splitlines())  # 1: remain-on-exit
+        return any(line.split()[:2] == [handle, "0"] for line in p.stdout.splitlines())  # tmux keeps a finished pane (remain-on-exit) with pane_dead 1
 
     def send(self, handle: str, text: str) -> None:
         if self._tmux("send-keys", "-t", handle, "-l", "--", text).returncode != 0:
@@ -82,8 +79,6 @@ class Tmux(Host):
 
 
 class Orca(Host):
-    """Orca (an agent development environment) terminal tabs, through its `orca` CLI."""
-
     GONE = ("stale", "not found", "no terminal", "unknown terminal")
 
     def _orca(self, *args: str) -> tuple[subprocess.CompletedProcess[str], Any]:
@@ -127,7 +122,7 @@ class Orca(Host):
         return None
 
     def open(self, title: str, launcher: Path, cwd: Path) -> str:
-        cmd = f'"{launcher}"' if procs.WINDOWS else "exec " + shlex.quote(str(launcher))  # the tab ends with the agent
+        cmd = f'"{launcher}"' if procs.WINDOWS else "exec " + shlex.quote(str(launcher))
         p, data = self._orca("terminal", "create", "--worktree", f"path:{cwd}", "--title", title,
                              "--command", cmd)
         term = self._find_obj(data, "terminal")
@@ -143,7 +138,7 @@ class Orca(Host):
         if p.returncode != 0:
             if any(g in said for g in self.GONE):
                 return False
-            raise RuntimeFailure(f"orca did not answer for {handle}: {said.strip()[:300]}")  # unknown, not closed
+            raise RuntimeFailure(f"orca did not answer for {handle}: {said.strip()[:300]}")
         # Orca 1.4.257 keeps answering ok for an ended tab: `exitCause` set, `connected: false`, not writable.
         term = self._find_obj(data, "terminal") or {}
         if term.get("exitCause") or self._find(data, "exitCause") or (
