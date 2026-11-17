@@ -37,6 +37,7 @@ export interface Lane {
   base?: string | null;
   branch?: string | null;
   sessions?: number | null;
+  wait?: string | null;
   memo?: { id: number; kind: string; title: string } | null;
 }
 

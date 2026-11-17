@@ -373,14 +373,14 @@ class PathsTest(unittest.TestCase):
 
 
 class ConflictTest(Base):
-    def test_overlap_and_missing_paths_block_beside_a_live_task_of_the_lane(self) -> None:
+    def test_overlap_blocks_beside_a_live_task_of_the_lane(self) -> None:
         self.build(max_lanes=3, max_instances=2)
         a = self.s.add_task("docs", "A", "paths: src/a")
         self.s.claim_task(a)
         ok = {"id": 90, "lane": "docs", "brief": "paths: src/b"}
         self.assertIsNone(conflict_of(self.s, ok))
         self.assertIn("overlap", conflict_of(self.s, {"id": 91, "lane": "docs", "brief": "paths: src/a/x"}) or "")
-        self.assertIn("no paths", conflict_of(self.s, {"id": 92, "lane": "docs", "brief": "no line"}) or "")
+        self.assertIsNone(conflict_of(self.s, {"id": 92, "lane": "docs", "brief": "no line"}))
         self.assertIsNone(conflict_of(self.s, {"id": 93, "lane": "web", "brief": "no line"}))  # another lane
 
     def test_after_waits_for_the_named_task_unless_it_does_not_exist(self) -> None:

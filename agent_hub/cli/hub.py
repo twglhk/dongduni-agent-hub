@@ -191,14 +191,7 @@ def cmd_memo(args: argparse.Namespace) -> None:
     s = store(c)
     try:
         if args.sub == "paths":
-            if not c.is_hub(me):
-                raise TowerError("only the hub sets a memo's paths")
-            msg = s.message(args.id)
-            if msg["target"] != INFRA or msg["delivered"] is not None:
-                raise TowerError(f"#{args.id} is not a waiting infra message")
-            paths = ", ".join(p.strip() for p in args.paths if p.strip()) or None
-            s.set_message_paths(args.id, paths)
-            print(f"#{args.id} paths: {paths or 'none'}")
+            memo_paths(c, s, me, args.id, args.paths, args.alone)
             return
         if args.sub == "reply":
             memo = s.memo(args.id)
@@ -224,13 +217,47 @@ def cmd_memo(args: argparse.Namespace) -> None:
             s.reply_memo(args.id, "Passed to the hub.", INFRA)
             print(f"memo #{args.id} → hub")
         else:
-            send_infra(c, s, me, args.text, args.approved, args.paths)
+            send_infra(c, s, me, args.text, args.approved, args.paths, args.alone)
     except StoreError as e:
         raise TowerError(str(e))
 
 
+def memo_paths(c: Config, s: Store, me: str, mid: int, given: list[str], alone: bool = False) -> None:
+    """Paths of an infra message, a file lock. The hub sets a hint on a waiting one; the infra session that holds it
+    declares its own (they replace the hint). Declared paths that overlap another session's give the message back to
+    the queue and close this session; it starts again once the other one finishes."""
+    from ..engine import ALONE, block_text, message_block, paths_label
+    paths = ALONE if alone else (", ".join(p.strip() for p in given if p.strip()) or None)
+    msg = s.message(mid)
+    if is_infra(me):
+        if s.lane(me).get("active_message") != mid:
+            raise TowerError(f"#{mid} is not the message this session ({me}) holds")
+        if paths is None:
+            raise TowerError("name the files and folders you will change, or --alone")
+        s.set_message_paths(mid, paths)
+        live = [{**m, "_lane": k} for k, m in s.held_messages([k for k in c.infra_sessions() if k != me]).items()]
+        b = message_block({**msg, "paths": paths}, live, time.time())
+        if b and b[0] != "declaring":
+            s.release_inbox(me)
+            print(f"#{mid} paths: {paths_label({'paths': paths})}. {block_text(b[0], b[1])}: #{mid} went back to the "
+                  f"infra queue and this session closes. Change nothing, do not report; end your turn now.")
+            return
+        print(f"#{mid} paths: {paths_label({'paths': paths})} (declared by {me}). Stay inside them.")
+        return
+    if not c.is_hub(me):
+        raise TowerError("only the hub or the infra session that holds it sets a message's paths")
+    if msg["target"] != INFRA or msg["delivered"] is not None:
+        raise TowerError(f"#{mid} is not a waiting infra message")
+    s.set_message_paths(mid, paths)
+    print(f"#{mid} paths: {paths_label({'paths': paths})}"
+          + ("" if paths else " · the session that takes it declares them"))
+
+
 def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, paths: str | None = None,
-               model: str | None = None, effort: str | None = None) -> None:
+               alone: bool = False, model: str | None = None, effort: str | None = None) -> None:
+    """`--paths` is a hint: the session that takes the memo declares its own; `--alone` = it runs with no other infra
+    session."""
+    from ..engine import ALONE
     if not c.is_hub(me) or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
     if bad := stagemodel.problems(model, effort):
@@ -240,15 +267,18 @@ def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, pa
         text = "\n".join(head) + "\n\n" + text
     if approved and approved.strip():
         text = f"{text}\n\nApproved by the human: {approved.strip()}"
-    paths = ", ".join(p.strip() for p in (paths or "").split(",") if p.strip()) or None
+    paths = ALONE if alone else (", ".join(p.strip() for p in (paths or "").split(",") if p.strip()) or None)
+    parallel = len(c.infra_sessions()) > 1
     print(f"memo #{s.push(INFRA, me, 'memo', text, paths=paths)} → infra"
-          + ("" if paths or len(c.infra_sessions()) < 2 else " (no --paths: it runs while no other infra session works)"))
+          + (" (alone: no other infra session runs beside it)" if alone and parallel else "" if paths or not parallel else
+             " (info: no --paths; the infra session declares its own when it starts. Add --paths as a hint, or "
+             "--alone only when it must run with no other infra session, e.g. a reinstall)"))
 
 
 def cmd_infra(args: argparse.Namespace) -> None:
     c = cfg()
     try:
-        send_infra(c, store(c), need(args, c, HUB, *c.infra_sessions()), args.text, args.approved, args.paths, args.model,
-                   args.effort)
+        send_infra(c, store(c), need(args, c, HUB, *c.infra_sessions()), args.text, args.approved, args.paths, args.alone,
+                   args.model, args.effort)
     except StoreError as e:
         raise TowerError(str(e))

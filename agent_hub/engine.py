@@ -152,8 +152,9 @@ def handoff_mode(text: str | None) -> str:
 
 
 def task_paths(task: dict[str, Any]) -> list[str] | None:
-    """The brief's `paths:` line, comma separated and normalised; None when the brief declares none."""
-    m = PATHS_LINE.search(str(task.get("brief") or ""))
+    """The paths its session declared (`dah paths`), else the brief's `paths:` line (the hub's hint), comma separated
+    and normalised; None when neither names any."""
+    m = PATHS_LINE.search(f"paths: {task['paths']}" if task.get("paths") else str(task.get("brief") or ""))
     if not m:
         return None
     out = [p.strip().strip("`").strip().strip("/") for p in re.split(r"[,\n]", m.group(1))]
@@ -169,10 +170,17 @@ def after_of(task: dict[str, Any]) -> int | None:
     return int(m.group(1)) if m else None
 
 
+ALONE = "*"
+NOTHING = "-"
+DECLARE_GRACE = 180
+MEMO_REF = re.compile(r"memo\s*#(\d+)", re.I)
+
+
 def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
     """Why this task may not start now (None = it may). `after: T` waits for T to finish (an unknown T does not block).
-    Two sessions of one lane share one working tree, so beside another live task of the same lane (`also` = tasks the
-    tick has just started) both must declare `paths:` that do not overlap."""
+    Beside other live tasks of the same lane (`also` = tasks the tick has just started) paths are a file lock: declared
+    paths that overlap wait; a task with no paths may start (its session declares them with `dah paths`); a live task
+    with no paths is waited for only DECLARE_GRACE seconds after it started."""
     dep_id = after_of(task)
     if dep_id is not None:
         try:
@@ -181,18 +189,26 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
             dep = None
         if dep and dep["state"] in ("queued", "running", "wrapping"):
             return f"waiting for #{dep['id']}: after"
+    b = task_block(store, task, also)
+    if b is None:
+        return None
+    return (f"blocked beside #{b[1]['id']}: overlap" if b[0] == "overlap"
+            else f"waiting for #{b[1]['id']} to declare its paths")
+
+
+def task_block(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> tuple[str, dict[str, Any]] | None:
     base = base_lane(str(task["lane"]))
     others = [t for t in [*store.tasks(("running", "wrapping"), limit=500), *also]
               if t["id"] != task["id"] and base_lane(str(t["lane"])) == base]
-    mine = task_paths(task)
+    mine, now = task_paths(task), store.clock()
     for o in others:
         theirs = task_paths(o)
-        if mine is None:
-            return f"blocked beside #{o['id']}: no paths (#{task['id']} has no `paths:` line)"
         if theirs is None:
-            return f"blocked beside #{o['id']}: no paths (#{o['id']} has no `paths:` line)"
-        if paths_overlap(mine, theirs):
-            return f"blocked beside #{o['id']}: overlap"
+            if o.get("started") is None or now - float(o["started"]) < DECLARE_GRACE:
+                return "declaring", o
+            continue
+        if mine and paths_overlap(mine, theirs):
+            return "overlap", o
     return None
 
 
@@ -219,25 +235,104 @@ def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tup
 
 
 def message_paths(msg: dict[str, Any]) -> list[str] | None:
-    """An infra message's paths: `dah infra --paths` / `dah memo paths` (the column), else a `paths:` line in its text."""
-    if msg.get("paths"):
-        return task_paths({"brief": f"paths: {msg['paths']}"})
+    """An infra message's paths: `dah infra --paths` / `dah memo paths` (the column), else a `paths:` line in its text.
+    None = not declared yet; [] = touches nothing (NOTHING); [ALONE] = runs alone."""
+    col = str(msg.get("paths") or "").strip()
+    if col == NOTHING:
+        return []
+    if col == ALONE:
+        return [ALONE]
+    if col:
+        return task_paths({"brief": f"paths: {col}"})
     return task_paths({"brief": msg.get("text")})
 
 
-def message_conflict(msg: dict[str, Any], live: list[dict[str, Any]]) -> str | None:
-    """Why this infra message may not start beside the ones other infra sessions hold (None = it may). Infra sessions
-    share the workspace, so both must declare `paths:` that do not overlap."""
+def paths_label(msg: dict[str, Any]) -> str:
+    ps = message_paths(msg)
+    if ps is None:
+        return "not declared (the session declares them)"
+    if ps == [ALONE]:
+        return "alone"
+    return ", ".join(ps) if ps else "nothing (check only)"
+
+
+def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> tuple[str, dict[str, Any]] | None:
+    """What keeps this infra message from starting beside the ones other sessions hold, as (why, that message), or None.
+    A file lock: declared paths that overlap wait for the other side to finish; `--alone` waits for every session and
+    every session waits for it; a session that took a message with no paths is waited for only DECLARE_GRACE seconds
+    after it opened, while it declares them. A message with no paths may start (it declares)."""
     mine = message_paths(msg)
     for o in live:
         theirs = message_paths(o)
-        if mine is None:
-            return f"beside #{o['id']}: #{msg['id']} has no paths"
         if theirs is None:
-            return f"beside #{o['id']}: #{o['id']} has no paths"
-        if paths_overlap(mine, theirs):
-            return f"beside #{o['id']}: paths overlap"
+            opened = o.get("delivered")
+            if now is None or opened is None or now - float(opened) < DECLARE_GRACE:
+                return "declaring", o
+            continue
+        if theirs == [ALONE]:
+            return "alone", o
+        if mine == [ALONE]:
+            return "busy", o
+        if mine and theirs and paths_overlap(mine, theirs):
+            return "overlap", o
     return None
+
+
+BLOCK_TEXT = {
+    "en": {"declaring": "waits for #{o} ({lane}) to declare its paths", "alone": "#{o} ({lane}) runs alone",
+           "busy": "runs alone: waits until #{o} ({lane}) and every other infra session finish",
+           "overlap": "paths overlap #{o} ({lane}): waits until it finishes", "full": "all {n} infra sessions are busy",
+           "behind": "waits behind #{o}, which runs alone"},
+    "ko": {"declaring": "#{o}({lane})가 고칠 경로를 선언하는 중이라 대기", "alone": "#{o}({lane})가 혼자 실행 중이라 대기",
+           "busy": "혼자 실행할 메모라 #{o}({lane}) 등 다른 인프라 세션이 끝날 때까지 대기",
+           "overlap": "#{o}({lane})와 고칠 경로가 겹쳐 그것이 끝날 때까지 대기", "full": "인프라 세션 {n}개가 모두 사용 중",
+           "behind": "혼자 실행할 #{o} 차례를 기다리는 중"},
+    "ja": {"declaring": "#{o}（{lane}）が変更するパスを宣言するのを待っています", "alone": "#{o}（{lane}）が単独で実行中のため待機",
+           "busy": "単独実行のメモなので、#{o}（{lane}）ほかの infra セッションが終わるまで待機",
+           "overlap": "#{o}（{lane}）と変更するパスが重なるため、それが終わるまで待機", "full": "infra セッション {n} 件がすべて使用中",
+           "behind": "単独実行の #{o} の順番を待っています"},
+    "zh": {"declaring": "等待 #{o}（{lane}）声明它要修改的路径", "alone": "#{o}（{lane}）正在独占运行，等待",
+           "busy": "此备忘需独占运行：等到 #{o}（{lane}）和其他 infra 会话都结束", "overlap": "与 #{o}（{lane}）要修改的路径重叠，等它结束",
+           "full": "{n} 个 infra 会话全部在用", "behind": "排在需独占运行的 #{o} 之后"},
+    "es": {"declaring": "espera a que #{o} ({lane}) declare sus rutas", "alone": "#{o} ({lane}) se ejecuta a solas",
+           "busy": "se ejecuta a solas: espera a que #{o} ({lane}) y las demás sesiones de infra terminen",
+           "overlap": "las rutas se solapan con #{o} ({lane}): espera a que termine", "full": "las {n} sesiones de infra están ocupadas",
+           "behind": "espera detrás de #{o}, que se ejecuta a solas"},
+}
+
+
+def block_text(why: str, other: dict[str, Any] | None, lang: str = "en", n: int = 0) -> str:
+    t = BLOCK_TEXT.get(lang, BLOCK_TEXT["en"])[why]
+    return t.format(o=other["id"] if other else "", lane=(other or {}).get("_lane") or "infra", n=n)
+
+
+def message_conflict(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> str | None:
+    b = message_block(msg, live, now)
+    return f"beside #{b[1]['id']}: {block_text(b[0], b[1])}" if b else None
+
+
+def infra_waits(store: Store, sessions: list[str], now: float, fair: bool = False,
+                limit: int = 20) -> list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]]:
+    """Each waiting infra message with what keeps it waiting, by the rule the tower uses (`dah status`, the Lanes tab):
+    (message, (why, blocking message) or None when the next free session takes it)."""
+    held = store.held_messages(sessions)
+    live = [{**m, "_lane": k} for k, m in held.items()]
+    free = len(sessions) - len(held)
+    out: list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]] = []
+    barrier = None
+    for m in store.inbox_queue(INFRA, fair)[:limit]:
+        b = message_block(m, live, now)
+        if b is None and barrier is not None:
+            b = ("behind", barrier)
+        elif b is None and free <= 0:
+            b = ("full", None)
+        if b is None:
+            free -= 1
+            live.append({**m, "_lane": "next", "delivered": None})
+        elif message_paths(m) == [ALONE] and barrier is None:
+            barrier = m
+        out.append((m, b))
+    return out
 
 
 def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
@@ -333,9 +428,19 @@ class Engine:
             self.store.update_task(task["id"], model=model, effort=effort, **engines_mod.line_fields(task["brief"], processes.lane_full(self.cfg, task["lane"])))
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
+    def _lock_line(self, task: dict[str, Any]) -> str:
+        if self.cfg.instance_cap(base_lane(str(task["lane"]))) < 2:
+            return ""
+        hint = task_paths(task)
+        return (f"\n\nPaths (a file lock): other sessions of this lane may work beside you. This task's paths now: "
+                f"{', '.join(hint) if hint else 'none yet'}. Before you change any file, declare the files and folders "
+                f"you will change: `dah paths A B ...` (the brief's `paths:` is the hub's hint). If they overlap "
+                f"another session's, the tower puts the task back in the queue and closes this session: change nothing "
+                f"and end your turn; it restarts once the other one finishes.")
+
     def start_prompt(self, task: dict[str, Any]) -> str:
         return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\"\n\n{self._read_first(task['lane'])}"
-                f"\n\n{task['brief']}\n\n{RULES}")
+                f"\n\n{task['brief']}{self._lock_line(task)}\n\n{RULES}")
 
     def resume_prompt(self, task: dict[str, Any], why: str) -> str:
         done = "\n".join(f"- {r['kind']}: {clip(r['text'], 300)}" for r in self.store.reports(task["id"])[-6:]) or "- none"
@@ -376,7 +481,19 @@ class Engine:
         who = "You are the infra lane." if lane == INFRA else (
             f"You are the infra lane, parallel session {lane}: other infra sessions work in the same checkout at the "
             f"same time, so stay inside this memo's paths and stage only your own files.")
-        return f"[tower] {who}\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
+        lock = self._memo_lock_line(msg) if len(self.infra_keys) > 1 else ""
+        return f"[tower] {who}\n\n{self._read_first(INFRA)}\n\n{body}{lock}\n\n{WRAP_RULE}"
+
+    @staticmethod
+    def _memo_lock_line(msg: dict[str, Any]) -> str:
+        hint = message_paths(msg)
+        has = ("none yet" if hint is None else "alone" if hint == [ALONE] else
+               ", ".join(hint) if hint else "nothing (check only)")
+        return (f"\n\nPaths (a file lock): this message's paths now: {has}. Before you change any file, declare the "
+                f"files and folders you will change: `dah memo paths {msg['id']} A B ...` (what the hub wrote is a "
+                f"hint), or `dah memo paths {msg['id']} --alone` for work that must run with no other infra session "
+                f"(a reinstall, a restart). If they overlap another session's, the tower gives the message back to the "
+                f"queue and closes this session: end your turn then; it restarts once the other one finishes.")
 
     # ---------- helpers ----------
 
@@ -628,7 +745,26 @@ class Engine:
     def route_decisions(self) -> None:
         for it in self.store.undelivered_decisions():
             push, follow = self._route(it)
-            self.store.route_decision(it["id"], push, follow)
+            self.store.route_decision(it["id"], push, follow, self._decision_paths(it) if push and push[0] == INFRA else None)
+
+    def _decision_paths(self, it: dict[str, Any]) -> str | None:
+        """Paths for the follow-up of an infra card: those of the memo the posting session was on (recorded when the card
+        was posted, else the first `memo #N` the card names); a report card confirmed with no note touches no files.
+        None = the session that takes it declares them."""
+        mids = [it.get("message_id")] + [int(x) for x in MEMO_REF.findall(f"{it.get('title') or ''}\n{it.get('body') or ''}")]
+        with self.store.conn() as con:
+            for mid in mids:
+                if not mid:
+                    continue
+                row = con.execute("SELECT * FROM messages WHERE id=? AND target=?", (int(mid), INFRA)).fetchone()
+                if row is not None:
+                    ps = message_paths(dict(row))
+                    if ps is not None and ps != [ALONE]:
+                        return ", ".join(ps) if ps else NOTHING
+                    break
+        if it.get("kind") == "review" and not str(it.get("note") or "").strip():
+            return NOTHING
+        return None
 
     def _route(self, it: dict[str, Any]) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
         line = decision_line(it)
@@ -1271,8 +1407,18 @@ class Engine:
                 return
         if st != "closed":  # never inject a second item into a live session
             return
-        live = list(self.store.held_messages([k for k in self.infra_keys if k != lane]).values())
-        msg = self.store.claim_inbox(lane, INFRA, lambda m: message_conflict(m, live) is None, self.cfg.fair_turns)
+        live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
+        now, barrier = self.clock(), []
+
+        def allow(m: dict[str, Any]) -> bool:  # oldest first; a blocked `--alone` message holds back the ones after it
+            if barrier:
+                return False
+            if message_block(m, live, now) is None:
+                return True
+            if message_paths(m) == [ALONE]:
+                barrier.append(m)
+            return False
+        msg = self.store.claim_inbox(lane, INFRA, allow, self.cfg.fair_turns)
         if msg is None:
             return
         if msg["delivered"] is not None:  # its session closed without wrapping

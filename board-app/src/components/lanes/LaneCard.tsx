@@ -32,6 +32,7 @@ export function LaneCard({ l }: { l: Lane }) {
         : l.doing || l.memo ? null : <div className="text-t5 text-ink-3">{L.label.noTask}</div>}
       {l.memo && <div className={`text-t5 ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">{fmt(L.ln.memo, { n: l.memo.id })}</span>{l.memo.title}</div>}
       {l.doing && !l.memo && <div className={`${l.task_id ? 'text-t6 text-ink-2' : 'text-t5 font-semibold'} ${CLAMP2}`}>{l.doing}</div>}
+      {l.wait && <div className="rounded-chip bg-orange-weak px-2 py-1 text-t6 leading-snug text-orange-ink">{l.wait}</div>}
       {(proc || model || l.fixing) && (
         <div className="flex flex-wrap items-center gap-2 text-t6 text-ink-3">
           {proc && <span>{proc}</span>}

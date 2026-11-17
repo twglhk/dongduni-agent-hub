@@ -203,7 +203,8 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
                 ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
-                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"))
+                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"),
+                ("paths", "TEXT"))  # what its session declared with `dah paths`; NULL = the brief's `paths:` line
 
 
 def _in_turns(con: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -311,6 +312,8 @@ class Store:
                     con.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
+            if "message_id" not in _columns(con, "items"):
+                con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")  # infra: the message the posting session held
 
     def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
         if table not in self.columns:
@@ -432,6 +435,16 @@ class Store:
             front = con.execute("SELECT MIN(COALESCE(rank, id)) FROM messages WHERE target=? AND delivered IS NULL",
                                 (target,)).fetchone()[0]
             con.execute("UPDATE messages SET rank=? WHERE id=?", (float(front) - 1, message_id))
+
+    def release_inbox(self, lane: str) -> int | None:
+        with self.conn() as con:
+            row = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()
+            mid = row[0] if row else None
+            if mid is not None:
+                con.execute("UPDATE messages SET delivered=NULL WHERE id=?", (mid,))
+            con.execute("UPDATE lanes SET active_message=NULL, active_retries=0, closing=? WHERE lane=?",
+                        (self.clock(), lane))
+        return mid
 
     def retry_inbox(self, lane: str) -> int:
         with self.conn() as con:
@@ -615,6 +628,21 @@ class Store:
             con.execute("UPDATE tasks SET rank=? WHERE id=?", (float(front) - 1, task_id))
         return row
 
+    def set_task_paths(self, task_id: int, paths: str) -> None:
+        with self.conn() as con:
+            if con.execute("UPDATE tasks SET paths=? WHERE id=?", (paths, task_id)).rowcount == 0:
+                raise StoreError(f"task #{task_id} not found")
+
+    def release_task(self, task_id: int, base: str) -> None:
+        with self.tx() as con:
+            row = con.execute("SELECT lane FROM tasks WHERE id=? AND state='running'", (task_id,)).fetchone()
+            if not row:
+                raise StoreError(f"task #{task_id} is not running")
+            con.execute("UPDATE tasks SET state='queued', started=NULL, last_prompt=NULL, session=NULL, lane=? "
+                        "WHERE id=?", (base, task_id))
+            con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (row[0],))
+            con.execute("UPDATE lanes SET closing=? WHERE lane=?", (self.clock(), row[0]))
+
     def claim_task(self, task_id: int) -> dict[str, Any] | None:
         now = self.clock()
         with self.conn() as con:
@@ -644,7 +672,8 @@ class Store:
 
     def add_item(self, lane: str, task_id: int | None, kind: str, title: str, body: str,
                  options: list[dict[str, Any]], attachments: list[str], audience: str = HUB,
-                 multi: bool = False, question: str | None = None, assignee: str | None = None) -> int:
+                 multi: bool = False, question: str | None = None, assignee: str | None = None,
+                 message_id: int | None = None) -> int:
         if kind not in ("decision", "review"):
             raise StoreError("kind must be decision or review")
         if kind == "decision" and len(options) < 2:
@@ -656,9 +685,10 @@ class Store:
         with self.conn() as con:
             return _id(con.execute(
                 "INSERT INTO items(task_id, lane, kind, title, body, options, multi, attachments, audience, assignee, "
-                "state, created, question) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "state, created, question, message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, lane, kind, title, body, json.dumps(options, ensure_ascii=False), int(multi),
-                 json.dumps(attachments, ensure_ascii=False), audience, assignee, "open", self.clock(), question)))
+                 json.dumps(attachments, ensure_ascii=False), audience, assignee, "open", self.clock(), question,
+                 message_id)))
 
     def item(self, item_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -756,7 +786,8 @@ class Store:
             return [item_view(r) for r in _rows(con.execute(
                 "SELECT * FROM items WHERE state='decided' AND delivered IS NULL AND question IS NULL ORDER BY decided"))]
 
-    def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None) -> bool:
+    def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None,
+                       paths: str | None = None) -> bool:
         with self.tx() as con:
             row = con.execute("SELECT delivered FROM items WHERE id=?", (item_id,)).fetchone()
             if row is None or row[0] is not None:
@@ -768,7 +799,7 @@ class Store:
                                        follow.get("engine"), follow.get("requester"), follow.get("hub"))))
                 self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
             elif push:
-                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con)
+                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con, paths=paths)
             con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
             return True
 

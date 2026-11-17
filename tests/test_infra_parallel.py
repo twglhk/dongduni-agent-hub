@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_hub import config as config_mod
 from agent_hub.config import ConfigError
-from agent_hub.engine import Engine, message_conflict, message_paths
+from agent_hub.engine import ALONE, Engine, message_conflict, message_paths
 from agent_hub.store import HUB, INFRA, SCHEMA, Store
 from tests.helpers import Clock, FakeRuntime, make_home
 from tests.test_web import POST, Board
@@ -43,7 +43,7 @@ class InfraParallelTest(unittest.TestCase):
         a = self.memo("big one", "src/")
         b = self.memo("overlaps a", "src/app/web.py")
         c = self.memo("swap\npaths: docs/ops.md")
-        d = self.memo("no paths: runs alone")
+        d = self.memo("alone", ALONE)
         self.e.tick()
         self.assertEqual(self.held(), {"infra": a, "infra#2": c})
         self.assertIn("infra#2", self.rt.opened[1][1])
@@ -103,14 +103,14 @@ class InfraParallelTest(unittest.TestCase):
         return p.stdout + p.stderr
 
     def test_cli(self) -> None:
-        self.assertIn("runs while no other", self.dah("infra", "do x", lane="hub"))
+        self.assertIn("info: no --paths", self.dah("infra", "do x", lane="hub"))
         self.dah("infra", "do y", "--paths", "a/, b.md", lane="hub")
         x, y = [m["id"] for m in self.s.inbox_queue(INFRA)]
         self.assertEqual(self.s.message(y)["paths"], "a/, b.md")
         self.dah("memo", "paths", str(x), "docs/", "c.md", lane="hub")
         self.assertEqual(message_paths(self.s.message(x)), ["docs", "c.md"])
         self.assertIn("paths: docs, c.md", self.dah("status", lane="hub"))
-        self.dah("memo", "paths", str(x), lane="infra", ok=False)
+        self.dah("memo", "paths", str(x), "y", lane="infra", ok=False)
         self.e.tick()
         self.assertEqual(self.held(), {"infra": x, "infra#2": y})
         self.assertIn(f"message #{y}", self.dah("status", lane="hub"))

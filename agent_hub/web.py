@@ -330,6 +330,24 @@ def shown_lanes(cfg: Config, s: Store) -> list[str]:
     return out
 
 
+WAIT_HEAD = {"en": "{n} waiting · #{id}: {why}", "ko": "대기 {n}개 · #{id}: {why}", "ja": "待機 {n} 件 · #{id}: {why}",
+             "zh": "等待 {n} 条 · #{id}：{why}", "es": "{n} en espera · #{id}: {why}"}
+
+
+def infra_wait_line(cfg: Config, s: Store) -> str | None:
+    from .engine import block_text, infra_waits
+    sessions = cfg.infra_sessions()
+    if len(sessions) < 2:
+        return None
+    waits = infra_waits(s, sessions, time.time(), cfg.fair_turns)
+    stuck = next(((m, b) for m, b in waits if b), None)
+    if not stuck:
+        return None
+    m, b = stuck
+    lang = cfg.lang if cfg.lang in WAIT_HEAD else "en"
+    return WAIT_HEAD[lang].format(n=len(waits), id=m["id"], why=block_text(b[0], b[1], lang, len(sessions)))
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     blamed = set(s.blames())
@@ -360,6 +378,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
             proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "owner": ln.owner or None, "status": status, "doing": doing, "memo": memo,
+                    "wait": infra_wait_line(cfg, s) if lid == INFRA and ln.kind == INFRA else None,
                     "base": ln.base or None, "branch": cfg.branch_of(lid) or None,
                     "sessions": None if ln.base or ln.kind == HUB else cfg.instance_cap(lid),
                     "engine": ln.engine or None,

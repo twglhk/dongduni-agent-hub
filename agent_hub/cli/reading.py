@@ -5,13 +5,14 @@ import json
 import os
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from .. import config as config_mod, procs, stats
 from ..config import HUB, INFRA, Config, is_infra, tower_pid
-from ..engine import clip, conflict_of, message_paths, team_turns
+from ..engine import block_text, clip, conflict_of, infra_waits, paths_label, team_turns
 from ..fair import task_who, waiting_by_person
 from ..store import HUMAN, Store, StoreError
 from .common import REACH_HINT, TowerError, cfg, hhmm, need, need_team, store, verdict_text, who
@@ -182,15 +183,15 @@ def cmd_status(_args: argparse.Namespace) -> None:
         per = waiting_by_person(all_queued, lambda t: task_who(t) or "-")
         print("waiting tasks per person (the tower takes them in turns; `dah task bump ID` puts one first): "
               + ", ".join(f"{k} {n}" for k, n in per.items()))
-    waiting = s.inbox_queue(INFRA, c.fair_turns) if INFRA in c.lanes else []
+    waiting = infra_waits(s, c.infra_sessions(), time.time(), c.fair_turns) if INFRA in c.lanes else []
     if waiting:
         n = len(c.infra_sessions())
         print("infra queue (`dah memo bump ID` puts one first"
-              + (f"; {n} sessions at most, `dah memo paths ID A B` lets one run beside others" if n > 1 else "") + "):")
-        for m in waiting[:20]:
-            ps = message_paths(m)
+              + (f"; {n} sessions at most, paths are a file lock: each session declares its own" if n > 1 else "") + "):")
+        for m, b in waiting:
+            why = block_text(b[0], b[1], n=n) if b else "the next free session takes it"
             print(f"  #{m['id']} {m['kind']} from {m['sender']}"
-                  + (f" · paths: {', '.join(ps) if ps else 'none'}" if n > 1 else ""))
+                  + (f" · paths: {paths_label(m)} · {why}" if n > 1 else ""))
     terms = {ln.terminal for ln in c.lanes.values()}
     if "tmux" in terms:
         from ..runtimes import tmux_session

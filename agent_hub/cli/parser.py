@@ -74,6 +74,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("text")
     p = sub.add_parser("scratch", help="lane: a scratch folder outside the project, removed after your task closes")
     p.add_argument("--worktree", action="store_true", help="a detached git worktree of your HEAD instead of an empty folder")
+    p = sub.add_parser("paths", help="lane: declare the files and folders your task will change (a file lock between "
+                                     "sessions of one lane); hub: --task N sets them on a queued task")
+    p.add_argument("paths", nargs="+")
+    p.add_argument("--task", type=int, help="hub: a queued task")
     p = sub.add_parser("stage", help="lane: name the stage of your process card you are on now (shown on the board)")
     p.add_argument("stage", help="stage number or name, e.g. 3")
     p = sub.add_parser("tell", help="hub: message a running task")
@@ -106,20 +110,23 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("id", type=int)
     q = msub.add_parser("forward")
     q.add_argument("id", type=int)
-    q = msub.add_parser("paths", help="hub: set the paths of a waiting infra memo (infra sessions run in parallel "
-                                      "only when their paths do not overlap)")
+    q = msub.add_parser("paths", help="infra: declare the paths of the message this session holds (a file lock); "
+                                      "hub: a hint on a waiting one")
     q.add_argument("id", type=int)
     q.add_argument("paths", nargs="*")
+    q.add_argument("--alone", action="store_true", help="runs with no other infra session (a reinstall, a restart)")
     q = msub.add_parser("send")
     q.add_argument("target", choices=(INFRA,))
     q.add_argument("text")
     q.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
-    q.add_argument("--paths", metavar="A,B", help="files or folders it will touch (lets it run beside other infra sessions)")
+    q.add_argument("--paths", metavar="A,B", help="a hint: files or folders it will touch (the session declares its own)")
+    q.add_argument("--alone", action="store_true", help="it must run with no other infra session (a reinstall)")
     p = sub.add_parser("infra", help="hub: ask infra to do something (infra runs only on a hub request)")
     p.add_argument("text")
     p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
-    p.add_argument("--paths", metavar="A,B", help="files or folders it will touch, comma separated: a memo with paths "
-                   "runs beside other infra sessions whose paths do not overlap")
+    p.add_argument("--paths", metavar="A,B", help="a hint: files or folders it will touch, comma separated. The infra "
+                   "session declares its own paths when it starts (a file lock); without a hint it still starts")
+    p.add_argument("--alone", action="store_true", help="it must run with no other infra session (a reinstall, a restart)")
     p.add_argument("--model", help="the model its infra session opens with (fable, opus, sonnet, haiku or a full id); "
                    "a `model:` line in the text does the same. Default: the infra lane's own")
     p.add_argument("--effort", help="low|medium|high|xhigh|max for its infra session; an `effort:` line does the same")
