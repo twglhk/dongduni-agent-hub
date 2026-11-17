@@ -73,4 +73,4 @@ Only with `claude_accounts` on (default off: one shared account, none of the cod
 
 ## Module notes
 
-The code carries no comments or docstrings. Design notes for gates, hooks, ratings, process cards, the machine card and other modules are in [docs/internals.md](docs/internals.md).
+The code carries no comments or docstrings. Design notes (the engine tick, store, config, CLI, gates, hooks, ratings, process cards, the machine card and other modules) are in [docs/internals.md](docs/internals.md); board routes in [docs/board-api.md](docs/board-api.md).
