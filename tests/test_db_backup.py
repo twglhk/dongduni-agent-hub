@@ -9,6 +9,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[1] / "agent_hub" / "guide" / "deploy" / "tools" / "tower_db_backup.py"
@@ -186,6 +187,35 @@ class Run(Base):
         self.assertIn("permission denied", st["prune_error"])
         self.assertIn("pruning failed", err)
 
+    def test_any_error_while_pruning_keeps_the_backup_a_success(self) -> None:
+        make_db(self.db)
+        for exc in (OSError("disk gone"), ValueError("bad listing"), KeyError("Name")):
+            with self.subTest(exc=type(exc).__name__):
+                up = FakeUploader(days=["2020-01-01"])
+
+                def broken(day, exc=exc):
+                    raise exc
+
+                up.delete_day = broken
+                code, _, err = self.run_it(up)
+                st = self.read_status()
+                self.assertEqual(code, 0)
+                self.assertGreater(st["last_ok"], 0)
+                self.assertNotIn("last_fail", st)
+                self.assertIn(type(exc).__name__, st["prune_error"])
+                self.assertIn("pruning failed", err)
+
+    def test_a_failed_listing_is_also_only_a_prune_error(self) -> None:
+        make_db(self.db)
+        up = FakeUploader()
+
+        def days():
+            raise json.JSONDecodeError("bad", "", 0)
+
+        up.days = days
+        self.assertEqual(self.run_it(up)[0], 0)
+        self.assertIn("JSONDecodeError", self.read_status()["prune_error"])
+
     def test_nothing_is_pruned_when_the_upload_failed(self) -> None:
         make_db(self.db)
         up = FakeUploader(days=["2020-01-01"], lie_size=1)
@@ -222,6 +252,14 @@ class DirTarget(Base):
         self.assertTrue((dest / "2030-03-15" / "tower-0407.db").is_file())
         self.assertFalse((dest / "2020-01-01").exists())
         self.assertTrue((dest / "other").is_dir())
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions")
+    def test_the_copies_are_private(self) -> None:
+        make_db(self.db)
+        dest = self.tmp / "backups"
+        self.assertEqual(self.run_it(bk.DirUploader(str(dest)))[0], 0)
+        self.assertEqual((dest / "2030-03-15" / "tower-0407.db").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((dest / "2030-03-15").stat().st_mode & 0o777, 0o700)
 
 
 class Commands(unittest.TestCase):
@@ -355,6 +393,29 @@ class Notify(unittest.TestCase):
             self.assertEqual(len(pushed), 1)
             self.assertEqual(pushed[0][:3], ("hub", "infra", "backup_fail"))
             self.assertTrue((sd / "tower_db_backup_notify.json").is_file())
+
+    def test_the_state_file_is_replaced_whole(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            sd = Path(d)
+            (sd / "tower-db-backup.json").write_text(json.dumps({"last_fail": 50.0, "fail_why": "daily", "error": "x"}))
+            replaced = []
+            real = os.replace
+
+            def spy(a, b):
+                replaced.append((Path(a).name, Path(b).name))
+                real(a, b)
+
+            class Store:
+                def push(self, *a):
+                    pass
+
+            class Cfg:
+                state_dir = sd
+
+            with unittest.mock.patch.object(nt.os, "replace", spy):
+                nt.on_tick({"cfg": Cfg, "store": Store(), "log": print, "now": 100.0})
+            self.assertEqual(replaced, [("tower_db_backup_notify.json.tmp", "tower_db_backup_notify.json")])
+            self.assertEqual([p.name for p in sd.iterdir() if p.name.endswith(".tmp")], [])
 
     def test_no_status_file_does_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as d:

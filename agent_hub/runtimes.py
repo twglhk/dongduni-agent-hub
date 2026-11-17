@@ -183,7 +183,7 @@ class Adapter:
             proc = subprocess.Popen(argv, cwd=cwd, env=lane_env(self.cfg, self.lane), stdout=out,
                                     stderr=err, stdin=subprocess.DEVNULL, **procs.detached())
         self.procs[proc.pid] = proc
-        self.store.set_lane(self.lane.id, pid=proc.pid)
+        self.store.set_lane(self.lane.id, pid=proc.pid, pid_start=procs.start_time(proc.pid))
         return proc.pid
 
     def _running(self) -> bool:
@@ -193,17 +193,22 @@ class Adapter:
         proc = self.procs.get(pid)
         if proc is not None:  # our child: poll() also reaps it, so a finished run never looks alive
             return proc.poll() is None
+        if not self._ours(pid):
+            return False
         if procs.reap(pid):  # a child of this process we lost the handle for (config reload) that finished
             return False
         return pid_alive(pid)
 
+    def _ours(self, pid: int) -> bool:
+        return procs.same_process(pid, self.store.lane(self.lane.id).get("pid_start"))
+
     def _kill(self) -> None:
         pid = self.store.lane(self.lane.id).get("pid")
         if pid and self._running():
-            procs.terminate(pid)
-            deadline = time.time() + 10
-            while self._running() and time.time() < deadline:
-                time.sleep(0.2)
+            procs.terminate_then_kill(pid)
+            proc = self.procs.get(pid)
+            if proc is not None:
+                proc.poll()
         self.procs.pop(pid or -1, None)
 
     def owned(self) -> bool:

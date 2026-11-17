@@ -6,14 +6,17 @@ An item row is the single source of truth for a decision. Messages only say whom
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import re
 import secrets
 import sqlite3
+import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Collection, Iterable
+from typing import Any, Callable, Collection, Iterable, Iterator
 
 HUB = "hub"
 INFRA = "infra"
@@ -225,7 +228,31 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"))
+LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"))
+
+
+class _Connection(sqlite3.Connection):
+    def __exit__(self, *exc: Any) -> Any:
+        try:
+            return super().__exit__(*exc)
+        finally:
+            self.close()
+
+
+def _columns(con: sqlite3.Connection, table: str) -> set[str]:
+    return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
+
+
+def _private(path: Path, mode: int, directory: bool = False) -> bool:
+    if os.name == "nt":
+        return True
+    if not directory and not path.exists():
+        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, mode))
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        return False
+    return True
 
 
 class Store:
@@ -233,28 +260,61 @@ class Store:
         self.path = Path(path)
         self.clock = clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.columns: dict[str, set[str]] = {}
+        self.unprotected = [str(p) for p, mode, is_dir in ((self.path.parent, 0o700, True), (self.path, 0o600, False))
+                            if not _private(p, mode, is_dir)]
+        if self.unprotected:
+            print(f"agent-hub: could not restrict access to {', '.join(self.unprotected)}; "
+                  "check who can read it", file=sys.stderr)
         with self.conn() as con:
+            con.execute("PRAGMA journal_mode=WAL")
             con.executescript(SCHEMA)
+        with self.tx() as con:
             for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
-                if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
+                if "engine" not in _columns(con, table):
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
-            have_lanes = {r[1] for r in con.execute("PRAGMA table_info(lanes)")}
+            have_lanes = _columns(con, "lanes")
             for col, decl in LANE_COLUMNS:
                 if col not in have_lanes:
                     con.execute(f"ALTER TABLE lanes ADD COLUMN {col} {decl}")
-            have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
+            have = _columns(con, "tasks")
             for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
-            if "memo_id" not in {r[1] for r in con.execute("PRAGMA table_info(items)")}:
+            if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
+    def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
+        if table not in self.columns:
+            self.columns[table] = _columns(con, table)
+        return self.columns[table]
+
+    def _assign(self, con: sqlite3.Connection, table: str, where: str, key: Any, fields: dict[str, Any]) -> None:
+        unknown = set(fields) - self._columns_of(con, table)
+        if unknown:
+            raise StoreError(f"{table} has no column {', '.join(sorted(unknown))}")
+        con.execute(f"UPDATE {table} SET {', '.join(f'{k}=?' for k in fields)} WHERE {where}=?",
+                    (*fields.values(), key))
+
     def conn(self) -> sqlite3.Connection:
-        con = sqlite3.connect(self.path, timeout=15, isolation_level=None)
+        con = sqlite3.connect(self.path, timeout=15, isolation_level=None, factory=_Connection)
         con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL")
         con.execute("PRAGMA busy_timeout=15000")
         return con
+
+    @contextlib.contextmanager
+    def tx(self) -> Iterator[sqlite3.Connection]:
+        con = self.conn()
+        try:
+            con.execute("BEGIN IMMEDIATE")
+            try:
+                yield con
+            except BaseException:
+                con.execute("ROLLBACK")
+                raise
+            con.execute("COMMIT")
+        finally:
+            con.close()
 
     # ---------- messages ----------
 
@@ -295,23 +355,16 @@ class Store:
     # ---------- infra inbox: one message per session ----------
 
     def claim_inbox(self, lane: str) -> dict[str, Any] | None:
-        with self.conn() as con:
-            con.execute("BEGIN IMMEDIATE")
-            try:
-                con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
-                active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
-                if active is None:
-                    row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
-                                           "ORDER BY id LIMIT 1", (lane,)))
-                    if row:
-                        active = row["id"]
-                        con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
-                msg = _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
-                con.execute("COMMIT")
-            except BaseException:
-                con.execute("ROLLBACK")
-                raise
-        return msg
+        with self.tx() as con:
+            con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
+            active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
+            if active is None:
+                row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
+                                       "ORDER BY id LIMIT 1", (lane,)))
+                if row:
+                    active = row["id"]
+                    con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
+            return _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
 
     def retry_inbox(self, lane: str) -> int:
         with self.conn() as con:
@@ -364,18 +417,20 @@ class Store:
 
     def post_memo_card(self, memo: dict[str, Any], reply: str) -> int:
         quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in memo["text"].strip().splitlines())
-        with self.conn() as con:
-            row = con.execute("SELECT id FROM items WHERE memo_id=? AND state='open' ORDER BY id DESC LIMIT 1",
-                              (memo["id"],)).fetchone()
-        if row:
-            old = self.item(row[0])
-            return self.revise_item(row[0], body=f"{old['body']}\n\n---\n\n{reply}")["id"]
         title = " ".join(memo["text"].split())
         title = title if len(title) <= 80 else title[:79] + "…"
-        iid = self.add_item(HUB, None, "review", title, f"{reply}\n\n{quoted}", [], [], HUMAN)
-        with self.conn() as con:
-            con.execute("UPDATE items SET memo_id=? WHERE id=?", (memo["id"], iid))
-        return iid
+        with self.tx() as con:
+            row = con.execute("SELECT id, body FROM items WHERE memo_id=? AND state='open' ORDER BY id DESC LIMIT 1",
+                              (memo["id"],)).fetchone()
+            if row:
+                con.execute("UPDATE items SET body=?, notified=NULL WHERE id=?",
+                            (f"{row['body']}\n\n---\n\n{reply}", row["id"]))
+                return int(row["id"])
+            return _id(con.execute(
+                "INSERT INTO items(task_id, lane, kind, title, body, options, multi, attachments, audience, state, "
+                "created, memo_id) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?)",
+                (HUB, "review", title, f"{reply}\n\n{quoted}", HUMAN,
+                 self.clock(), memo["id"])))
 
     # ---------- tasks ----------
 
@@ -440,8 +495,7 @@ class Store:
     def update_task(self, task_id: int, **fields: Any) -> None:
         if fields:
             with self.conn() as con:
-                con.execute(f"UPDATE tasks SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?",
-                            (*fields.values(), task_id))
+                self._assign(con, "tasks", "id", task_id, fields)
 
     def signal(self, task_id: int | None) -> None:
         if task_id is not None:
@@ -563,6 +617,26 @@ class Store:
             return [item_view(r) for r in _rows(con.execute(
                 "SELECT * FROM items WHERE state='decided' AND delivered IS NULL AND question IS NULL ORDER BY decided"))]
 
+    def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None) -> bool:
+        with self.tx() as con:
+            row = con.execute("SELECT delivered FROM items WHERE id=?", (item_id,)).fetchone()
+            if row is None or row[0] is not None:
+                return False
+            if follow:
+                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) VALUES(?,?,?,?,?,?)",
+                                      (follow["lane"], follow["title"], follow["brief"], "queued", self.clock(),
+                                       follow.get("engine"))))
+                self.push(HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
+            elif push:
+                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con)
+            con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
+            return True
+
+    @staticmethod
+    def _task_of(con: sqlite3.Connection, item_id: int) -> int | None:
+        row = con.execute("SELECT task_id FROM items WHERE id=?", (item_id,)).fetchone()
+        return row[0] if row else None
+
     def question_items(self, lane: str) -> list[dict[str, Any]]:
         with self.conn() as con:
             return [item_view(r) for r in _rows(con.execute(
@@ -574,8 +648,9 @@ class Store:
                 "SELECT * FROM items WHERE state='open' AND audience=? AND notified IS NULL ORDER BY id", (HUMAN,)))]
 
     def update_item(self, item_id: int, **fields: Any) -> None:
-        with self.conn() as con:
-            con.execute(f"UPDATE items SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?", (*fields.values(), item_id))
+        if fields:
+            with self.conn() as con:
+                self._assign(con, "items", "id", item_id, fields)
 
     def open_items_for_task(self, task_id: int) -> int:
         with self.conn() as con:
@@ -690,7 +765,7 @@ class Store:
 
     def confirm_blame(self, task_id: int, by: str, stage: str | None = None, cause: str = "") -> int:
         """The hub confirms the task's last blame (a stage changes it). With no blame yet, the stage writes and confirms one."""
-        with self.conn() as con:
+        with self.tx() as con:
             row = _one(con.execute("SELECT * FROM blames WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,)))
             if not row:
                 if not stage:
@@ -733,8 +808,7 @@ class Store:
         with self.conn() as con:
             con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
             if fields:
-                con.execute(f"UPDATE lanes SET {', '.join(f'{k}=?' for k in fields)} WHERE lane=?",
-                            (*fields.values(), lane))
+                self._assign(con, "lanes", "lane", lane, fields)
 
     # ---------- task ledger and retros ----------
 
@@ -749,7 +823,7 @@ class Store:
         (`after:`) split it: this task owns what the earlier tasks of the session did not. A total below what is
         already written is a transcript that lost its head, so it never replaces the larger value. The task row
         carries the sum over its sessions."""
-        with self.conn() as con:
+        with self.tx() as con:
             before = con.execute("SELECT COALESCE(SUM(new),0), COALESCE(SUM(cache),0), COALESCE(SUM(out),0), "
                                  "COALESCE(SUM(turns),0) FROM task_sessions WHERE session=? AND task_id<?",
                                  (session, task_id)).fetchone()

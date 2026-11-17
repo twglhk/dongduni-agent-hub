@@ -2,8 +2,12 @@
 
 import json
 import tempfile
+import os
+import threading
 import unittest
+from unittest import mock
 import urllib.error
+from email.message import Message
 from pathlib import Path
 
 from agent_hub import claudeusage
@@ -62,7 +66,7 @@ class ViewTest(unittest.TestCase):
 
     def test_every_failure_is_unknown_never_zero_and_never_shows_the_token(self) -> None:
         def http(tok: str) -> dict:
-            raise urllib.error.HTTPError(claudeusage.URL, 401, "no", {}, None)  # type: ignore[arg-type]
+            raise urllib.error.HTTPError(claudeusage.URL, 401, "no", Message(), None)
 
         def net(tok: str) -> dict:
             raise RuntimeError("curl exit 6")
@@ -80,6 +84,63 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(make_home(usage_percent="claude").usage_percent, "claude")
         with self.assertRaises(ConfigError):
             make_home(usage_percent="other")
+
+
+class FetchTest(unittest.TestCase):
+    def test_curl_gets_the_token_on_stdin_never_in_argv(self) -> None:
+        seen: dict = {}
+
+        def run(argv, **kw):
+            seen["argv"], seen["input"] = argv, kw.get("input")
+            return mock.Mock(returncode=0, stdout='{"limits": []}')
+        with mock.patch("agent_hub.claudeusage.urllib.request.urlopen", side_effect=urllib.error.URLError("no CA")), \
+                mock.patch("agent_hub.claudeusage.shutil.which", return_value="/usr/bin/curl"), \
+                mock.patch("agent_hub.claudeusage.subprocess.run", run):
+            self.assertEqual(claudeusage.fetch("secret-tok"), {"limits": []})
+        self.assertFalse(any("secret-tok" in a for a in seen["argv"]))
+        self.assertIn("--config", seen["argv"])
+        self.assertIn("Bearer secret-tok", seen["input"])
+        self.assertIn(claudeusage.URL, seen["input"])
+
+    def test_a_quote_in_a_header_cannot_break_out_of_the_config_line(self) -> None:
+        self.assertEqual(claudeusage._quote('a"b\\c\nd'), 'a\\"b\\\\c d')
+
+
+class ConfigDirTest(unittest.TestCase):
+    def test_claude_config_dir_is_honoured(self) -> None:
+        home = Path(tempfile.mkdtemp())
+        (home / ".credentials.json").write_text(json.dumps({"accessToken": "from-env-dir"}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(home)}):
+            self.assertEqual(claudeusage.token(platform="linux"), "from-env-dir")
+
+
+class LockTest(unittest.TestCase):
+    def test_the_network_call_does_not_hold_the_lock(self) -> None:
+        u = ClaudeUsage()
+        held: list[bool] = []
+
+        def get(tok: str) -> dict:
+            held.append(u.lock.locked())
+            return {"limits": [{"kind": "session", "percent": 5}]}
+        u.get_token, u.get = (lambda: "tok"), get
+        u.view()
+        self.assertEqual(held, [False])
+
+    def test_a_second_caller_during_a_fetch_does_not_wait_for_it(self) -> None:
+        release, started = threading.Event(), threading.Event()
+
+        def get(tok: str) -> dict:
+            started.set()
+            release.wait(5)
+            return {"limits": [{"kind": "session", "percent": 5}]}
+        u = ClaudeUsage(lambda: "tok", get, Clock(0.0))
+        t = threading.Thread(target=u.view)
+        t.start()
+        started.wait(5)
+        self.assertIn("unknown", u.view())
+        release.set()
+        t.join()
+        self.assertIn("windows", u.view())
 
 
 if __name__ == "__main__":

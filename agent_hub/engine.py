@@ -521,51 +521,35 @@ class Engine:
     # ---------- decisions ----------
 
     def route_decisions(self) -> None:
-        """Route each decided item exactly once, in one transaction per item."""
         for it in self.store.undelivered_decisions():
-            con = self.store.conn()
-            try:
-                con.execute("BEGIN IMMEDIATE")
-                row = con.execute("SELECT delivered FROM items WHERE id=?", (it["id"],)).fetchone()
-                if row is None or row[0] is not None:
-                    con.execute("ROLLBACK")
-                    continue
-                self._route(con, it)
-                con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), it["id"]))
-                con.execute("COMMIT")
-            except BaseException:
-                con.execute("ROLLBACK")
-                raise
-            finally:
-                con.close()
+            push, follow = self._route(it)
+            self.store.route_decision(it["id"], push, follow)
 
-    def _route(self, con: Any, it: dict[str, Any]) -> None:
+    def _route(self, it: dict[str, Any]) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
         line = decision_line(it)
         lane = it["lane"]
         if it.get("memo_id") and it["verdict"] == "ok" and not (it.get("note") or "").strip():
-            return  # a person confirmed the hub's answer to their request: nothing for the hub to do
+            return None, None
         if lane == INFRA and self.has_infra:
-            self.store.push(INFRA, TOWER, "decision", line + f"\n(`dah show {it['id']}` for the full item.)",
-                            it["task_id"], it["id"], con=con)
-            return
-        src = con.execute("SELECT * FROM tasks WHERE id=?", (it["task_id"],)).fetchone() if it["task_id"] else None
+            return (INFRA, line + f"\n(`dah show {it['id']}` for the full item.)"), None
+        try:
+            src = self.store.task(it["task_id"]) if it["task_id"] else None
+        except StoreError:
+            src = None
         follow = (lane in self.team and src is not None and it["verdict"] in FOLLOW_VERDICTS
                   and src["state"] in ("running", "wrapping", "closed"))
-        if follow:
+        if follow and src is not None:
             brief = (f"Follow-up to board item #{it['id']} only (fresh session). `dah show {it['id']}` has the item, "
                      f"`dah log {src['id']}` the source task.\n\nDECISION: {line}\n\nDo exactly what this decision "
                      f"allows and nothing beyond it. If it is unclear, `dah item add` or `dah report blocked`."
                      f"\n\nSOURCE TASK #{src['id']} BRIEF (context, do not replay):\n{src['brief']}")
             ln = self.cfg.all_lanes.get(lane)
-            cur = con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) "
-                              "VALUES(?,?,?,?,?,?)",
-                              (base_lane(lane), clip(f"#{it['id']} {it['title']}", 80), brief, "queued", self.clock(),
-                               ln.engine if ln else None))
-            self.store.push(HUB, TOWER, "decision", f"{line} → follow-up task #{cur.lastrowid} for {lane}",
-                            it["task_id"], it["id"], con=con)
-            return
+            return None, {"lane": base_lane(lane), "title": clip(f"#{it['id']} {it['title']}", 80), "brief": brief,
+                          "engine": ln.engine if ln else None, "task_id": it["task_id"],
+                          "text": lambda tid: f"{line} → follow-up task #{tid} for {lane}"}
         if it["decided_by"] != HUB or lane != HUB:
-            self.store.push(HUB, TOWER, "decision", line, it["task_id"], it["id"], con=con)
+            return (HUB, line), None
+        return None, None
 
     def _notify_humans(self) -> None:
         new = self.store.unnotified()
@@ -586,14 +570,16 @@ class Engine:
     def _done_gates(self) -> None:
         """Finished done gates (donegate.py): pass -> the held `done` goes to the hub; fail -> a tell to the lane."""
         from . import donegate
-        for info, r in donegate.poll(self.cfg):
+        for info, r in donegate.poll(self.cfg, now=self.clock):
             lane, tid = info["lane"], info["task"]
             try:
                 task = self.store.task(tid)
             except StoreError:
+                donegate.settle(self.cfg, info)
                 continue
             if task["state"] not in ("running", "wrapping"):
                 self.log(f"{lane}: done gate {r.get('state')} for task #{tid}, which is no longer live")
+                donegate.settle(self.cfg, info)
                 continue
             if r.get("state") == "pass":
                 atts = info.get("atts") or []
@@ -606,6 +592,7 @@ class Engine:
                                 "back to this session.", tid)
             else:
                 self.store.push(lane, TOWER, "tell", donegate.refusal(info, r), tid)
+            donegate.settle(self.cfg, info)
             self.log(f"{lane}: done gate {r.get('state')} (task #{tid})")
 
     def _scratch(self) -> None:
