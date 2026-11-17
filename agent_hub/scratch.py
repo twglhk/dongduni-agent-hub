@@ -1,18 +1,3 @@
-"""Scratch the tower makes, and the sweep that removes it once nobody needs it.
-
-Everything here lives under one dah-owned root outside the project: `scratch_root` in tower.json, or
-`<user cache dir>/agent-hub/dah-<hash of the workspace path>`. It holds the done gate's one persistent worktree (donegate.py,
-never swept) and the per-task scratch `dah scratch` hands out: a plain folder, or with `--worktree` a detached git
-worktree of the lane's HEAD. Each one is written to `<root>/scratch.json` with its task id.
-
-The sweep (every SWEEP_SECONDS, from the tower's tick) removes a manifest entry once its task is closed or cancelled
-for `scratch_grace` seconds: a worktree through `git worktree remove --force` (then `prune`), a folder through rmtree.
-It only ever removes paths listed in the manifest that resolve inside the root; anything else on disk, and anything a
-person made, is never touched. Lane worktrees (`"worktree": true`, `.tower/state/worktrees/<lane>`) whose lane no
-longer works in a worktree are removed too, but only when clean (`git worktree remove` without force; the branch
-`dah/<lane>` keeps the commits). Every removal is logged with its size in `.tower/state/scratch.log`.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -77,7 +62,6 @@ def secure_root(cfg: "Config") -> Path:
 
 
 def check_root(root: Path, workdir: Path) -> None:
-    """A gate worktree inside the project would be seen by the project's own tools (tests, search, git status)."""
     r, w = root.resolve(), workdir.resolve()
     if r == w or w in r.parents:
         raise ValueError(f"scratch_root {root} is inside the project {workdir}; pick a folder outside it")
@@ -92,7 +76,6 @@ def git(repo: Path, *args: str, timeout: float = 120) -> subprocess.CompletedPro
 
 
 def dir_mb(path: Path) -> float:
-    """Size on disk, walked in Python (no `du` on Windows). Links are not followed."""
     total = 0
     for base, dirs, files in os.walk(path, followlinks=False):
         for f in files:
@@ -154,7 +137,6 @@ def manifest_lock(root: Path) -> Iterator[None]:
 
 
 def make(cfg: "Config", task_id: int, repo: Path, worktree: bool = False, clock: Callable[[], float] = time.time) -> Path:
-    """A fresh scratch folder (or a detached worktree of repo's HEAD) for a task, recorded for the sweep."""
     root = secure_root(cfg)
     base = root / "scratch"
     base.mkdir(parents=True, exist_ok=True)
@@ -181,7 +163,7 @@ class ScratchSweep:
                  clock: Callable[[], float] = time.time, size: Callable[[Path], float] = dir_mb) -> None:
         self.cfg, self.s, self.say, self.clock, self.size = cfg, store, log, clock, size
         self.next_at = 0.0
-        self.kept: set[str] = set()  # dirty lane worktrees already reported
+        self.kept: set[str] = set()
 
     def poll(self) -> list[tuple[str, float]]:
         now = self.clock()
@@ -242,8 +224,6 @@ class ScratchSweep:
         return removed
 
     def _lane_leftovers(self) -> list[tuple[str, float]]:
-        """`.tower/state/worktrees/<lane>` (or `<lane>-N`) whose lane is gone from tower.json, no longer has "worktree":
-        true, or whose instance #N is past the lane's max_instances now."""
         base = self.cfg.state_dir / "worktrees"
         try:
             dirs = sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink())

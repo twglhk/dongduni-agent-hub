@@ -1,26 +1,3 @@
-"""Model and effort per task.
-
-The hub names them in the brief, one line each:
-
-    model: opus
-    effort: high
-
-A brief line always wins. Optional second source: a markdown table named in `tower.json` as `stage_table`
-(a row per kind of work, one column whose header contains "model"). The brief points at a row and stages with a
-line like `Line: row 4 stage 2-3` (or `Line: #4 stage 2`). A row id is digits or one letter and digits (`4`, `D5`). The table can be an engine's pattern library
-(`engines.py`): the same `model · effort` column. A cell is one `opus/high` for the whole row or
-per-stage entries `1-2 sonnet/medium; 3 opus/high`. Across a range of stages the strongest model and the highest
-effort win. Model names: `fable`, `opus`, `sonnet`, `haiku`, or any full id the runtime accepts (`claude-opus-5-5`, `gpt-5`);
-`problems()` flags a bare word that is none of the four aliases (a typo) and an effort outside the five levels.
-The rank tables only order the aliases they know. `guide/MODELS.md` says which to pick.
-
-In a workspace with a process library (`processes/`), `Line: <full> / <sub> · stage 2` reads the Model · effort cell of
-that sub-process in the full process file (processes.py). An old `Line: #4 stage 2` of a converted pattern library reads
-the step whose `Old #` cell is 4 in the lane's engine's full process.
-
-No table, no cell, or no line gives (None, None) and the lane's own configured model applies.
-"""
-
 from __future__ import annotations
 
 import re
@@ -39,13 +16,10 @@ _EFFORT = re.compile(rf"^\s*effort:\s*({_EFFORTS})\b", re.M | re.I)
 
 
 def missing_lines(brief: str) -> list[str]:
-    """Which of the brief's `model:` / `effort:` lines are absent."""
     return [n for n, rx in (("model: <name>", _MODEL), ("effort: low|medium|high|xhigh|max", _EFFORT)) if not rx.search(brief)]
 
 
 def problems(model: str | None, effort: str | None) -> list[str]:
-    """What is wrong with a named model or effort: a typo in an alias, an unknown effort. A full id (it has a hyphen,
-    a dot, a slash or a digit) is the runtime's to judge and passes."""
     out = []
     if model and model.lower() not in MODEL_ALIASES and not re.search(r"[-./\d]", model):
         out.append(f"model {model!r}: use fable, opus, sonnet, haiku or a full model id")
@@ -101,7 +75,6 @@ def _pick(ents: list[tuple[int, int, str, str]], first: int | None, last: int | 
 
 
 def table_for(cfg: Config, lane: str) -> Path | None:
-    """The table a lane's tasks are read against: its engine's library when the engine names one, else `stage_table`."""
     ln = cfg.all_lanes.get(lane)
     engine = cfg.engines.get(ln.engine) if ln and ln.engine else None
     rel = (engine.library if engine else "") or cfg.stage_table
@@ -141,8 +114,6 @@ def _from_library(library: Path, brief: str, table: Path | None) -> tuple[str | 
 
 
 def resolve(table: Path | None, brief: str, library: Path | None = None) -> tuple[str | None, str | None]:
-    """(model, effort) for a brief: explicit lines first, then the row the `Line:` line names, in the process library
-    when there is one, else in the table."""
     em, ee = _MODEL.search(brief), _EFFORT.search(brief)
     model, effort = (em[1] if em else None), (ee[1].lower() if ee else None)
     if model is not None and effort is not None:

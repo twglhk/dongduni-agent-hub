@@ -157,7 +157,6 @@ def feed(con: sqlite3.Connection, infra: tuple | None = None) -> list[dict[str, 
     return keys
 
 
-
 def visible_keys(con: sqlite3.Connection, allow: Allow | None = None) -> list[dict[str, Any]]:
     keys = feed(con)
     if allow is None:

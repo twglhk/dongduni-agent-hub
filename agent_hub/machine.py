@@ -1,17 +1,3 @@
-"""This machine's load, CPU, memory and swap for the board, each graded green / amber / red against its own spec.
-
-Cut points come from the machine itself (its cores and RAM), not fixed numbers:
-- load   = 1-minute load average per core: green < 2.0, amber < 4.0, red from 4.0.
-- cpu    = share of all cores busy (100 = every core): green < 60, amber < 85, red from 85.
-- memory = share of RAM free to hand out without swapping: green >= 20 %, amber >= 10 %, red below. On macOS the
-           kernel's own memory pressure level (the signal behind Activity Monitor's graph) wins when it is readable.
-- swap   = swap in use as a share of RAM: green < 10 %, amber < 25 %, red from 25 %.
-Reads: macOS `sysctl`, `vm_stat`, `ps`; Linux `/proc`; Windows memory through GlobalMemoryStatusEx and nothing else.
-Whatever cannot be read is None and shows as "unknown" on the board, never as 0.
-
-The tower also writes why each queued task is not starting (`waits.json`, from engine.py) so the board can say so.
-"""
-
 from __future__ import annotations
 
 import json
@@ -25,10 +11,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-LOAD_CUTS = (2.0, 4.0)     # per core
-CPU_CUTS = (60.0, 85.0)    # percent of all cores
-FREE_CUTS = (20.0, 10.0)   # percent of RAM free (low is bad)
-SWAP_CUTS = (10.0, 25.0)   # percent of RAM swapped out
+LOAD_CUTS = (2.0, 4.0)
+CPU_CUTS = (60.0, 85.0)
+FREE_CUTS = (20.0, 10.0)
+SWAP_CUTS = (10.0, 25.0)
 DISK_CUTS = (85.0, 95.0)
 DISK_FS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "reiserfs", "ntfs", "ntfs3", "exfat", "vfat"}
 PRESSURE = {"1": "g", "2": "a", "4": "r"}
@@ -37,7 +23,6 @@ WAITS = "waits.json"
 
 
 def level(value: float | None, amber: float, red: float, high_bad: bool = True) -> str | None:
-    """'g' | 'a' | 'r' for a value against two cut points; None when unknown."""
     if value is None:
         return None
     if not high_bad:
@@ -57,10 +42,7 @@ def _run(argv: list[str]) -> str:
         return ""
 
 
-# ---------------------------------------------------------------- parsers (pure, tested with captured text)
-
 def parse_vm_stat(text: str) -> float | None:
-    """Free + inactive + speculative pages of `vm_stat` in GB."""
     page = re.search(r"page size of (\d+) bytes", text)
     if not page:
         return None
@@ -74,13 +56,11 @@ def parse_vm_stat(text: str) -> float | None:
 
 
 def parse_swapusage(text: str) -> float | None:
-    """`sysctl -n vm.swapusage` -> GB used."""
     m = re.search(r"used = ([\d.]+)M", text)
     return float(m.group(1)) / 1024 if m else None
 
 
 def parse_meminfo(text: str) -> dict[str, float]:
-    """/proc/meminfo -> GB for MemTotal, MemAvailable, SwapTotal, SwapFree (those present)."""
     out: dict[str, float] = {}
     for key in ("MemTotal", "MemAvailable", "SwapTotal", "SwapFree"):
         m = re.search(rf"^{key}:\s+(\d+)\s*kB", text, re.M)
@@ -90,14 +70,13 @@ def parse_meminfo(text: str) -> dict[str, float]:
 
 
 def parse_proc_stat(text: str) -> tuple[int, int] | None:
-    """/proc/stat first line -> (busy jiffies, total jiffies)."""
     m = re.match(r"cpu\s+([\d\s]+)", text)
     if not m:
         return None
     v = [int(x) for x in m.group(1).split()]
     if len(v) < 4:
         return None
-    idle = v[3] + (v[4] if len(v) > 4 else 0)  # idle + iowait
+    idle = v[3] + (v[4] if len(v) > 4 else 0)
     return sum(v) - idle, sum(v)
 
 
@@ -108,8 +87,6 @@ def cpu_from_ps(text: str, cores: int) -> float | None:
         return None
     return sum(vals) / max(1, cores) if vals else None
 
-
-# ---------------------------------------------------------------- readers per system
 
 def parse_mounts(text: str) -> list[str]:
     seen: set[str] = set()
@@ -221,14 +198,11 @@ def read_raw(platform: str = sys.platform) -> dict[str, Any]:
     return {"cores": cores, "load": load, **got, "disks": read_disks(platform)}
 
 
-# ---------------------------------------------------------------- grading
-
 def _r(x: float | None, nd: int = 1) -> float | None:
     return None if x is None else round(x, nd)
 
 
 def grade(raw: dict[str, Any]) -> dict[str, Any]:
-    """Raw readings -> the board's view: numbers, a level per row ('g'|'a'|'r'|None) and the worst of them."""
     cores = max(1, int(raw.get("cores") or 1))
     load, ram, free, swap, cpu = (raw.get(k) for k in ("load", "ram_gb", "free_gb", "swap_gb", "cpu"))
     per_core = load / cores if load is not None else None
@@ -251,8 +225,6 @@ def grade(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 class Machine:
-    """A few seconds' cache so every board poll does not run `ps` and friends."""
-
     def __init__(self, read: Callable[[], dict[str, Any]] = read_raw, ttl: float = TTL,
                  clock: Callable[[], float] = time.monotonic,
                  log: Callable[[str], None] = lambda line: print(line, file=sys.stderr)):
@@ -266,14 +238,12 @@ class Machine:
             if self.cached is None or self.clock() - self.at > self.ttl:
                 try:
                     self.cached = grade(self.read())
-                except Exception as e:  # never a fake number: everything unknown
+                except Exception as e:
                     self.log(f"machine: reading the system failed: {type(e).__name__}: {e}")
                     self.cached = grade({"cores": os.cpu_count() or 1})
                 self.at = self.clock()
             return self.cached
 
-
-# ---------------------------------------------------------------- why queued tasks wait (engine -> board)
 
 def write_waits(state_dir: Path, waits: dict[int, str]) -> bool:
     try:

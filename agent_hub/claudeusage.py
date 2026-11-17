@@ -1,13 +1,3 @@
-"""Optional: Claude subscription usage percent (5-hour and weekly windows) for the board's footer strip.
-
-Off unless tower.json says `"usage_percent": "claude"`. It reads the OAuth access token Claude Code already holds
-(macOS keychain item "Claude Code-credentials", else `.credentials.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`), read-only: it never refreshes
-or writes the token, so Claude Code's own login is not disturbed. It then asks
-`https://api.anthropic.com/api/oauth/usage`, an UNDOCUMENTED endpoint Claude Code itself uses; it may change or
-vanish without notice. Any failure (no token, expired token, network, a new response shape) shows as "unknown",
-never as 0. The token is never logged or sent anywhere else. Results are cached for TTL seconds.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,7 +22,6 @@ PROVIDERS = ("claude",)
 
 def token(home: Path | None = None, platform: str = sys.platform,
           keychain: Callable[[], str] | None = None) -> str:
-    """Claude Code's OAuth access token, or '' when there is none to read."""
     home = home or Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     raw = ""
     if platform == "darwin":
@@ -63,7 +52,6 @@ def _quote(value: str) -> str:
 
 
 def fetch(tok: str, timeout: float = 10) -> dict[str, Any]:
-    """GET the usage JSON. urllib first; some Python builds ship without CA certificates, so curl is the fallback."""
     headers = {"Authorization": f"Bearer {tok}", "anthropic-beta": "oauth-2025-04-20"}
     try:
         with urllib.request.urlopen(urllib.request.Request(URL, headers=headers), timeout=timeout) as r:
@@ -94,14 +82,13 @@ def _pct(v: Any) -> float | None:
 
 
 def parse(d: dict[str, Any]) -> list[dict[str, Any]]:
-    """Response -> [{"name": "5h" | "week", "percent": float | None, "resets": epoch | None}]."""
     out: list[dict[str, Any]] = []
     for lim in d.get("limits") or []:
         kind = lim.get("kind") if isinstance(lim, dict) else None
         name = {"session": "5h", "weekly_all": "week"}.get(str(kind))
         if name:
             out.append({"name": name, "percent": _pct(lim.get("percent")), "resets": _epoch(lim.get("resets_at"))})
-    if not out:  # the older shape
+    if not out:
         for key, name in (("five_hour", "5h"), ("seven_day", "week")):
             w = d.get(key)
             if isinstance(w, dict):
@@ -119,7 +106,6 @@ class ClaudeUsage:
         self.loading = False
 
     def view(self) -> dict[str, Any]:
-        """{"provider": "claude", "windows": [...]} or {"provider": "claude", "unknown": why}."""
         with self.lock:
             if self.cached is not None and self.clock() < self.until:
                 return self.cached
@@ -144,7 +130,7 @@ class ClaudeUsage:
             if not wins or all(w["percent"] is None for w in wins):
                 raise RuntimeError("the response has no usage windows")
             return {"provider": "claude", "windows": wins}, TTL
-        except Exception as e:  # never 0: say it is unknown and why (no token text in it)
+        except Exception as e:
             why = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__ \
                 if not isinstance(e, RuntimeError) else str(e)[:120]
             return {"provider": "claude", "unknown": why}, FAIL_TTL

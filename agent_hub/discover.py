@@ -1,9 +1,3 @@
-"""`dah discover`: a read-only survey of how this person works with AI agents, as JSON for the setup agent.
-
-It reports names, counts and booleans only. It never prints a config value, a token, an env value or file
-contents, so the output is safe to paste into a chat or a board item.
-"""
-
 from __future__ import annotations
 
 import json
@@ -27,7 +21,6 @@ KNOWLEDGE = ("notion", "roam", "obsidian", "logseq", "linear", "jira", "atlassia
 
 
 def strip_jsonc(text: str) -> str:
-    """Remove // and /* */ comments outside strings, then trailing commas."""
     out, i, n, in_str = [], 0, len(text), False
     while i < n:
         c = text[i]
@@ -68,7 +61,6 @@ def count(path: Path, pattern: str = "*") -> int:
 
 
 def skills(*dirs: Path) -> int:
-    """Skills are folders with a SKILL.md, often nested (synced or grouped skills)."""
     return sum(sum(1 for _ in d.rglob("SKILL.md")) for d in dirs if d.is_dir())
 
 
@@ -94,7 +86,6 @@ def keys(value: Any) -> list[str]:
 
 
 def claude_settings(d: Path) -> dict[str, Any]:
-    """Hook event names and enabled plugin names from settings.json / settings.local.json (never commands or values)."""
     hooks: set[str] = set()
     plugins: set[str] = set()
     for name in ("settings.json", "settings.local.json"):
@@ -129,7 +120,6 @@ def plugin_name(spec: Any) -> str:
 
 
 def opencode_agents(project_dir: Path) -> list[str]:
-    """Agent names as OpenCode resolves them (config, plugins, project), from `opencode agent list` headers only."""
     binary = shutil.which(os.environ.get("TOWER_OPENCODE_BIN", "opencode"))
     if not binary:
         return []
@@ -160,7 +150,6 @@ def opencode(home: Path) -> dict[str, Any]:
 
 
 def codex_toml(path: Path) -> tuple[list[str], list[str]]:
-    """MCP server and profile names from a Codex config.toml."""
     try:
         toml = path.read_text(encoding="utf-8")
     except OSError:
@@ -180,8 +169,6 @@ def codex(home: Path) -> dict[str, Any]:
 
 
 def claude_unapproved(path: Path, home: Path, servers: list[str]) -> list[str]:
-    """`.mcp.json` servers Claude Code has not been allowed to start here. Headless lanes (`claude -p`) cannot
-    approve them, so they silently run without them."""
     proj = (read_json(home / ".claude.json").get("projects") or {}).get(str(path)) or {}
     allowed, denied, allow_all = set(), set(), False
     for src in (proj, read_json(path / ".claude" / "settings.json"), read_json(path / ".claude" / "settings.local.json")):
@@ -194,7 +181,6 @@ def claude_unapproved(path: Path, home: Path, servers: list[str]) -> list[str]:
 
 
 def project_agents(path: Path, home: Path) -> dict[str, Any]:
-    """What the workspace itself configures for each agent, next to the person's global setup."""
     claude_mcp = keys(read_json(path / ".mcp.json").get("mcpServers"))
     oc_cfg = read_json(path / "opencode.json") or read_json(path / "opencode.jsonc")
     oc = path / ".opencode"
@@ -266,6 +252,6 @@ def survey(project_dir: Path | None = None, home: Path | None = None) -> dict[st
         "knowledge_hints": hints,
         "project": proj_info,
         "exposure": exposure(home),
-        "terminals": {name: bool(shutil.which(name)) for name in ("tmux", "orca")},  # lanes can run in their windows
+        "terminals": {name: bool(shutil.which(name)) for name in ("tmux", "orca")},
         "runtimes_supported": [r for r in ("opencode", "claude", "codex") if agents.get(r)],
     }

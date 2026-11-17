@@ -1,8 +1,3 @@
-"""Write the tower's files into a workspace: config, protocol, lane instructions, and a `/dah-<lane>` shortcut per
-lane so a human can also open a lane by hand in their own agent (a command in OpenCode and Claude Code, a skill
-in Codex). A lane is a role put on top of the agent the person already uses, not a new agent.
-"""
-
 from __future__ import annotations
 
 import copy
@@ -26,7 +21,6 @@ SHIM_DESC = "Work as the {lane} lane of this workspace's agent-hub"
 
 
 def shim_files(lane: str, runtime: str) -> tuple[Path, str] | None:
-    """Where the `/dah-<lane>` shortcut lives for one runtime, and its text."""
     name, desc, body = SHIM_PREFIX + lane, SHIM_DESC.format(lane=lane), SHIM_BODY.format(lane=lane)
     if runtime == "opencode":
         return Path(".opencode/command") / f"{name}.md", f"---\ndescription: {desc}\n---\n{body}\n$ARGUMENTS\n"
@@ -46,7 +40,6 @@ def write_shims(cfg: Config, lanes: list[str], force: bool, wrote: list[str]) ->
 
 
 def remove_shims(cfg: Config, lane: str) -> list[str]:
-    """Delete a lane's shortcuts, but only files still exactly as we wrote them."""
     gone = []
     for runtime in ("opencode", "claude", "codex"):
         f = shim_files(lane, runtime)
@@ -70,7 +63,7 @@ def _write(path: Path, text: str, force: bool, wrote: list[str], home: Path) -> 
     wrote.append(shown(path))
 
 
-REQUIRED_LANES = {"research": ("research.md", "opus"), "audit": ("audit.md", "fable")}  # role -> (template, claude model alias)
+REQUIRED_LANES = {"research": ("research.md", "opus"), "audit": ("audit.md", "fable")}
 
 
 def required_lane_text(role: str, lane: str, skill: str) -> str:
@@ -90,8 +83,6 @@ BLOCK_START, BLOCK_END = "<!-- dah:start -->", "<!-- dah:end -->"
 
 
 def write_agents_block(home: Path, wrote: list[str]) -> None:
-    """Put the short agent-hub pointer into CLAUDE.md and AGENTS.md so a plain session finds the tower. An existing
-    file is only appended to (our own marked block is refreshed in place); a CLAUDE.md that imports AGENTS.md is left."""
     block = (TEMPLATES / "AGENTS-block.md").read_text(encoding="utf-8")
     for name in ("AGENTS.md", "CLAUDE.md"):
         path = home / name
@@ -127,12 +118,10 @@ def remove_agents_block(home: Path) -> list[str]:
 
 
 def required_skills_dir(cfg: Config, role: str) -> str:
-    """Claude Code reads project skills from .claude/skills; the others from .agents/skills."""
     return ".claude/skills" if cfg.lanes[role].runtime == "claude" else ""
 
 
 def install(cfg: Config, force: bool = False) -> list[str]:
-    """Idempotent: existing files are kept unless force. Returns the paths written."""
     home, wrote = cfg.home, []
     _write(home / TOWER_DIR / "PROTOCOL.md", (TEMPLATES / "PROTOCOL.md").read_text(encoding="utf-8"), force, wrote, home)
     for lid in cfg.lanes:
@@ -142,11 +131,11 @@ def install(cfg: Config, force: bool = False) -> list[str]:
             for path, text in required_skill_files(home, role, role, "this project", required_skills_dir(cfg, role)).items():
                 _write(path, text, force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
-    starter.install(cfg, force, wrote)  # neutral subagents and skills (starter.py)
+    starter.install(cfg, force, wrote)
     write_agents_block(home, wrote)
     ignore_state(home, wrote)
     if not (home / TOWER_DIR / "state" / "board.sha").is_file():
-        board_changed(home)  # remember which built-in board this workspace started from
+        board_changed(home)
     return wrote
 
 
@@ -154,7 +143,6 @@ IGNORED = (f"{TOWER_DIR}/state/", f"{TOWER_DIR}/venv/")
 
 
 def ignore_state(home: Path, wrote: list[str]) -> None:
-    """Runtime state and a project install's venv never belong in the workspace's git."""
     gi = home / ".gitignore"
     text = gi.read_text(encoding="utf-8") if gi.exists() else ""
     missing = [ln for ln in IGNORED if ln not in text.splitlines()]
@@ -181,8 +169,6 @@ SKILL_BODY = """Set up agent-hub for the workspace you are in (or the one the pe
 
 
 def tower_command() -> str:
-    """How the person's agents should call dah: `dah` when it is on PATH, else the full path of this install's
-    command (a project venv), else a clone's script."""
     if shutil.which("dah"):
         return "dah"
     for exe in (Path(sys.executable).parent / "dah", Path(sys.executable).parent / "dah.exe"):
@@ -195,16 +181,14 @@ SKILL_FILES = {
                f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
     "opencode": (Path(".config/opencode/command") / f"{SKILL_NAME}.md",
                  f"---\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY + "\n$ARGUMENTS\n"),
-    "codex": (Path(".agents/skills") / SKILL_NAME / "SKILL.md",  # Codex reads user skills from ~/.agents/skills
+    "codex": (Path(".agents/skills") / SKILL_NAME / "SKILL.md",
               f"---\nname: {SKILL_NAME}\ndescription: {SKILL_DESC}\n---\n" + SKILL_BODY),
 }
-LEGACY_SKILL_FILES = {"codex": Path(".codex/prompts") / f"{SKILL_NAME}.md"}  # custom prompts, gone since Codex 0.117
+LEGACY_SKILL_FILES = {"codex": Path(".codex/prompts") / f"{SKILL_NAME}.md"}  # Codex dropped custom prompts in 0.117
 SKILL_HOMES = {"claude": Path(".claude"), "opencode": Path(".config/opencode"), "codex": Path(".codex")}
 
 
 def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple[str, Path, str, str]]:
-    """(runtime, path, current text, new text) for each agent this person has; new text "" removes a file an older
-    version wrote where the agent no longer reads it. Writes nothing."""
     chosen = runtimes or [r for r in SKILL_FILES if (user_home / SKILL_HOMES[r]).is_dir() or shutil.which(r)]
     plan = []
     for runtime in chosen:
@@ -219,7 +203,6 @@ def skill_plan(user_home: Path, runtimes: list[str] | None = None) -> list[tuple
 
 
 def skill_files(user_home: Path, runtimes: list[str] | None = None) -> list[tuple[str, Path]]:
-    """The global agent-hub-setup files that exist, current and older locations, for `dah skill uninstall`."""
     out = []
     for runtime in runtimes or list(SKILL_FILES):
         for rel in (SKILL_FILES[runtime][0], LEGACY_SKILL_FILES.get(runtime)):
@@ -229,14 +212,12 @@ def skill_files(user_home: Path, runtimes: list[str] | None = None) -> list[tupl
 
 
 def remove_file(path: Path) -> None:
-    """Delete a file this package wrote, and its folder when that was the file's own (a skill folder)."""
     path.unlink()
     if path.name == "SKILL.md" and not any(path.parent.iterdir()):
         path.parent.rmdir()
 
 
 def upgrade_command() -> list[str] | None:
-    """How to upgrade this install the way it was made (uv tool, pipx, a venv); None for a clone."""
     root = Path(__file__).resolve().parents[1]
     if (root / "pyproject.toml").is_file():
         return None
@@ -260,20 +241,17 @@ MODEL_REFUSED = re.compile(r"issue with the selected model|model[^\n]{0,60}(not 
 
 
 def model_works(runtime: str, model: str, timeout: int = 90) -> bool:
-    """One tiny call to see whether the agent CLI accepts a model alias (a plan may lack `fable`). Only a clear "model not
-    found / invalid" answer counts as a refusal; offline, signed out or rate limited keeps the model."""
     if runtime != "claude" or not shutil.which("claude"):
         return True
     try:
         p = subprocess.run(["claude", "--model", model, "-p", "Reply with ok."], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
-        return True  # cannot tell: keep the default
+        return True
     return p.returncode == 0 or not MODEL_REFUSED.search(f"{p.stdout}\n{p.stderr}")
 
 
 def fix_models(home: Path, probe=model_works) -> list[str]:
-    """Lanes that name a model the runtime refuses get `opus` instead; says what it changed."""
     notes: list[str] = []
 
     def fn(data: dict) -> None:
@@ -343,7 +321,7 @@ def edit_config(home: Path, fn) -> bool:
         lock.unlink(missing_ok=True)
 
 
-SHIPPED = TEMPLATES / "shipped.json"  # every released text of each template, oldest first, the current one last
+SHIPPED = TEMPLATES / "shipped.json"
 
 
 def shipped() -> dict[str, list[str]]:
@@ -357,11 +335,6 @@ def _template_key(lane: str) -> str:
 
 
 def _refresh_file(path: Path, versions: list[str], report: dict[str, list[str]], home: Path) -> None:
-    """Bring one template-based file to the newest template without losing what the workspace added.
-
-    Untouched since some release (the workspace only appended below it): swap that release's text for the new one.
-    Edited inside: leave it, and put the new template beside it as `<name>.new` when it changed since the release
-    the file is closest to."""
     new, rel = versions[-1], path.relative_to(home).as_posix()
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -384,7 +357,7 @@ def _refresh_file(path: Path, versions: list[str], report: dict[str, list[str]],
     if closest == len(versions) - 1:
         return
     if side.is_file() and side.read_text(encoding="utf-8") == new:
-        report["pending"].append(rel)  # asked for already; infra has not merged it yet
+        report["pending"].append(rel)
         return
     side.write_text(new, encoding="utf-8")
     report["merge"].append(rel)
@@ -401,7 +374,6 @@ def _safe_lane_fixes(data: dict, report: dict[str, list[str]]) -> None:
 
 
 def refresh(cfg: Config) -> dict[str, list[str]]:
-    """Make an existing workspace match the installed version: templates, tower.json fixes, missing shortcuts."""
     report: dict[str, list[str]] = {"created": [], "updated": [], "merge": [], "pending": [], "config": [], "shortcuts": [],
                                     "converted": []}
     home, versions = cfg.home, shipped()
@@ -412,7 +384,7 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     report["converted"] += libmigrate.migrate(cfg)
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
-    starter.refresh(cfg, versions, report, _refresh_file)  # neutral subagents and skills, kept like PROTOCOL.md
+    starter.refresh(cfg, versions, report, _refresh_file)
     for role in REQUIRED_LANES:
         if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE) and cfg.lanes[role].runtime == "claude":
             for path, text in required_skill_files(home, role, role, "this project", ".claude/skills").items():
@@ -423,7 +395,6 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
 
 
 def migration_notes(cfg: Config, report: dict[str, list[str]]) -> list[str]:
-    """What a workspace coming from before 0.8.0 should know, judged from the workspace itself (nothing is changed here)."""
     import sqlite3
     notes = []
     try:
@@ -444,22 +415,18 @@ def migration_notes(cfg: Config, report: dict[str, list[str]]) -> list[str]:
     return notes
 
 
-# ---------- package files changed in place (kept across upgrades) ----------
-
 PATCHES_DIR = "patches"
 PYPI_JSON = "https://pypi.org/pypi/{package}/{version}/json"
 BUILTIN_BOARD = Path(__file__).resolve().parent / "board_next" / "index.html"
 
 
 def file_hash(path: Path) -> str:
-    """The form wheel RECORD files use: sha256=<urlsafe base64, no padding>."""
     import base64
     import hashlib
     return "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(path.read_bytes()).digest()).rstrip(b"=").decode()
 
 
 def modified_files(entries: list[tuple[str, str | None]], base: Path) -> list[str]:
-    """The package's own files (RECORD path, hash) that no longer match what was installed."""
     out = []
     for rel, digest in entries:
         if not digest or not rel.startswith("agent_hub/") or "__pycache__" in rel or rel.endswith(".pyc"):
@@ -471,7 +438,6 @@ def modified_files(entries: list[tuple[str, str | None]], base: Path) -> list[st
 
 
 def installed_package() -> tuple[str, Path, list[tuple[str, str | None]]] | None:
-    """(version, site dir, RECORD entries) of the installed package this code runs from; None for a clone."""
     import importlib.metadata
     try:
         dist = importlib.metadata.distribution(PACKAGE)
@@ -479,13 +445,12 @@ def installed_package() -> tuple[str, Path, list[tuple[str, str | None]]] | None
         return None
     base = Path(str(dist.locate_file(""))).resolve()
     if (base / "agent_hub").resolve() != Path(__file__).resolve().parent:
-        return None  # running from a clone while another copy is installed
+        return None
     entries = [(f.as_posix(), f"{f.hash.mode}={f.hash.value}" if f.hash else None) for f in dist.files or []]
     return dist.version, base, entries
 
 
 def fetch_originals(version: str, files: list[str], index: str = PYPI_JSON) -> dict[str, str] | None:
-    """The released text of each file, from that version's wheel on PyPI. None when it cannot be fetched."""
     import io
     import urllib.request
     import zipfile
@@ -497,14 +462,12 @@ def fetch_originals(version: str, files: list[str], index: str = PYPI_JSON) -> d
             wheel = zipfile.ZipFile(io.BytesIO(r.read()))
         names = set(wheel.namelist())
         return {rel: wheel.read(rel).decode("utf-8", errors="replace") for rel in files if rel in names}
-    except Exception:  # offline, a private index, a yanked release: keep the files without a diff
+    except Exception:
         return None
 
 
 def backup_patches(home: Path, version: str, base: Path, files: list[str],
                    originals: dict[str, str] | None) -> Path:
-    """Copy the changed package files to .tower/patches/<version>/files/, with changes.diff against the release
-    when the originals are known, and index.json (what was saved, whether infra was asked to re-apply it)."""
     import difflib
     root = home / TOWER_DIR / PATCHES_DIR / version
     old = json.loads((root / "index.json").read_text(encoding="utf-8")) if (root / "index.json").is_file() else {}
@@ -529,7 +492,6 @@ def backup_patches(home: Path, version: str, base: Path, files: list[str],
 
 
 def unrequested_patches(home: Path, current: str) -> list[dict]:
-    """Backups of an older version whose re-apply request has not gone to infra yet."""
     out = []
     for idx in sorted((home / TOWER_DIR / PATCHES_DIR).glob("*/index.json")):
         data = json.loads(idx.read_text(encoding="utf-8"))
@@ -546,8 +508,6 @@ def mark_requested(patch_dir: Path, memo_id: int) -> None:
 
 
 def board_changed(home: Path) -> str:
-    """Once per change of the built-in board: "replaced" when this workspace replaces it (.tower/board/index.html),
-    "extended" when it adds to it (extra.js / extra.css), else ""."""
     mark = home / TOWER_DIR / "state" / "board.sha"
     now = file_hash(BUILTIN_BOARD)
     before = mark.read_text(encoding="utf-8").strip() if mark.is_file() else ""
@@ -561,10 +521,7 @@ def board_changed(home: Path) -> str:
     return "extended" if (board / "extra.js").is_file() or (board / "extra.css").is_file() else ""
 
 
-# ---------- taking agent-hub out of a workspace (`dah uninstall`) ----------
-
 def shim_state(cfg: Config) -> tuple[list[Path], list[Path]]:
-    """Every lane's `/dah-<lane>` shortcuts that exist: (still as written, edited since)."""
     ours, edited = [], []
     for lane in cfg.lanes:
         for runtime in ("opencode", "claude", "codex"):
@@ -576,7 +533,6 @@ def shim_state(cfg: Config) -> tuple[list[Path], list[Path]]:
 
 
 def mentions(cfg: Config) -> list[str]:
-    """Lines in the workspace's own agent instruction files that point at .tower/ (setup may have added one)."""
     out = []
     for d in dict.fromkeys((cfg.workdir, cfg.home)):
         for name in ("AGENTS.md", "CLAUDE.md", ".github/copilot-instructions.md"):
@@ -590,7 +546,6 @@ def mentions(cfg: Config) -> list[str]:
 
 
 def detach_plan(cfg: Config) -> dict[str, list[str]]:
-    """What `dah uninstall` removes and what it leaves. Changes nothing."""
     ours, edited = shim_state(cfg)
     gi = cfg.home / ".gitignore"
     text = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
@@ -600,8 +555,6 @@ def detach_plan(cfg: Config) -> dict[str, list[str]]:
 
 
 def detach(cfg: Config, purge: bool) -> list[str]:
-    """Take agent-hub out of the workspace: worktrees the lanes worked in (only clean ones; their branches stay),
-    the shortcuts as written, the .gitignore lines, the registry entry, and with purge the whole .tower/."""
     done, dirty = [], False
     for lid, ln in cfg.all_lanes.items():
         path = cfg.lane_dir(lid)
@@ -629,7 +582,7 @@ def detach(cfg: Config, purge: bool) -> list[str]:
         if home.resolve() == cfg.home.resolve():
             unregister(slug)
             done.append(f"removed workspace \"{slug}\" from this machine's list")
-    if purge and dirty:  # never delete work nobody committed
+    if purge and dirty:
         done.append(f"kept {cfg.home / TOWER_DIR}: a lane worktree inside it has uncommitted work; commit or discard "
                     f"it, then run `dah uninstall --yes --purge` again")
     elif purge:
@@ -642,8 +595,6 @@ def detach(cfg: Config, purge: bool) -> list[str]:
 
 
 def remove_tree(path: Path, tries: int = 10) -> None:
-    """shutil.rmtree that also takes read-only files (git objects on Windows) and retries a file that a virus
-    scanner or a closing process holds for a moment (Windows)."""
     import gc
     import stat
     import time
@@ -653,7 +604,7 @@ def remove_tree(path: Path, tries: int = 10) -> None:
         fn(p)
 
     for i in range(tries):
-        gc.collect()  # SQLite connections nobody references any more
+        gc.collect()  # open SQLite handles block deletion on Windows
         try:
             if sys.version_info >= (3, 12):
                 shutil.rmtree(path, onexc=writable)
@@ -668,8 +619,6 @@ def remove_tree(path: Path, tries: int = 10) -> None:
             time.sleep(0.5)
 
 
-# ---------------------------------------------------------------- engine scaffolds (`dah engine add NAME --from KIND`)
-
 ENGINE_TEMPLATES = TEMPLATES / "engines"
 ENGINE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 REVIEW_ROLE = "review"
@@ -678,9 +627,6 @@ REQUIRED_SUBS = {"research": "research-note"}
 
 
 def required_skill_files(home: Path, role: str, prefix: str, label: str, skills_dir: str) -> dict[Path, str]:
-    """The skill folder of a required lane: `{prefix}-{role}`, or plain `{role}` when prefix == role (no engine). An engine's
-    research lane also gets its sub-process and a full process of its own in `processes/`; without an engine the cards stay
-    in the skill's `references/` folder, so `dah init` and `dah update` never add to a workspace's process library."""
     from . import processes
     src = ENGINE_TEMPLATES / "required" / "skills" / REQUIRED_SKILLS[role]
     name = role if prefix == role else f"{prefix}-{role}"
@@ -714,10 +660,6 @@ def engine_kinds() -> list[str]:
 
 
 def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, skills: str = "", cap: str = "") -> dict:
-    """Create engine `eid` from template `kind`: a full process `processes/full/<eid>.md` with its sub-processes
-    (`processes/sub/<eid>-<name>/`, process and pattern cards, all `draft`), an `engine.json`, skills, a lane per role and an
-    engine review lane, with their instruction files (each lists the full processes it uses). Nothing is overwritten: an
-    existing file or engine is an error before anything is written. Returns {"entry", "lanes", "files"}; the caller writes tower.json."""
     from . import engines as engines_mod, processes
     if not ENGINE_ID.match(eid):
         raise ValueError("engine id for --from: lowercase letters, digits and single hyphens (it prefixes the skill and lane names)")
@@ -753,7 +695,7 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
             next(ln for ln in lane_template(lid).splitlines() if ln.startswith("(Infra or the hub")),
             f"{what} It runs the {label} full process at `{library}`." + "".join(f' Run `skill("{s}")` before each task.' for s in use))
         lanes[lid] = text.rstrip("\n") + "\n" + used
-    for role in REQUIRED_LANES:  # research and the engine auditor come with every engine
+    for role in REQUIRED_LANES:
         lid = f"{eid}-{role}"
         lanes[lid] = required_lane_text(role, lid, lid)
         files.update(required_skill_files(cfg.home, role, eid, label, skills_dir))

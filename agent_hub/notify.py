@@ -1,11 +1,3 @@
-"""Push a short note to humans when something lands on the board for them.
-
-tower.json `notify` keys (values may be `env:NAME`):
-  ntfy_topic     topic on ntfy (phone app), with optional ntfy_server (default https://ntfy.sh)
-  slack_webhook  Slack incoming-webhook URL
-  desktop        "1" = macOS/Linux desktop notification on the tower machine
-"""
-
 from __future__ import annotations
 
 import json
@@ -39,7 +31,7 @@ def _post(url: str, body: dict[str, Any], log: Callable[[str], None]) -> None:
     try:
         urllib.request.urlopen(req, timeout=10).read()
         return
-    except Exception as e:  # any network or HTTP failure is a lost notification, never a tower crash
+    except Exception as e:
         if not _is_tls_error(e) or not shutil.which("curl"):
             log(f"notify failed: {e}")
             return

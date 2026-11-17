@@ -1,13 +1,3 @@
-"""`dah stats` and `dah retros`: the task ledger grouped by lane, engine, model, effort or week. Computes and renders text only.
-
-One row per group: tasks, closed, cancelled before they ran, tokens (new / cache read / out), turns, tells (messages the hub
-sent into the task), nudges, rotations (extra sessions a task went through). A task belongs to the group of the day it was
-queued. Tokens come from the agent transcripts (`runtimes.ledger`), measured while a session works and when its turn ends.
-
-A wrapped report may end with a retro: `one line || retro: cost=... | corrected=... | rule=...`. `split_retro` cuts it
-off; the line goes to the board, the three fields to the retro log.
-"""
-
 from __future__ import annotations
 
 import re
@@ -24,7 +14,6 @@ _FIELD_SPLIT = re.compile(r"\s*\|\s*(?=(?:%s)\s*=)" % "|".join(RETRO_FIELDS), re
 
 
 def split_retro(text: str) -> tuple[str, dict[str, str] | None]:
-    """`line || retro: cost=... | corrected=... | rule=...` -> (line, {cost, corrected, rule, raw}); no retro -> (text, None)."""
     head, sep, tail = text.partition("||")
     if not sep:
         return text, None
@@ -51,7 +40,6 @@ def mtok(n: float) -> str:
 
 
 def collect(store: Store, lane: str | None = None, since: float = 0.0) -> list[dict[str, Any]]:
-    """Tasks queued since `since` (all of a lane's parallel sessions count as the lane), with their message counts and rotations."""
     with store.conn() as con:
         tasks = [dict(r) for r in con.execute("SELECT * FROM tasks WHERE created>=? ORDER BY id", (since,))]
         tells = dict(con.execute("SELECT task_id, count(*) FROM messages WHERE kind='tell' AND task_id IS NOT NULL "
@@ -117,7 +105,7 @@ def render_retros(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return "No retros yet."
     out = []
-    for r in reversed(rows):  # oldest first
+    for r in reversed(rows):
         stamp = datetime.fromtimestamp(r["created"]).strftime("%m-%d %H:%M")
         out.append(f"[{stamp}] {r['lane']}" + (f" task #{r['task_id']}" if r["task_id"] else "") + f" - {r['summary']}")
         for k in RETRO_FIELDS:
