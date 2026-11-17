@@ -1,5 +1,3 @@
-"""Workspace extensions (.tower/board, .tower/ext) and keeping package edits across `dah update`."""
-
 import io
 import json
 import os
@@ -63,14 +61,14 @@ class BoardExtensionsTest(unittest.TestCase):
         self.assertEqual(self.b.req("GET", "/")[1], builtin)
         write(self.tower / "board/index.html", "<!doctype html><p>ours</p>")
         self.assertEqual(self.b.req("GET", "/")[1], b"<!doctype html><p>ours</p>")
-        self.assertEqual(self.b.req("GET", "/?builtin")[1], builtin)  # the way back when an override breaks
+        self.assertEqual(self.b.req("GET", "/?builtin")[1], builtin)
 
     def test_api_routes(self) -> None:
         write(self.tower / "ext/stats.py", ROUTES)
         write(self.tower / "ext/broken.py", "raise ImportError('nope')")
         code, body, _ = self.b.req("GET", "/api/x/stats?x=1")
         self.assertEqual((code, body["lanes"], body["q"]), (200, ["docs", "hub", "infra"], "1"))
-        self.assertEqual(self.b.req("POST", "/api/x/echo", {"a": 1})[0], 403)  # needs x-tower like every POST
+        self.assertEqual(self.b.req("POST", "/api/x/echo", {"a": 1})[0], 403)
         self.assertEqual(self.b.req("POST", "/api/x/echo", {"a": 1}, POST)[:2], (201, {"got": {"a": 1}}))
         code, body, _ = self.b.req("GET", "/api/x/bad")
         self.assertEqual(code, 500)
@@ -80,7 +78,7 @@ class BoardExtensionsTest(unittest.TestCase):
         self.assertTrue(any("broken.py" in line and "not loaded" in line for line in self.logs))
 
         time.sleep(0.01)
-        write(self.tower / "ext/stats.py", ROUTES.replace('"lanes": sorted', '"n": len'))  # edited: reloaded
+        write(self.tower / "ext/stats.py", ROUTES.replace('"lanes": sorted', '"n": len'))
         self.assertEqual(self.b.req("GET", "/api/x/stats")[1]["n"], 3)
 
     def test_signed_in_only(self) -> None:
@@ -105,7 +103,7 @@ class BoardExtensionsTest(unittest.TestCase):
             self.assertEqual(self.b.req("GET", f"/w/{slugs[1]}/api/x/stats")[1]["lanes"], ["hub"])
             self.assertEqual(self.b.req("GET", f"/w/{slugs[1]}/x/extra.css")[:2], (200, b"p{}"))
             self.assertEqual(self.b.req("GET", f"/w/{slugs[1]}/api/state")[1]["extensions"]["css"], True)
-            self.assertEqual(self.b.req("GET", "/api/x/stats")[0], 404)  # this workspace has none
+            self.assertEqual(self.b.req("GET", "/api/x/stats")[0], 404)
         finally:
             for slug in slugs:
                 config_mod.unregister(slug)
@@ -125,7 +123,7 @@ def on_tick(ctx):
 ''')
         clock, logs = Clock(), []
         s = Store(cfg.db, clock=clock)
-        s.push(INFRA, "ana", "memo", "before the tower started")  # not news to extensions
+        s.push(INFRA, "ana", "memo", "before the tower started")
         e = Engine(cfg, s, FakeRuntime(s), lambda _: None, clock=clock, log=logs.append)
         e.tick()
         mod = e.ext.modules()[0]
@@ -142,7 +140,7 @@ def on_tick(ctx):
         self.assertEqual([x for x in mod.seen if x[0] != "lane"], [("report", rid), ("item", iid),
                                                                    ("decided", iid)])
         self.assertEqual(len(mod.ticks), 3)
-        self.assertTrue(any("hook bug" in line for line in logs))  # logged, and the tick went on
+        self.assertTrue(any("hook bug" in line for line in logs))
         self.assertNotIn(("memo", mid), mod.seen)
 
 
@@ -163,7 +161,7 @@ def on_notify(ctx, batch):
         s = Store(cfg.db, clock=clock)
         rt = FakeRuntime(s)
         e = Engine(cfg, s, rt, pushed.extend, clock=clock, log=lambda _: None)
-        e.tick()  # the first tick only takes the marks
+        e.tick()
         mod = e.ext.modules()[0]
         self.assertEqual(mod.seen, [])
         clock.tick(5)
@@ -215,7 +213,7 @@ terminals = {"myterm": MyTerm}
         rt = Runtimes(cfg, s)
         self.assertEqual(rt.open("bot", "hello"), "echo-1")
         self.assertEqual(rt.status("bot"), "idle")
-        (home / ".tower/ext/echo.py").unlink()  # the extension is gone: the lane is unknown, never opened
+        (home / ".tower/ext/echo.py").unlink()
         rt = Runtimes(cfg, s)
         with self.assertRaises(RuntimeFailure):
             rt.status("bot")
@@ -246,10 +244,10 @@ class PackageEditsTest(unittest.TestCase):
         diff = (root / "changes.diff").read_text()
         self.assertIn("-<p>released</p>", diff)
         self.assertIn("+<p>ours</p>", diff)
-        self.assertEqual(unrequested_patches(home, "0.3.1"), [])  # still that version: nothing replaced yet
+        self.assertEqual(unrequested_patches(home, "0.3.1"), [])
         self.assertEqual([p["files"] for p in unrequested_patches(home, "0.4.0")], [changed])
 
-        backup_patches(home, "0.3.2", self.site, changed, None)  # originals unknown: files only
+        backup_patches(home, "0.3.2", self.site, changed, None)
         self.assertFalse((home / ".tower/patches/0.3.2/changes.diff").exists())
 
     def test_originals_from_the_release_wheel(self) -> None:

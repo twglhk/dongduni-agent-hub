@@ -1,5 +1,3 @@
-"""Machine card: readings graded against this machine's own cores and RAM; unknown is None, never 0."""
-
 import json
 import os
 import sys
@@ -51,16 +49,14 @@ class GradeTest(unittest.TestCase):
     def test_cut_points_follow_this_machines_cores_and_ram(self) -> None:
         g = machine.grade({"cores": 8, "load": 8.0, "ram_gb": 32, "free_gb": 8, "swap_gb": 0.5, "cpu": 30})
         self.assertEqual((g["load_lv"], g["cpu_lv"], g["mem_lv"], g["swap_lv"], g["lv"]), ("g", "g", "g", "g", "g"))
-        # the same load on a 2-core machine is red: 4 per core
         self.assertEqual(machine.grade({"cores": 2, "load": 8.0})["load_lv"], "r")
         self.assertEqual(machine.grade({"cores": 4, "load": 10.0})["load_lv"], "a")
-        # 4 GB free is plenty of a 16 GB machine's 25 %, tight on a 64 GB one (6 %)
         self.assertEqual(machine.grade({"ram_gb": 16, "free_gb": 4})["mem_lv"], "g")
         self.assertEqual(machine.grade({"ram_gb": 64, "free_gb": 4})["mem_lv"], "r")
         self.assertEqual(machine.grade({"ram_gb": 64, "free_gb": 8})["mem_lv"], "a")
         self.assertEqual(machine.grade({"ram_gb": 16, "swap_gb": 6})["swap_lv"], "r")
         self.assertEqual(machine.grade({"cpu": 90})["cpu_lv"], "r")
-        self.assertEqual(machine.grade({"cpu": 70, "ram_gb": 16, "free_gb": 8})["lv"], "a")  # worst row wins
+        self.assertEqual(machine.grade({"cpu": 70, "ram_gb": 16, "free_gb": 8})["lv"], "a")
 
     def test_kernel_pressure_wins_over_the_free_share(self) -> None:
         self.assertEqual(machine.grade({"ram_gb": 16, "free_gb": 8, "pressure": "r"})["mem_lv"], "r")
@@ -126,7 +122,7 @@ class WaitsTest(unittest.TestCase):
         c = s.add_task("docs", "c", "b")
         e.tick()
         waits = machine.read_waits(cfg.state_dir)
-        self.assertNotIn(str(a), waits)  # started
+        self.assertNotIn(str(a), waits)
         self.assertIn("started another task", waits[str(c)])
         e.tick()
         waits = machine.read_waits(cfg.state_dir)
@@ -148,14 +144,14 @@ class WaitsTest(unittest.TestCase):
         self.assertIn("lv", body["machine"])
         self.assertTrue({"mount", "total_gb", "used_gb", "free_gb", "used_pct", "lv"} <= set(body["machine"]["disks"][0]))
         self.assertEqual(body["waits"], {"5": "every slot is busy"})
-        self.assertIsNone(body["usage"])  # the Claude percent is off unless tower.json turns it on
+        self.assertIsNone(body["usage"])
 
 
 class BoardTest(unittest.TestCase):
     def test_board_fetches_the_machine_and_labels_unknown(self) -> None:
         html = (machine.Path(machine.__file__).parent / "board" / "index.html").read_text(encoding="utf-8")
         self.assertIn("api/machine", html)
-        self.assertEqual(html.count("    mc: { title:"), 5)  # every language
+        self.assertEqual(html.count("    mc: { title:"), 5)
 
 
 class FailureIsVisibleTest(unittest.TestCase):

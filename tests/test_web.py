@@ -58,7 +58,7 @@ class LocalModeTest(unittest.TestCase):
         for ln in st["lanes"]:
             self.assertEqual(set(ln["run"]), {"model", "effort", "text", "state", "why"}, ln["lane"])
         self.assertEqual(st["me"]["role"], "owner")
-        self.assertTrue(st["local_only"])  # the board tells people it cannot be reached from a phone yet
+        self.assertTrue(st["local_only"])
 
     def test_post_needs_header(self) -> None:
         code, _, _ = self.b.req("POST", f"/api/items/{self.iid}/decide", {"verdict": "ok", "choice": "80"})
@@ -74,7 +74,7 @@ class LocalModeTest(unittest.TestCase):
 
     def test_board_memos_go_to_the_hub_only(self) -> None:
         self.assertEqual(self.b.req("POST", "/api/memo", {"text": "hi", "to": "hub"}, POST)[0], 200)
-        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "no to"}, POST)[0], 200)  # the hub is the default
+        self.assertEqual(self.b.req("POST", "/api/memo", {"text": "no to"}, POST)[0], 200)
         code, body, _ = self.b.req("POST", "/api/memo", {"text": "hi", "to": "infra"}, POST)
         self.assertEqual(code, 409)
         self.assertIn("ask the hub", body["error"])
@@ -93,7 +93,7 @@ class LocalModeTest(unittest.TestCase):
         blocks = re.split(r"\n  (?=[a-z]{2}: \{\n)", ui)[1:]
         self.assertEqual(len(blocks), 5)
 
-        def keys(block: str) -> list[str]:  # every key name outside the quoted strings, as a sorted multiset
+        def keys(block: str) -> list[str]:
             return sorted(re.findall(r"(\w+):", re.sub(r"'(?:[^'\\]|\\.)*'", "''", block.split("\n", 1)[1])))
         base = keys(blocks[0])
         for b in blocks[1:]:
@@ -174,7 +174,7 @@ class TokenModeTest(unittest.TestCase):
 
     def test_login_cookie_flow(self) -> None:
         self.assertEqual(self.b.req("GET", "/api/state")[0], 401)
-        self.assertEqual(self.b.req("GET", "/")[0], 200)  # the page itself loads and shows sign-in
+        self.assertEqual(self.b.req("GET", "/")[0], 200)
         self.assertEqual(self.b.req("POST", "/api/login", {"token": "wrong"}, POST)[0], 401)
         code, _, headers = self.b.req("POST", "/api/login", {"token": self.token}, POST)
         self.assertEqual(code, 200)
@@ -222,7 +222,7 @@ class GoalsGoneTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertNotIn("goals", st)
         self.assertNotIn("goals", st["counts"])
-        self.assertEqual(self.b.s.pending(HUB), [])  # no goal news was queued for the hub
+        self.assertEqual(self.b.s.pending(HUB), [])
 
 
 class WorkspacesTest(unittest.TestCase):

@@ -1,5 +1,3 @@
-"""The CLI end to end in a temp workspace, the way lanes call it."""
-
 import argparse
 import os
 import subprocess
@@ -75,23 +73,22 @@ class CliTest(unittest.TestCase):
 
         out = self.tower("update", "--no-upgrade")
         hub = (tower / "lanes/hub.md").read_text(encoding="utf-8")
-        self.assertEqual(hub, versions["lanes/hub.md"][-1] + mine)  # template swapped, workspace part kept
+        self.assertEqual(hub, versions["lanes/hub.md"][-1] + mine)
         self.assertEqual((tower / "lanes/infra.md.new").read_text(encoding="utf-8"), versions["lanes/infra.md"][-1])
         self.assertIn("asked infra to merge", out)
         self.assertEqual(json.loads(cfg_path.read_text(encoding="utf-8"))["lanes"]["infra"]["args"],
                          ["--permission-mode", "acceptEdits", "--allowedTools", "Bash(dah:*)"])
         self.assertTrue((self.home / ".claude/commands/dah-docs.md").is_file())
-        self.assertFalse((tower / "lanes/docs.md.new").exists())  # untouched files stay as they are
+        self.assertFalse((tower / "lanes/docs.md.new").exists())
         from agent_hub import __version__
         self.assertEqual((tower / "state/version").read_text(encoding="utf-8"), __version__)
 
-        again = self.tower("update", "--no-upgrade")  # nothing new: no second request to infra
+        again = self.tower("update", "--no-upgrade")
         self.assertNotIn("asked infra", again)
         self.assertIn("still to merge: .tower/lanes/infra.md.new", again)
         self.assertEqual((tower / "lanes/hub.md").read_text(encoding="utf-8"), hub)
 
     def test_every_lane_gets_a_shortcut_in_every_runtime(self) -> None:
-        # docs (codex) was added after init: every lane now has /dah-<lane> in OpenCode, Claude Code and Codex
         for lane in ("hub", "infra", "docs"):
             for rel in (f".opencode/command/dah-{lane}.md", f".claude/commands/dah-{lane}.md",
                         f".agents/skills/dah-{lane}/SKILL.md"):
@@ -100,7 +97,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("name: dah-docs", (self.home / ".agents/skills/dah-docs/SKILL.md").read_text())
         mine = self.home / ".claude/commands/dah-review.md"
         self.assertIn("/dah-review", self.tower("lane", "add", "review", "--runtime", "claude", "--agent", "reviewer"))
-        mine.write_text("my own edit")  # a shortcut someone changed is theirs: removing the lane keeps it
+        mine.write_text("my own edit")
         self.tower("lane", "remove", "review")
         self.assertEqual(mine.read_text(), "my own edit")
         self.assertFalse((self.home / ".opencode/command/dah-review.md").exists())
@@ -222,10 +219,10 @@ class CliTest(unittest.TestCase):
         out = self.tower("uninstall", "--yes")
         self.assertFalse((self.home / ".opencode/command/dah-hub.md").exists())
         self.assertFalse((self.home / ".agents/skills/dah-docs").exists())
-        self.assertEqual(mine.read_text(), "my own edit")  # edited by someone: theirs
+        self.assertEqual(mine.read_text(), "my own edit")
         self.assertEqual((self.home / ".gitignore").read_text(), "node_modules/\n")
-        self.assertIn("AGENTS.md:2", out)  # a line to remove by hand
-        self.assertTrue((self.home / ".tower/tower.json").exists())  # kept without --purge
+        self.assertIn("AGENTS.md:2", out)
+        self.assertTrue((self.home / ".tower/tower.json").exists())
         self.assertNotIn(str(self.home), self.tower("workspaces"))
         out = self.tower("uninstall", "--yes", "--purge")
         self.assertFalse((self.home / ".tower").exists(), out)

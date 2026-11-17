@@ -13,7 +13,6 @@ EXAMPLE = Creds("AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKE
 
 
 class AwsVectorsTest(unittest.TestCase):
-    """The worked examples of the AWS S3 Signature Version 4 documentation (2013-05-24, examplebucket, us-east-1)."""
 
     def s3(self) -> S3:
         t = calendar.timegm((2013, 5, 24, 0, 0, 0))

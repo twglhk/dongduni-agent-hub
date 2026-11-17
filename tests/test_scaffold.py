@@ -1,5 +1,3 @@
-"""`dah engine add NAME --from KIND`, the engine templates, and the optional usage cap."""
-
 import json
 import os
 import subprocess
@@ -117,7 +115,7 @@ class ScaffoldTest(unittest.TestCase):
             self.tower("engine", "add", f"{kind}-two", "--from", kind, "--label", f"{kind.title()} two")
         p = subprocess.run([sys.executable, str(ROOT / "tools" / "skill_lint.py"), str(self.home)], capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertIn("scanned 16 skills", p.stdout)  # blank 1, animation 2, marketing 1, research and audit in each of the 3 engines and in the init workspace, 4 starter skills
+        self.assertIn("scanned 16 skills", p.stdout)
         self.assertIn("FAIL 0", p.stdout)
 
     def test_two_engines_do_not_collide_and_an_existing_one_is_refused(self) -> None:
@@ -171,7 +169,7 @@ class CapTest(unittest.TestCase):
         tb = self.s.add_task("b1", "t", "Line: none · chore: x", "b")
         self.e.tick()
         self.assertEqual(self.s.task(ta)["state"], "queued")
-        self.assertEqual(self.s.task(tb)["state"], "running")  # `plan` names no registered provider: no hold
+        self.assertEqual(self.s.task(tb)["state"], "running")
 
     def test_under_the_cap_the_task_starts(self) -> None:
         self.s.record_usage("a1", "x", "claude", 300, 100, None, None)

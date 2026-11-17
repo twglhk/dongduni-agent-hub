@@ -1,8 +1,6 @@
-"""The safety gates (agent_hub/gates.py): kill, git sweep, .env read, binary apply_patch. The kill and binary cases
-are the source tower's own test cases, with its desk's names swapped for agent-hub's."""
-
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -109,18 +107,17 @@ class KillGate(unittest.TestCase):
     def test_other_tools_and_bad_args_are_ignored(self) -> None:
         self.assertIsNone(verdict("Write", {"file_path": "/tmp/x", "command": "pkill -f opencode"}))
         self.assertIsNone(verdict("Bash", {"command": 42}))
-        self.assertIsNone(gates.check("Bash", "not a dict", "/tmp"))  # type: ignore[arg-type]
+        self.assertIsNone(gates.check("Bash", "not a dict", "/tmp"))
 
 
 class Heredocs(unittest.TestCase):
-    """A heredoc body is data unless a shell reads it (audit risk: the source refused a file that only mentioned kill)."""
 
     def test_a_heredoc_that_writes_a_file_is_data(self) -> None:
         for cmd in ["cat > stop.sh <<'EOF'\npkill -f opencode\nkill -9 -1\ngit stash\nEOF\nchmod +x stop.sh",
                     'cat <<EOF > notes.md\nNever run `pkill -f claude`.\nEOF',
                     "python3 - <<'PY'\nimport os\nos.system('pkill -f opencode')\nPY",
                     "tee a.txt <<A >/dev/null; tee b.txt <<B\npkill node\nA\nkillall codex\nB\necho done",
-                    "cat <<\"END\"\npkill -f tmux",  # never closed: still data
+                    "cat <<\"END\"\npkill -f tmux",
                     "cat <<-EOF\n\tpkill -f opencode\n\tEOF\n"]:
             with self.subTest(cmd):
                 self.assertIsNone(verdict("Bash", {"command": cmd}), cmd)
@@ -217,7 +214,7 @@ class EnvGate(unittest.TestCase):
     def test_env_files(self) -> None:
         for p in ["/a/b/.env", ".env", "/a/.env.local", "C:\\proj\\.env.production"]:
             self.assertEqual(verdict("Read", {"file_path": p}), "env", p)
-        self.assertEqual(verdict("read", {"filePath": "/a/.env"}), "env")  # OpenCode's tool
+        self.assertEqual(verdict("read", {"filePath": "/a/.env"}), "env")
         for p in ["/a/.env.example", "/a/env.txt", "/a/.envrc.md", "/a/dotenv"]:
             self.assertIsNone(verdict("Read", {"file_path": p}), p)
 
@@ -250,7 +247,7 @@ class BinaryPatchGuard(unittest.TestCase):
         self.assertTrue(self.refused(self.update(nul)))
         self.assertTrue(self.refused(f"*** Begin Patch\n*** Delete File: {nul}\n*** End Patch"))
         self.fixture("notes.md", bytes([0x89, 0x50, 0x4E, 0x47, 0]))
-        self.assertTrue(self.refused(self.update("notes.md")))  # relative path, text extension
+        self.assertTrue(self.refused(self.update("notes.md")))
         self.assertTrue(self.refused(self.update(self.fixture("bad.txt", bytes([0x61, 0xC3, 0x28])))))
         self.assertTrue(self.refused(self.update(self.fixture("cut.txt", bytes([0x61, 0xED, 0x95])))))
         late = bytearray(b"a" * (CHUNK * 2 + 10))

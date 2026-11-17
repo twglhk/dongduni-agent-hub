@@ -1,5 +1,3 @@
-"""0.9.3 starter content: neutral subagents and skills in every workspace, kept by `dah update` like PROTOCOL.md."""
-
 import os
 import re
 import subprocess
@@ -64,7 +62,7 @@ class FreshInitTest(unittest.TestCase):
         cfg = make_home({"hub": {"runtime": "claude"}, "infra": {"runtime": "opencode"}, "docs": {"runtime": "codex"}})
         self.assertEqual(starter.skill_dirs(cfg), [".claude/skills", ".agents/skills"])
         cfg = make_home({"hub": {"runtime": "claude"}, "infra": {"runtime": "opencode"}})
-        self.assertEqual(starter.skill_dirs(cfg), [".claude/skills"])  # OpenCode reads .claude/skills too: no double
+        self.assertEqual(starter.skill_dirs(cfg), [".claude/skills"])
 
     def test_skills_pass_skill_lint(self) -> None:
         cfg = make_home({"hub": {"runtime": "claude"}, "infra": {"runtime": "codex"}})
@@ -160,9 +158,9 @@ class ModelFallbackTest(unittest.TestCase):
         for name in ("explore", "librarian"):
             self.assertIn("\nmodel: inherit\n", (cfg.home / f".claude/agents/{name}.md").read_text(encoding="utf-8"))
         self.assertIn("\nmodel: sonnet\n", (cfg.home / ".claude/agents/looker.md").read_text(encoding="utf-8"))
-        self.assertIn("\nmodel: opus\n", mine.read_text(encoding="utf-8"))  # the workspace's own choice is left
+        self.assertIn("\nmodel: opus\n", mine.read_text(encoding="utf-8"))
         self.assertEqual(starter.fix_models(cfg, probe), [])
-        report = refresh(cfg)  # an `inherit` copy is still untouched for dah update
+        report = refresh(cfg)
         self.assertEqual(report["merge"], [])
 
     def test_models_follow_the_models_guide(self) -> None:
@@ -185,7 +183,7 @@ class TemplatesTest(unittest.TestCase):
             text = (TEMPLATES / key).read_text(encoding="utf-8")
             with self.subTest(key=key):
                 self.assertIsNone(re.search(r"godot|blender|hero|boss|arkham|orca|roam|founder", text, re.I))
-                self.assertIsNone(re.search(r"[ㄱ-ㆎ가-힣぀-ヿ]", text))  # no Korean or Japanese
+                self.assertIsNone(re.search(r"[ㄱ-ㆎ가-힣぀-ヿ]", text))
                 self.assertNotIn("AGENTS.md", text)
                 self.assertNotIn("Apple Vision", text)
                 self.assertNotIn("mlx", text)

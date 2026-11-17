@@ -81,15 +81,14 @@ class ReaderTest(unittest.TestCase):
         self.assertEqual((p["type"], p["version"], p["status"]), ("Storyboard", 2, "confirmed"))
         self.assertEqual([s["name"] for s in p["stages"]], ["Beats", "Frames", "Review"])
         self.assertEqual((p["stages"][0]["card"]["status"], p["stages"][0]["card"]["version"]), ("confirmed", 3))
-        self.assertEqual(p["stages"][1]["card"]["color"], "green")  # "tuned after two rounds"
+        self.assertEqual(p["stages"][1]["card"]["color"], "green")
         self.assertFalse(p["stages"][2]["card"]["exists"])
         self.assertEqual(p["stages"][2]["card"]["color"], "grey")
 
     def test_row_statuses(self) -> None:
-        # row 1: one pattern card is missing, so the pattern is not confirmed from the cards; the table cell says confirmed
         self.assertEqual(self.rows[0]["process_status"], "confirmed")
         self.assertEqual(self.rows[1]["process_status"], "draft")
-        self.assertEqual(self.rows[1]["pattern_status"], "draft")  # from the pick card
+        self.assertEqual(self.rows[1]["pattern_status"], "draft")
         self.assertEqual(self.rows[2]["process"], None)
         self.assertEqual((self.rows[2]["process_status"], self.rows[2]["pattern_status"]), ("confirmed", "tuned"))
 
@@ -109,7 +108,7 @@ class GateTest(unittest.TestCase):
     def test_accepts(self) -> None:
         self.assertEqual(engines.gate("Line: #1 Storyboard · stage 2 · process confirmed · pattern confirmed · make", self.rows), ("1", "make"))
         self.assertEqual(engines.gate("Line: D5 Title card · stage 1-2 · process confirmed · pattern tuned · make\nmodel: opus", self.rows), ("D5", "make"))
-        self.assertEqual(engines.gate("Line: #2 Sound cue · prepare", self.rows), ("2", "prepare"))  # no stage needed to prepare
+        self.assertEqual(engines.gate("Line: #2 Sound cue · prepare", self.rows), ("2", "prepare"))
         self.assertEqual(engines.gate("Line: none · chore: move the exports", self.rows), (None, None))
         self.assertEqual(engines.gate("Line: new Cover art · prepare", self.rows), (None, "prepare"))
         self.assertEqual(engines.gate("Line: new Cover art · stage 1 · process draft · prepare", []), (None, "prepare"))
@@ -180,7 +179,7 @@ class CliTest(unittest.TestCase):
         s = Store(self.cfg.db)
         t = s.next_queued("story")
         self.assertEqual((t["line_row"], t["line_stage"], t["line_mode"]), ("1", "2", "make"))
-        self.dah("stage", "3", ok=False, lane="story")  # nothing running yet
+        self.dah("stage", "3", ok=False, lane="story")
         s.update_task(t["id"], state="running")
         self.assertIn("stage 3", self.dah("stage", "3", lane="story"))
         self.assertEqual(s.live_task("story")["stage_now"], "3")

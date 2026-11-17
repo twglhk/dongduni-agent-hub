@@ -1,5 +1,3 @@
-"""`dah update` on a workspace as 0.7.0 left it: old template texts, an old tower.json, a database with goals in it."""
-
 import json
 import os
 import sqlite3
@@ -10,7 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-V070 = {"PROTOCOL.md": 5, "lanes/hub.md": 3, "lanes/infra.md": 6, "lanes/team.md": 1}  # index of the 0.7.0 text in shipped.json
+V070 = {"PROTOCOL.md": 5, "lanes/hub.md": 3, "lanes/infra.md": 6, "lanes/team.md": 1}
 
 
 class UpdateFrom070Test(unittest.TestCase):
@@ -32,7 +30,7 @@ class UpdateFrom070Test(unittest.TestCase):
         self.before = data
         (t / "state").mkdir(exist_ok=True)
         (t / "state/version").write_text("0.7.0", encoding="utf-8")
-        self.tower("status")  # opens the database
+        self.tower("status")
         db = next((t / "state").glob("*.db"))
         with sqlite3.connect(db) as con:
             con.execute("CREATE TABLE IF NOT EXISTS goals(id INTEGER PRIMARY KEY, title TEXT)")
@@ -48,11 +46,11 @@ class UpdateFrom070Test(unittest.TestCase):
         return p.stdout + p.stderr
 
     def test_fixture_is_really_the_070_text(self) -> None:
-        """If a later release rewrites shipped.json history, this fixture must be rebuilt."""
+        # a later release that rewrites shipped.json history makes this fixture stale
         for rel, i in V070.items():
             old = subprocess.run(["git", "show", f"v0.7.0:agent_hub/templates/{rel}"], cwd=ROOT, capture_output=True,
                                  text=True, encoding="utf-8")
-            if old.returncode == 0:  # a clone without tags skips the comparison
+            if old.returncode == 0:
                 self.assertEqual(self.v[rel][i], old.stdout, rel)
 
     def test_update_migrates_a_070_workspace(self) -> None:
@@ -65,14 +63,14 @@ class UpdateFrom070Test(unittest.TestCase):
         self.assertEqual((t / "lanes/infra.md").read_text(encoding="utf-8"), self.v["lanes/infra.md"][-1])
         self.assertEqual((t / "lanes/docs.md").read_text(encoding="utf-8"), self.v["lanes/team.md"][-1].replace("{lane}", "docs"))
         self.assertFalse(list((t / "lanes").glob("*.new")))
-        self.assertEqual(json.loads((t / "tower.json").read_text(encoding="utf-8")), self.before)  # additive: nothing rewritten
+        self.assertEqual(json.loads((t / "tower.json").read_text(encoding="utf-8")), self.before)
         self.assertIn("note: goals are gone: the 2 goal row(s) stay in the database", out)
         self.assertIn("note: engines: tower.json declares none", out)
         self.assertNotIn("does not forward infra work", out)
         status = self.tower("status")
         self.assertNotIn("goal", status.lower())
         self.assertIn("default", self.tower("engine", "list"))
-        with sqlite3.connect(self.db) as con:  # the old rows are still there: a downgrade to 0.7.x opens the file
+        with sqlite3.connect(self.db) as con:
             self.assertEqual(con.execute("SELECT count(*) FROM goals").fetchone()[0], 2)
         from agent_hub import __version__
         self.assertEqual((t / "state/version").read_text(encoding="utf-8"), __version__)

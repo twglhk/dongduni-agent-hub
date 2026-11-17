@@ -1,9 +1,3 @@
-"""Lanes in terminal windows (tmux, Orca) against stand-in terminal apps and stand-in interactive agents.
-
-The stand-in terminal app really starts each window's command, so the launcher script, the lane's environment,
-Claude's hooks and Codex's notify all run for real; no model is called. POSIX only: on Windows the launcher is a
-.cmd file and tmux does not exist."""
-
 import json
 import os
 import socket
@@ -23,8 +17,6 @@ from agent_hub.store import Store
 from tests.helpers import make_home
 from tests.test_runtimes import script, wait_for
 
-# One stand-in for both tmux and orca (picked by its file name). Windows are processes it starts in their own
-# process group; typed text goes to a file the process reads.
 FAKE_TERM = r'''#!PY
 import json, os, signal, subprocess, sys
 state_dir = os.environ["FAKE_TERM_DIR"]
@@ -97,8 +89,6 @@ elif sub == "close":
     kill(opt(args, "--terminal"))
 '''
 
-# Interactive Claude Code: the first prompt is the last argument, later ones are typed lines. Each turn runs the
-# hooks from --settings with what Claude would pass on stdin, and writes the reply to a transcript.
 FAKE_TUI_CLAUDE = r'''#!PY
 import json, os, re, subprocess, sys, time
 args = sys.argv[1:]
@@ -143,7 +133,6 @@ while True:
     time.sleep(0.05)
 '''
 
-# Interactive Codex: reports each finished turn to its notify program, with the JSON as the last argument.
 FAKE_TUI_CODEX = r'''#!PY
 import json, os, re, subprocess, sys, time
 args = sys.argv[1:]
@@ -167,7 +156,6 @@ while True:
     time.sleep(0.05)
 '''
 
-# The OpenCode TUI: its own server answers the tower's HTTP calls.
 FAKE_TUI_OPENCODE = r'''#!PY
 import json, os, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -240,7 +228,7 @@ class TerminalTest(unittest.TestCase):
             os.environ.pop(k, None)
 
     def settle(self, lane: str = "hub") -> None:
-        """Idle, and the turn's last hook has run (the transcript can show the end a moment before Stop)."""
+        # the transcript can show the end a moment before the Stop hook has run
         wait_for(lambda: self.rt.status(lane) == "idle"
                  and json.loads(signal_path(self.cfg.home, lane).read_text()).get("state") == "idle")
 
@@ -271,7 +259,7 @@ class TerminalTest(unittest.TestCase):
         self.settle()
         first = self.calls()[0]
         self.assertEqual(first["argv"][first["argv"].index("--session-id") + 1], sid)
-        self.assertNotIn("-p", first["argv"])  # interactive, not headless
+        self.assertNotIn("-p", first["argv"])
         self.assertEqual(first["argv"][first["argv"].index("--model") + 1], "opus")
         self.assertIn("bypassPermissions", first["argv"])
         self.assertEqual((first["lane"], first["home"]), ("hub", str(self.cfg.home)))
@@ -284,9 +272,9 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(self.rt.status("hub"), "busy")
         wait_for(lambda: self.rt.last_text("hub") == ["did: second"])
         self.settle()
-        record_signal(self.cfg.home, "hub", {"hook_event_name": "UserPromptSubmit"})  # a person typed in the window
+        record_signal(self.cfg.home, "hub", {"hook_event_name": "UserPromptSubmit"})
         self.assertEqual(self.rt.status("hub"), "busy")
-        with self.assertRaises(RuntimeFailure):  # the tower waits for the turn to end
+        with self.assertRaises(RuntimeFailure):
             self.rt.send("hub", sid, "third")
         record_signal(self.cfg.home, "hub", {"hook_event_name": "Stop"})
 
@@ -294,7 +282,7 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(self.rt.status("hub"), "closed")
         self.assertEqual([k for k in self.windows() if self._alive(k)], [])
         self.assertEqual(sorted(p.name for p in (self.cfg.state_dir / "term").glob("hub*")),
-                         ["hub.settings.json", "hub.sh"])  # notes, handle and signal are gone
+                         ["hub.settings.json", "hub.sh"])
 
     def test_lane_env_reaches_the_agent_but_is_not_written_into_the_launcher(self) -> None:
         data = json.loads((self.cfg.home / ".tower/tower.json").read_text())
@@ -333,9 +321,9 @@ class TerminalTest(unittest.TestCase):
         stop_hooks = json.loads(signal_path(self.cfg.home, "hub").read_text())["at"]
         subprocess.run([self.env["TOWER_TMUX_BIN"], "send-keys", "-t", next(iter(self.windows())), "-l", "interrupt me"])
         subprocess.run([self.env["TOWER_TMUX_BIN"], "send-keys", "-t", next(iter(self.windows())), "Enter"])
-        wait_for(lambda: json.loads(signal_path(self.cfg.home, "hub").read_text())["at"] > stop_hooks)  # busy
+        wait_for(lambda: json.loads(signal_path(self.cfg.home, "hub").read_text())["at"] > stop_hooks)
         wait_for(lambda: self.rt.status("hub") == "idle")
-        self.assertEqual(json.loads(signal_path(self.cfg.home, "hub").read_text())["state"], "busy")  # no Stop came
+        self.assertEqual(json.loads(signal_path(self.cfg.home, "hub").read_text())["state"], "busy")
 
     def test_a_person_closing_the_window_closes_the_lane(self) -> None:
         self.rt.open("hub", "hi")
@@ -353,9 +341,9 @@ class TerminalTest(unittest.TestCase):
         record_signal(self.cfg.home, "hub", {"hook_event_name": "PostToolUse"})
         self.assertEqual(self.rt.status("hub"), "busy")
         record_signal(self.cfg.home, "hub", {"hook_event_name": "Notification", "notification_type": "auth_success"})
-        self.assertEqual(self.rt.status("hub"), "busy")  # other notifications change nothing
+        self.assertEqual(self.rt.status("hub"), "busy")
         record_signal(self.cfg.home, "hub", {"hook_event_name": "Notification", "notification_type": "idle_prompt"})
-        self.assertEqual(self.rt.status("hub"), "idle")  # a turn a person interrupted ends without a Stop hook
+        self.assertEqual(self.rt.status("hub"), "idle")
 
     def test_the_persons_own_codex_notify_still_runs(self) -> None:
         mine = self.tmp / "mine.jsonl"
@@ -372,7 +360,7 @@ class TerminalTest(unittest.TestCase):
             os.environ.pop("CODEX_HOME")
         self.assertEqual(json.loads(mine.read_text().splitlines()[0])["type"], "agent-turn-complete")
         argv = self.calls()[0]["argv"]
-        self.assertEqual(len([a for a in argv if a.startswith("notify=")]), 1)  # the tower's, which passes it on
+        self.assertEqual(len([a for a in argv if a.startswith("notify=")]), 1)
 
     def test_reading_codex_notify(self) -> None:
         cfg = self.tmp / "ch"
@@ -400,7 +388,7 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual([k for k in self.windows() if self._alive(k)], [])
         self.assertIn("hub: runtime, terminal or worktree changed", said[0])
         close_changed(self.rt, self.cfg, config_mod.load(self.cfg.home), said.append)
-        self.assertEqual(len(said), 1)  # closed lanes are left alone
+        self.assertEqual(len(said), 1)
 
     def test_usage_counts_each_api_call_once(self) -> None:
         sid = self.rt.open("hub", "hi")
@@ -408,11 +396,11 @@ class TerminalTest(unittest.TestCase):
         transcript = json.loads(signal_path(self.cfg.home, "hub").read_text())["transcript"]
         call = {"id": "msg_1", "content": [{"type": "text", "text": "x"}],
                 "usage": {"input_tokens": 100, "cache_read_input_tokens": 0, "output_tokens": 7}}
-        with open(transcript, "a", encoding="utf-8") as f:  # one call: a thinking line and a text line
+        with open(transcript, "a", encoding="utf-8") as f:
             for _ in range(2):
                 f.write(json.dumps({"type": "assistant", "message": call}) + "\n")
         self.assertEqual(self.rt.usage("hub", sid)["tokens_in"], 10000 + 100)
-        led = self.rt.ledger("hub", sid)  # the same two lines are one call: counted once, one turn more than before
+        led = self.rt.ledger("hub", sid)
         self.assertEqual((led["new"], led["cache"], led["out"]), (1000 + 100, 9000, 50 + 7))
         self.assertEqual(led["turns"], 2)
 
@@ -423,7 +411,7 @@ class TerminalTest(unittest.TestCase):
                         "sys.exit(1)\n")
         os.environ["TOWER_ORCA_BIN"] = str(broken)
         try:
-            with self.assertRaises(RuntimeFailure):  # the engine records "unknown" and opens nothing new
+            with self.assertRaises(RuntimeFailure):
                 self.rt.status("docs")
         finally:
             os.environ["TOWER_ORCA_BIN"] = self.env["TOWER_ORCA_BIN"]
@@ -453,7 +441,7 @@ class TerminalTest(unittest.TestCase):
         wait_for(lambda: self.rt.status("docs") == "idle")
         self.assertEqual(self.rt.last_text("docs"), ["codex did: write the docs"])
         argv = self.calls()[0]["argv"]
-        self.assertNotIn("--skip-git-repo-check", argv)  # exec-only flag
+        self.assertNotIn("--skip-git-repo-check", argv)
         self.assertNotIn("exec", argv)
         self.assertIn("--dangerously-bypass-approvals-and-sandbox", argv)
         tab = next(iter(self.windows().values()))
@@ -470,7 +458,7 @@ class TerminalTest(unittest.TestCase):
         self.assertTrue(self.rt.owned("web"))
         self.assertEqual(self.rt.status("web"), "idle")
         prompt = [c for c in self.calls() if c.get("path", "").endswith("/prompt_async")][0]
-        self.assertEqual(prompt["body"]["parts"][0]["text"], "build the page")  # over HTTP, not typed
+        self.assertEqual(prompt["body"]["parts"][0]["text"], "build the page")
         self.assertEqual(prompt["lane"], "web")
         self.rt.close("web")
         self.assertEqual(self.rt.status("web"), "closed")
@@ -483,7 +471,7 @@ class SignalTest(unittest.TestCase):
         self.assertEqual(json.loads(signal_path(home, "hub").read_text())["state"], "busy")
         record_signal(home, "hub", {"hook_event_name": "Stop"})
         data = json.loads(signal_path(home, "hub").read_text())
-        self.assertEqual((data["state"], data["transcript"]), ("idle", "/t.jsonl"))  # earlier fields stay
+        self.assertEqual((data["state"], data["transcript"]), ("idle", "/t.jsonl"))
         record_signal(home, "docs", {"type": "agent-turn-complete", "thread-id": "th", "last-assistant-message": "ok"})
         data = json.loads(signal_path(home, "docs").read_text())
         self.assertEqual((data["state"], data["last"], data["session"]), ("idle", "ok", "th"))
