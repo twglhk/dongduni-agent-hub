@@ -52,3 +52,5 @@ All tower state is one SQLite file. Copy it safely while running and ship it to 
 ```sh
 sqlite3 .tower/state/tower.db ".backup /tmp/tower.db" && aws s3 cp /tmp/tower.db s3://<bucket>/tower/$(date +%F).db
 ```
+
+For a daily job with an integrity check, size verification, pruning, a systemd timer and restore steps, use the shipped script: [tower-db-backup.md](tower-db-backup.md).

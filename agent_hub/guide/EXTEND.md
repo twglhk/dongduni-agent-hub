@@ -82,6 +82,7 @@ def on_tick(ctx):
 - `on_tick(ctx)` once per tick. `ctx`: `cfg`, `store`, `log`, `now`.
 - Hooks run in the tower loop: keep them quick, and hand slow work to a thread. Changes made while the tower was stopped are not replayed.
 - Hooks run only in the workspace's own tower.
+- A worked `on_tick` example ships with the package: `tower_db_backup_notify.py` (see `dah guide tower-db-backup`) tells the hub once when the tower.db backup fails or goes stale. It posts with `ctx["store"].push(...)`, which is outside the stable list below.
 
 ## Runtimes and terminal apps
 

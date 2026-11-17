@@ -148,7 +148,7 @@ CPU is what grows with concurrent sessions: expect about one vCPU per two to thr
 
 Reinstalling the package under a live tower is the riskiest routine thing on a server. The infra lane's instructions carry the same checklist ("Updating or reinstalling on a server"). The short version:
 
-1. Copy `tower.db` first (`sqlite3 .tower/state/tower.db ".backup /tmp/tower-before-update.db"`).
+1. Back up `tower.db` first (the backup script in [tower-db-backup.md](tower-db-backup.md) with `--why restart`, or `sqlite3 .tower/state/tower.db ".backup /tmp/tower-before-update.db"`). Stop if it fails.
 2. Do it when no team lane is working (`dah status` shows none `busy`).
 3. Note the version that runs now (`dah --version`, or `uv tool list`) so you can go back: `uv tool install --force dongduni-agent-hub==<old>`.
 4. Install a fixed copy, never an editable one. Then `dah update` (or reinstall) and restart: `sudo systemctl restart agent-hub.service`.
@@ -174,4 +174,4 @@ Optional team policy: require a human approval (a board item) before any reinsta
 
 ## Backups
 
-All tower state is one SQLite file, `.tower/state/tower.db`. Copy it off the machine regularly; see Backups in [aws.md](aws.md) for the one-liner.
+All tower state is one SQLite file, `.tower/state/tower.db`. `dah guide tower-db-backup` ships a daily backup script (rclone, S3 or a folder) with systemd timer, restore steps and a failure notice for the hub: [tower-db-backup.md](tower-db-backup.md).

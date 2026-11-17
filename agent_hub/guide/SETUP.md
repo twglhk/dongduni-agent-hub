@@ -2,7 +2,7 @@
 
 You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first request has gone through the hub, and you have watched one request to infra go round trip.
 
-`dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws|oauth2-proxy|linux-server` prints the guides for reaching the board and for running the tower on a server.
+`dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws|oauth2-proxy|linux-server|tower-db-backup` prints the guides for reaching the board and for running the tower on a server.
 
 ## Ground rules
 
