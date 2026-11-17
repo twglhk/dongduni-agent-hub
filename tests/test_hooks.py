@@ -204,7 +204,6 @@ class Wiring(unittest.TestCase):
 
 
 class HookCommand(unittest.TestCase):
-    """hook_command: the module in an installed package, the file path in a clone; quoting per OS."""
 
     def test_clone_runs_the_file_by_path(self) -> None:
         with mock.patch.object(sys, "prefix", tempfile.gettempdir() + "/elsewhere-prefix"):

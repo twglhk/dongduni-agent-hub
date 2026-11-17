@@ -9,20 +9,16 @@ The columns are found by header name. A process card is `<skills>/<skill>/refere
 `# Process: <type> — v2`, a `Status: confirmed` line and a table of stages (columns `#`, `Stage`, `Input`, `Output`,
 `Gate`, `Passed by`, `Pattern card`). A pattern card is the file the `Pattern card` cell names (`patterns/<name>.md`,
 below the skill's `references/`): a title ending `— v2` and a `## Status` heading followed by the status line.
-A Process or Pattern card cell may instead name a repo path (`demo/processes/planning.md`); it is looked up from the
-library's folder upwards, and the skill cell may be a document path (`docs/demo/skill.md`) instead of a skill folder.
 Statuses: confirmed and tuned are green, collecting, draft and reviewed amber, anything else (or no file) grey.
 
 A brief starts with a `Line:` header that says which row and stage the task works on:
 
     Line: #3 Storyboard · stage 2 · process confirmed · pattern confirmed · make
     Line: #3 Storyboard · stage 1-2 · process draft · pattern draft · prepare
-    Line: new Cover art · prepare
     Line: none · chore: move the exports folder
 
 Modes: `prepare` (build or fix the method itself), `make` (run it), `fix` (send-back of earlier work). `make` is refused
-while the row's process is not confirmed or its pattern is neither confirmed nor tuned. `new <type>` is the prepare task
-that writes a row the library does not have yet; it takes no other mode. `config.require_line` turns the
+while the row's process is not confirmed or its pattern is neither confirmed nor tuned. `config.require_line` turns the
 gate on for `dah task`; without it the header is read when it is there and nothing is refused.
 """
 
@@ -62,14 +58,12 @@ _MD_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.md\b")
 
 
 def skills_root(home: Path, configured: str = "") -> Path:
-    """The engine's `skills` folder, else the first of SKILLS_DIRS that exists (Claude Code reads .claude/skills)."""
     if configured:
         return home / configured
     return next((home / d for d in SKILLS_DIRS if (home / d).is_dir()), home / SKILLS_DEFAULT)
 
 
 def repo_file(start: Path, text: str) -> Path | None:
-    """The first `*.md` path in `text` that exists below `start` or one of its parents (a library sits in a subfolder)."""
     for tok in _MD_PATH.findall(text or ""):
         if ".." in tok.split("/"):
             continue
@@ -80,7 +74,6 @@ def repo_file(start: Path, text: str) -> Path | None:
 
 
 def _rel(root: Path, f: Path) -> str:
-    """`f` relative to `root`, with `..` when outside it: callers join it back onto `root`."""
     return os.path.relpath(f, root)
 
 
@@ -149,8 +142,7 @@ def pattern_card(root: Path, rel: str) -> dict[str, Any]:
 
 def parse_process(root: Path, skill: str, rel: str) -> dict[str, Any] | None:
     """A process card: {path, type, version, status, stages: [{n, name, input, output, gate, by, card}]}; None if no file.
-    `root` is the skills directory; pattern card paths are resolved below `<root>/<skill>/references/`, or as repo paths
-    from the process card's folder upwards."""
+    `root` is the skills directory; pattern card paths are resolved below `<root>/<skill>/references/`."""
     text = _read(root / rel)
     if not text:
         return None
@@ -220,7 +212,7 @@ _SKILL_CALL = re.compile(r"""skill\(\s*["']([A-Za-z0-9_-]+)["']\s*\)""")
 def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None = None, lane: str = "",
                 home: Path | None = None) -> list[dict[str, Any]]:
     """Skills a lane runs: `skill("name")` mentions in its role file, plus the skill column of the library rows it owns.
-    `found` says whether a folder of that name exists in the skills directory, or, for a document path, the file below `home`."""
+    `found` says whether a folder of that name exists in the skills directory."""
     names = list(dict.fromkeys(_SKILL_CALL.findall(role_text)))
     for r in rows or []:
         if r["lane"] == lane and r["skill"] and r["skill"] not in names:
@@ -252,7 +244,6 @@ def stage_of(brief: str) -> str | None:
 
 
 def parse_line(brief: str) -> tuple[str | None, str | None, str | None]:
-    """(row, mode, error). A chore header gives (None, None, None), a new row (None, "prepare", None); an error is a sentence for the human."""
     head = first_line(brief)
     if _NONE.match(head):
         return None, None, None
@@ -385,7 +376,7 @@ def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
             role = cfg.instructions(lid).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             role = ""
-        out[lid] = lane_skills(role, skills_dir, rows, lid, cfg.home)  # type: ignore[arg-type]
+        out[lid] = lane_skills(role, skills_dir, rows, lid, cfg.home)
     out[""] = [{"name": n, "found": (skills_dir / n).is_dir()} for n in e.skill_names]
     return out
 

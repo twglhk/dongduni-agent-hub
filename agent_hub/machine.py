@@ -6,8 +6,6 @@ Cut points come from the machine itself (its cores and RAM), not fixed numbers:
 - memory = share of RAM free to hand out without swapping: green >= 20 %, amber >= 10 %, red below. On macOS the
            kernel's own memory pressure level (the signal behind Activity Monitor's graph) wins when it is readable.
 - swap   = swap in use as a share of RAM: green < 10 %, amber < 25 %, red from 25 %.
-- disks  = each data disk's used share (as `df` counts it): green < 85 %, amber < 95 %, red from 95 %. The root
-           filesystem first, then other real disks; /boot partitions and snap images are left out.
 Reads: macOS `sysctl`, `vm_stat`, `ps`; Linux `/proc`; Windows memory through GlobalMemoryStatusEx and nothing else.
 Whatever cannot be read is None and shows as "unknown" on the board, never as 0.
 
@@ -31,7 +29,7 @@ LOAD_CUTS = (2.0, 4.0)     # per core
 CPU_CUTS = (60.0, 85.0)    # percent of all cores
 FREE_CUTS = (20.0, 10.0)   # percent of RAM free (low is bad)
 SWAP_CUTS = (10.0, 25.0)   # percent of RAM swapped out
-DISK_CUTS = (85.0, 95.0)   # percent of a disk used
+DISK_CUTS = (85.0, 95.0)
 DISK_FS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "reiserfs", "ntfs", "ntfs3", "exfat", "vfat"}
 PRESSURE = {"1": "g", "2": "a", "4": "r"}
 TTL = 5.0
@@ -114,7 +112,6 @@ def cpu_from_ps(text: str, cores: int) -> float | None:
 # ---------------------------------------------------------------- readers per system
 
 def parse_mounts(text: str) -> list[str]:
-    """Mount points of real disks in /proc/mounts: root first, one per device, no /boot or snap images."""
     seen: set[str] = set()
     out: list[str] = []
     for line in text.splitlines():
@@ -242,7 +239,6 @@ def grade(raw: dict[str, Any]) -> dict[str, Any]:
            "load_lv": level(per_core, *LOAD_CUTS), "cpu_lv": level(cpu, *CPU_CUTS), "mem_lv": mem_lv,
            "swap_lv": level(swap_pct, *SWAP_CUTS)}
     out["lv"] = worse(out["load_lv"], out["cpu_lv"], out["mem_lv"], out["swap_lv"])
-    # disks stay out of "lv": that grade is the board's live machine dot, and a full disk is not a busy machine
     out["disks"] = [{"mount": d["mount"], "total_gb": _r(d["total_gb"]), "used_gb": _r(d["used_gb"]), "free_gb": _r(d["free_gb"]),
                      "used_pct": _r(100.0 * d["used_gb"] / d["total_gb"], 0) if d["total_gb"] else None,
                      "lv": level(100.0 * d["used_gb"] / d["total_gb"], *DISK_CUTS) if d["total_gb"] else None}

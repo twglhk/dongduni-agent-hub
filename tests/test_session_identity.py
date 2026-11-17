@@ -1,6 +1,3 @@
-"""Who a `dah` call is: inside a tower session TOWER_LANE wins. A parallel session (docs#2) writes as itself even when
-it passes `--as <base lane>`, so a wrapped lets go of that session's own task; `--as` another lane is refused."""
-
 import os
 import subprocess
 import sys
@@ -62,7 +59,7 @@ class SessionIdentityTest(unittest.TestCase):
         self.assertEqual(len(self.s.tasks(("queued",), limit=50)), 0)
         self.dah("--as", "web", "report", "wrapped", "x", lane="docs", ok=False)
         self.assertTrue(all(self.s.task(t)["state"] == "running" for t in tids.values()))
-        self.dah("--as", "docs#2", "status")  # by hand (no TOWER_LANE) --as still picks the lane
+        self.dah("--as", "docs#2", "status")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,3 @@
-"""Leftover lane processes: found, stopped on the second sighting, the hub told."""
-
 import os
 import subprocess
 import sys
@@ -44,12 +42,12 @@ class StaleTest(unittest.TestCase):
         self.assertIn("tower.json", got[30][1])
 
     def test_orphan_job_older_than_the_live_session_goes_newer_stays(self) -> None:
-        procs = [P(40, 1, "docs", 3, "python serve.py"),  # left by the session before
+        procs = [P(40, 1, "docs", 3, "python serve.py"),
                  P(10, 1, "docs", 5, f"claude --session-id {S2} x"),
-                 P(41, 1, "docs", 8, "python serve.py")]  # started by this session, its parent died since
+                 P(41, 1, "docs", 8, "python serve.py")]
         self.assertEqual(list(self.pick(procs, {"docs": S2})), [40])
 
-    def test_orphan_without_live_root_stays(self) -> None:  # e.g. an opencode server: no session id in argv
+    def test_orphan_without_live_root_stays(self) -> None:
         self.assertEqual(self.pick([P(40, 1, "docs", 3, "opencode serve --port 4300")], {"docs": "ses_x"}), {})
 
 
@@ -93,13 +91,13 @@ class EngineLeftoverTest(unittest.TestCase):
     def test_stopped_on_second_check_and_hub_told(self) -> None:
         self.procs = [P(10, 1, "docs", 5, f"claude --session-id {S1} x"), P(11, 10, "docs", 6)]
         self.e._leftovers()
-        self.assertEqual(self.stopped, [])  # first sighting
+        self.assertEqual(self.stopped, [])
         self.clock.tick(LEFTOVER_SECONDS - 1)
         self.e._leftovers()
-        self.assertEqual(self.stopped, [])  # not due yet
+        self.assertEqual(self.stopped, [])
         self.clock.tick(2)
         self.e._leftovers()
-        self.assertEqual(self.stopped, [11, 10])  # children first
+        self.assertEqual(self.stopped, [11, 10])
         news = self.news()
         self.assertEqual(len(news), 1)
         self.assertIn("docs: pid 10 and 1 child", news[0])
@@ -111,7 +109,7 @@ class EngineLeftoverTest(unittest.TestCase):
         self.procs = []
         self.clock.tick(LEFTOVER_SECONDS)
         self.e._leftovers()
-        self.procs = [P(10, 1, "docs", 5, f"claude --session-id {S1} x")]  # back: a first sighting again
+        self.procs = [P(10, 1, "docs", 5, f"claude --session-id {S1} x")]
         self.clock.tick(LEFTOVER_SECONDS)
         self.e._leftovers()
         self.assertEqual(self.stopped, [])

@@ -24,8 +24,6 @@ RUNTIMES = ("opencode", "claude", "codex")
 TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
-# Team lane sessions are asked to hand off past this many k tokens of context. Off (0) by default: a workspace turns it
-# on with `context_limit_k` in tower.json (a number, or a table by model name).
 DEFAULT_CONTEXT_LIMIT_K = 0
 INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
 DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
@@ -75,7 +73,7 @@ class Lane:
     worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
-    context_limit_k: int | None = None  # team lanes and the hub: its own context limit (None = the top-level one)
+    context_limit_k: int | None = None
 
 
 @dataclass
@@ -118,17 +116,16 @@ class Config:
     max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
     heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
     memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
-    context_limit_k: int = DEFAULT_CONTEXT_LIMIT_K  # a team lane session over this many k tokens is asked to hand off; 0 = off
-    model_limits_k: dict[str, int] = field(default_factory=dict)  # per-model limits: a key found in the session's model
-                                 # name ("sonnet" in "claude-sonnet-5-5") beats context_limit_k
+    context_limit_k: int = DEFAULT_CONTEXT_LIMIT_K
+    model_limits_k: dict[str, int] = field(default_factory=dict)
     instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
     done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
     scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
     scratch_grace: int = 600     # seconds after a task closes before its scratch is swept
-    branch_sync: bool = False    # a worktree lane's branch takes the workspace's branch before each task (branchsync.py)
-    branch_sync_seconds: int = 0  # >0: every N seconds idle worktree lane branches take main too; 0 = off
-    branch_sync_push: bool = False  # after such a catch-up, push the branch to origin
-    leftover_sweep: bool = False  # stop lane processes left behind by closed sessions, Linux only (leftovers.py)
+    branch_sync: bool = False
+    branch_sync_seconds: int = 0
+    branch_sync_push: bool = False
+    leftover_sweep: bool = False
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -160,8 +157,6 @@ class Config:
         return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
 
     def context_limit(self, lane: str, model: str = "") -> int:
-        """k tokens a team lane session may hold before the tower asks for a handoff (0 = no limit): the lane's own
-        number, else the limit of the model it runs (`model`, the task's, or the lane's), else context_limit_k."""
         ln = self.lanes.get(base_lane(lane))
         if not ln or ln.kind != "team":
             return 0
@@ -174,8 +169,6 @@ class Config:
         return self.context_limit_k
 
     def hub_context_limit(self, lane: str) -> int:
-        """k tokens the hub session may hold before the tower asks it to hand over to a fresh hub session: the hub
-        lane's own context_limit_k. Not the top-level one (that is for team lanes): 0 = the engine's HUB_ROTATE_K."""
         ln = self.lanes.get(lane)
         return (ln.context_limit_k or 0) if ln and ln.kind == HUB else 0
 
@@ -375,7 +368,6 @@ def _whole_k(v: Any) -> int:
 
 
 def _limit_k(raw: dict[str, Any]) -> int:
-    """The top-level limit for a model the table does not name (the whole number, or the table's "default")."""
     v = raw.get("context_limit_k", DEFAULT_CONTEXT_LIMIT_K)
     if isinstance(v, dict):
         return _whole_k(v.get("default", DEFAULT_CONTEXT_LIMIT_K))
@@ -383,7 +375,6 @@ def _limit_k(raw: dict[str, Any]) -> int:
 
 
 def _model_limits_k(raw: dict[str, Any]) -> dict[str, int]:
-    """The per-model part of a table context_limit_k, keys lower-cased; {} for a whole number."""
     v = raw.get("context_limit_k")
     if not isinstance(v, dict):
         return {}
@@ -394,8 +385,6 @@ def _model_limits_k(raw: dict[str, Any]) -> dict[str, int]:
 
 
 def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
-    """done_gate, scratch_root, scratch_grace, usage_percent, branch_sync* (donegate.py, scratch.py, claudeusage.py,
-    branchsync.py)."""
     from .claudeusage import PROVIDERS
     from .donegate import parse
     from .scratch import check_root

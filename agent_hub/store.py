@@ -239,7 +239,7 @@ class Store:
                 if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
             have_lanes = {r[1] for r in con.execute("PRAGMA table_info(lanes)")}
-            for col, decl in LANE_COLUMNS:  # a hub's handoff: databases made before it get NULL columns
+            for col, decl in LANE_COLUMNS:
                 if col not in have_lanes:
                     con.execute(f"ALTER TABLE lanes ADD COLUMN {col} {decl}")
             have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
@@ -837,7 +837,6 @@ class Store:
             return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
 
     def recent_sessions(self, lane: str, limit: int = 5) -> list[str]:
-        """Session ids the lane ran most recently, newest first (usage readings and task activity)."""
         with self.conn() as con:
             rows = con.execute(
                 "SELECT session FROM (SELECT session, updated AS at FROM usage WHERE lane=? UNION ALL "
@@ -850,7 +849,6 @@ class Store:
         return out[:limit]
 
     def set_session_ctx(self, lane: str, session: str, ctx_k: int) -> None:
-        """Overwrite a session's last context reading (after a compaction the old one no longer holds)."""
         with self.conn() as con:
             con.execute("UPDATE usage SET ctx_k=? WHERE lane=? AND session=?", (ctx_k, lane, session))
 

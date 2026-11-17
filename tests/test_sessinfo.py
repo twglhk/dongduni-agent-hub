@@ -1,6 +1,3 @@
-"""The model and effort each lane session really runs with, read from its Claude transcript (for the board's session
-cards); the hub picks a model and effort per infra memo with `dah infra --model/--effort`."""
-
 import json
 import tempfile
 import unittest
@@ -52,7 +49,7 @@ class TranscriptTest(unittest.TestCase):
         last = sessinfo.describe("claude", None, "live", {}, "sonnet", self.root)
         self.assertEqual((last["text"], last["state"]), ("Opus 5.5 · medium", "last"))
         new = sessinfo.describe("claude", "fresh", None, {"model": "opus", "effort": "high"}, None, self.root)
-        self.assertEqual((new["text"], new["state"]), ("Opus · high", "live"))  # opened with these, no answer yet
+        self.assertEqual((new["text"], new["state"]), ("Opus · high", "live"))
         nxt = sessinfo.describe("claude", None, None, {}, "sonnet", self.root)
         self.assertEqual((nxt["text"], nxt["state"]), ("Sonnet · unknown", "next"))
         self.assertTrue(nxt["why"])
@@ -77,7 +74,7 @@ class TranscriptTest(unittest.TestCase):
         self.write("gone", [turn("claude-opus-5-5", "high")])
         run = sessinfo.for_lane(cfg, s, "docs", "claude", "sonnet", None, self.root)
         self.assertEqual((run["text"], run["state"]), ("Opus 5.5 · high", "last"))
-        s.record_usage("web", "w1", "codex", 1, 1, None, 1)  # not a claude lane: no transcript is read
+        s.record_usage("web", "w1", "codex", 1, 1, None, 1)
         run = sessinfo.for_lane(cfg, s, "web", "codex", "gpt-5", None, self.root)
         self.assertEqual((run["text"], run["state"]), ("gpt-5 · unknown", "next"))
 

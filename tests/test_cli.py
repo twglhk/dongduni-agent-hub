@@ -226,7 +226,6 @@ if __name__ == "__main__":
 
 
 class RestartTest(unittest.TestCase):
-    """`dah restart`: stops the tower loop only, then starts it here unless a service brings it back."""
 
     def setUp(self) -> None:
         from unittest import mock
@@ -249,7 +248,7 @@ class RestartTest(unittest.TestCase):
         with self.mock.patch.object(self.cli, "stop_loop", return_value=stopped), \
                 self.mock.patch.object(self.cli, "tower_pid", side_effect=pids + [pids[-1]] * 400), \
                 contextlib.redirect_stdout(out):
-            self.cli.cmd_restart(None)  # type: ignore[arg-type]
+            self.cli.cmd_restart(None)
         return out.getvalue()
 
     def test_a_running_tower_is_stopped_and_started_here(self) -> None:
@@ -266,4 +265,4 @@ class RestartTest(unittest.TestCase):
         out = self.run_restart(None, [None])
         self.assertIn("the tower was not running", out)
         self.assertEqual(self.calls, ["start"])
-        self.assertEqual(self.cli.time.sleep.call_count, 0)  # type: ignore[attr-defined]
+        self.assertEqual(self.cli.time.sleep.call_count, 0)

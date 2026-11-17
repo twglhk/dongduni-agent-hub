@@ -1,11 +1,9 @@
-"""Context limit (handoff past context_limit_k, off by default), compact mode, and the hub's handoff."""
-
 import contextlib
 import io
 import unittest
 
 from agent_hub.config import ConfigError
-from agent_hub.engine import HUB_HANDOFF_WAIT, HUB_ROTATE_K, SETTLE_SECONDS, Engine, handoff_mode
+from agent_hub.engine import COMPACT_TYPED_GAP_SECONDS, HUB_HANDOFF_WAIT, HUB_ROTATE_K, SETTLE_SECONDS, Engine, handoff_mode
 from agent_hub.hooks import pending_urgent
 from agent_hub.store import Store
 from tests.helpers import Clock, FakeRuntime, make_home
@@ -40,13 +38,13 @@ class Base(unittest.TestCase):
 class ConfigTest(Base):
     def test_off_by_default_and_per_lane_limits(self) -> None:
         self.build(max_lanes=2)
-        self.assertEqual(self.cfg.context_limit("docs"), 0)  # no limit unless tower.json sets one
-        self.assertEqual(self.cfg.context_limit("web"), 50)  # a lane's own number works on its own
+        self.assertEqual(self.cfg.context_limit("docs"), 0)
+        self.assertEqual(self.cfg.context_limit("web"), 50)
         self.build(context_limit_k=120)
         self.assertEqual(self.cfg.context_limit("docs"), 120)
         self.assertEqual(self.cfg.context_limit("web"), 50)
-        self.assertEqual(self.cfg.context_limit("hub"), 0)  # hubs: hub_context_limit
-        self.assertEqual(self.cfg.hub_context_limit("hub"), 0)  # not the team lanes' number: HUB_ROTATE_K
+        self.assertEqual(self.cfg.context_limit("hub"), 0)
+        self.assertEqual(self.cfg.hub_context_limit("hub"), 0)
         self.assertEqual(self.cfg.hub_context_limit("docs"), 0)
         self.assertEqual(make_home({"hub": {"runtime": "claude", "context_limit_k": 10}}).hub_context_limit("hub"), 10)
         with self.assertRaises(ConfigError):
@@ -54,7 +52,7 @@ class ConfigTest(Base):
         with self.assertRaises(ConfigError):
             make_home(LANES, context_limit_k="lots")
 
-    def test_per_model_limits(self) -> None:  # the lane's number, else its model's, else the default
+    def test_per_model_limits(self) -> None:
         lanes = {"hub": {"runtime": "claude"}, "infra": {"runtime": "claude"},
                  "ads": {"runtime": "claude", "model": "sonnet"}, "game": {"runtime": "claude", "model": "opus"},
                  "long": {"runtime": "claude", "model": "claude-fable-5-2"}, "plain": {"runtime": "claude"},
@@ -62,10 +60,10 @@ class ConfigTest(Base):
         self.build(lanes, context_limit_k={"default": 400, "Sonnet": 300, "opus": 400, "fable": 500})
         c = self.cfg
         self.assertEqual([c.context_limit(x) for x in ("ads", "game", "long", "plain", "own")], [300, 400, 500, 400, 50])
-        self.assertEqual(c.context_limit("game", "claude-sonnet-5-5"), 300)  # the task's model from its brief wins
+        self.assertEqual(c.context_limit("game", "claude-sonnet-5-5"), 300)
         self.assertEqual(c.context_limit("own", "sonnet"), 50)
         self.assertEqual(c.context_limit("hub"), 0)
-        self.assertEqual(make_home(lanes, context_limit_k={"opus": 1}).context_limit("plain"), 0)  # no default: off
+        self.assertEqual(make_home(lanes, context_limit_k={"opus": 1}).context_limit("plain"), 0)
         for bad in ({"opus": "lots"}, {"default": -1}, {" ": 10}):
             with self.assertRaises(ConfigError):
                 make_home(lanes, context_limit_k=bad)
@@ -77,8 +75,8 @@ class ConfigTest(Base):
         self.tick()
         self.ctx("docs", 350)
         self.tick()
-        self.assertEqual([m for m in self.s.pending("docs") if m["kind"] == "rotate"], [])  # opus: the 400 default
-        self.s.update_task(t, model="sonnet")  # the brief ran it on sonnet: 300
+        self.assertEqual([m for m in self.s.pending("docs") if m["kind"] == "rotate"], [])
+        self.s.update_task(t, model="sonnet")
         self.tick()
         rot = [m["text"] for m in self.s.pending("docs") if m["kind"] == "rotate"]
         self.assertEqual(len(rot), 1)
@@ -108,7 +106,7 @@ class ContextLimitTest(Base):
         self.tick()
         self.assertEqual([m for m in self.s.pending("docs") if m["kind"] == "rotate"], [])
         self.ctx("docs", 130)
-        self.tick()  # busy Claude lane: an urgent tell for its next tool call, and a message for when it is idle
+        self.tick()
         self.assertEqual(pending_urgent(self.cfg.home, "docs"), 1)
         self.assertEqual(len([m for m in self.s.pending("docs") if m["kind"] == "rotate"]), 1)
         self.rt.st["docs"] = "idle"
@@ -118,14 +116,14 @@ class ContextLimitTest(Base):
         self.assertIn("[mode] fresh", asks[0][2])
         self.rt.st["docs"] = "idle"
         self.tick(2)
-        self.assertEqual(len([x for x in self.rt.sent if "130k" in x[2]]), 1)  # asked once
+        self.assertEqual(len([x for x in self.rt.sent if "130k" in x[2]]), 1)
         self.s.update_task(t, handoff="[mode] fresh [now] x", rotate_ready=self.clock())
         self.rt.st["docs"] = "idle"
         self.tick()
         self.assertIn("docs", self.rt.closed)
         self.assertEqual(self.opens("docs"), 2)
         self.assertIn("[now] x", self.rt.opened[-1][1])
-        self.assertEqual(pending_urgent(self.cfg.home, "docs"), 0)  # the old ask does not reach the new session
+        self.assertEqual(pending_urgent(self.cfg.home, "docs"), 0)
         news = self.hub_news()
         self.assertEqual(len(news), 1)
         self.assertIn(f"task #{t}", news[0])
@@ -149,7 +147,7 @@ class ContextLimitTest(Base):
         self.assertIsNone(self.s.task(t)["rotate_ready"])
         self.assertEqual(self.s.session_ctx("docs", self.s.lane("docs")["session"]), 0)
         self.assertIn("compacted", self.hub_news()[0])
-        self.ctx("docs", 125)  # it grew past the limit again later: asked again
+        self.ctx("docs", 125)
         self.rt.st["docs"] = "idle"
         self.tick(2)
         self.assertEqual(len([x for x in self.rt.sent if "125k" in x[2]]), 1)
@@ -168,6 +166,25 @@ class ContextLimitTest(Base):
         cont = [x for x in self.rt.sent if "compacted" in x[2]]
         self.assertEqual(len(cont), 1)
         self.assertIn("[now] y", cont[0][2])
+
+    def test_compact_typed_sends_the_continue_message_after_the_gap_even_while_busy(self) -> None:
+        self.build(max_lanes=2)
+        t = self.s.add_task("docs", "A", "x")
+        self.tick()
+        self.rt.compact_how = "typed"
+        self.s.update_task(t, handoff="[mode] compact [now] z", rotate_ready=self.clock())
+        self.rt.st["docs"] = "idle"
+        self.tick(step=COMPACT_TYPED_GAP_SECONDS - 1)
+        self.assertEqual(self.rt.sent, [])
+        self.assertEqual(self.rt.st["docs"], "busy")
+        self.tick(step=1)
+        self.assertEqual(self.rt.sent, [])
+        self.tick()
+        cont = [x for x in self.rt.sent if "compacted" in x[2]]
+        self.assertEqual(len(cont), 1)
+        self.assertIn("[now] z", cont[0][2])
+        self.tick(3)
+        self.assertEqual(len([x for x in self.rt.sent if "compacted" in x[2]]), 1)
 
     def test_compact_not_possible_falls_back_to_a_fresh_session(self) -> None:
         self.build(max_lanes=2)
@@ -192,7 +209,6 @@ class ContextLimitTest(Base):
 
 
 class HubHandoffTest(Base):
-    """A quiet hub past its limit hands over to a fresh hub session through `dah report handoff`."""
 
     def setUp(self) -> None:
         self.build({"hub": {"runtime": "claude", "context_limit_k": 100}, "infra": {"runtime": "claude"},
@@ -225,7 +241,7 @@ class HubHandoffTest(Base):
     def test_not_while_news_waits(self) -> None:
         self.rt.ctx["hub"] = 150
         self.s.push("hub", "docs", "done", "Done: docs")
-        self.tick(4, step=5)  # the news goes in first; the hub is busy with it
+        self.tick(4, step=5)
         self.assertEqual(self.asks(), [])
         self.assertTrue(any("Done: docs" in x[2] for x in self.rt.sent))
 
@@ -237,7 +253,7 @@ class HubHandoffTest(Base):
         self.assertIn("150k", asks[0])
         self.rt.st["hub"] = "idle"
         self.tick(8, step=5)
-        self.assertEqual(len(self.asks()), 1)  # asked once per session
+        self.assertEqual(len(self.asks()), 1)
         self.assertEqual(self.opens("hub"), 1)
         sid = self.s.lane("hub")["session"]
         self.s.set_lane("hub", handoff="[now] x [open] requests #7", handoff_session=sid)

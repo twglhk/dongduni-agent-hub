@@ -241,7 +241,6 @@ class TwoEnginesSkillsTest(unittest.TestCase):
 
 
 class RepoPathLayoutTest(unittest.TestCase):
-    """A library whose cells name repo paths: process card, pattern cards, a skill document; skills in .claude/skills."""
 
     def setUp(self) -> None:
         import tempfile

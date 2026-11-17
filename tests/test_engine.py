@@ -85,10 +85,10 @@ class EngineTest(unittest.TestCase):
         self.rt.st[HUB] = "idle"
         self.rt.ctx[HUB] = 999
         self.run_ticks(10, step=5)
-        self.assertNotIn(HUB, self.rt.closed)  # asked to hand off first
+        self.assertNotIn(HUB, self.rt.closed)
         self.assertEqual(len([x for x in self.rt.sent if "dah report handoff" in x[2]]), 1)
         self.rt.st[HUB] = "idle"
-        self.clock.tick(HUB_HANDOFF_WAIT)  # it never hands off: renewed anyway once quiet
+        self.clock.tick(HUB_HANDOFF_WAIT)
         self.run_ticks(10, step=5)
         self.assertIn(HUB, self.rt.closed)
         self.assertEqual(sum(1 for lane, _ in self.rt.opened if lane == HUB), 2)

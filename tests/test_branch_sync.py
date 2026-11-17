@@ -14,7 +14,6 @@ def git(at: Path, *a: str) -> str:
 
 
 class BranchSyncTest(unittest.TestCase):
-    """A worktree lane session's branch takes main before each task; a conflict keeps the task closed."""
 
     extra: dict = {}
 
@@ -37,7 +36,7 @@ class BranchSyncTest(unittest.TestCase):
         git(self.home, "commit", "-qm", f"main {name}")
 
     def test_a_branch_without_its_own_commits_is_fast_forwarded(self) -> None:
-        self.assertEqual(sync_worktree(self.cfg, self.lane), "")  # just made from main
+        self.assertEqual(sync_worktree(self.cfg, self.lane), "")
         self.main_commit("app.txt", "v2\n")
         self.assertEqual(sync_worktree(self.cfg, self.lane), "dah/wt fast-forwarded to main")
         self.assertEqual(git(self.tree, "rev-parse", "HEAD"), git(self.home, "rev-parse", "main"))
@@ -62,7 +61,7 @@ class BranchSyncTest(unittest.TestCase):
             sync_worktree(self.cfg, self.lane)
         self.assertIn("main does not merge cleanly into dah/wt", str(cm.exception))
         self.assertEqual(git(self.tree, "rev-parse", "HEAD"), before)
-        self.assertEqual(git(self.tree, "status", "--porcelain"), "")  # no half-done merge left behind
+        self.assertEqual(git(self.tree, "status", "--porcelain"), "")
         self.assertEqual((self.tree / "app.txt").read_text(), "lane v2\n")
 
 
@@ -87,7 +86,7 @@ class EngineBranchSyncTest(unittest.TestCase):
         self.assertEqual([o for o in self.rt.opened if o[0] == "wt"], [])
         self.assertEqual(self.s.task(tid)["state"], "queued")
         told = self.stalled()
-        self.assertEqual(len(told), 1)  # told once, not every tick
+        self.assertEqual(len(told), 1)
         self.assertIn(f"wt task #{tid}", told[0])
         self.assertIn("CONFLICT app.txt", told[0])
         self.rt.sync_conflict.pop("wt")
@@ -113,7 +112,6 @@ class EngineBranchSyncTest(unittest.TestCase):
 
 
 class CatchUpTest(unittest.TestCase):
-    """Between tasks the tower merges main into idle worktree branches every few minutes and pushes them."""
 
     extra = {"branch_sync_seconds": 300, "branch_sync_push": True}
 
@@ -157,7 +155,7 @@ class CatchUpTest(unittest.TestCase):
         self.main_commit("app.txt", "v2\n")
         self.assertEqual(catch_up(self.cfg, self.lane), "dah/wt fast-forwarded to main, pushed")
         self.assertEqual(git(self.origin, "rev-parse", "dah/wt"), git(self.home, "rev-parse", "main"))
-        self.assertEqual(catch_up(self.cfg, self.lane), "")  # nothing new on main
+        self.assertEqual(catch_up(self.cfg, self.lane), "")
 
     def test_uncommitted_edits_skip_the_branch(self) -> None:
         lane_cwd(self.cfg, self.lane)
@@ -170,10 +168,10 @@ class CatchUpTest(unittest.TestCase):
     def test_the_engine_checks_on_its_interval_and_skips_busy_sessions(self) -> None:
         lane_cwd(self.cfg, self.lane)
         before = self.head()
-        self.e.tick()  # first check, nothing on main yet
+        self.e.tick()
         self.main_commit("app.txt", "v2\n")
         tid = self.s.add_task("wt", "Work", "brief")
-        self.s.claim_task(tid)  # a session is at work on the branch
+        self.s.claim_task(tid)
         self.rt.st["wt"] = "busy"
         self.clock.tick(301)
         self.e.tick()
@@ -182,7 +180,7 @@ class CatchUpTest(unittest.TestCase):
         self.rt.st["wt"] = "closed"
         self.clock.tick(5)
         self.e.tick()
-        self.assertEqual(self.head(), before)  # the next check is not due yet
+        self.assertEqual(self.head(), before)
         self.clock.tick(300)
         self.e.tick()
         self.assertEqual(self.head(), git(self.home, "rev-parse", "main"))

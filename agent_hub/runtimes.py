@@ -122,7 +122,6 @@ def lane_cwd(cfg: Config, lane: Lane) -> Path:
 
 
 def _base_branch(cfg: Config) -> str:
-    """The branch the workspace has checked out (main), or '' when it is detached."""
     p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
     return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
 
@@ -130,7 +129,7 @@ def _base_branch(cfg: Config) -> str:
 def worktree_note(cfg: Config, lane: Lane) -> str:
     """What a lane in its own worktree is told before its first message."""
     base = _base_branch(cfg)
-    if base and cfg.branch_sync:  # the tower merged it already (branchsync.py)
+    if base and cfg.branch_sync:
         sync = f"The tower merged `{base}` into it before this task. Commit"
     else:
         sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
@@ -221,9 +220,6 @@ class Adapter:
         return 0
 
     def compact(self, sid: str, focus: str, then: str) -> str | None:
-        """Compact the session's context in place instead of a fresh session. None: this runtime cannot; "sent": the
-        compaction and `then` (the message that continues the task) are both on their way; "pending": only the
-        compaction is, and the engine sends `then` once the session is idle again."""
         return None
 
     def usage(self, sid: str | None) -> dict[str, Any] | None:
@@ -422,7 +418,7 @@ class Claude(Headless):
 
     def compact(self, sid: str, focus: str, then: str) -> str | None:
         self.send(sid, f"/compact {focus}")  # print mode runs the slash command as the whole run
-        return "pending"
+        return COMPACT_PENDING
 
     def _results(self) -> list[dict[str, Any]]:
         return [e for e in self._events() if e.get("type") == "result" or "result" in e]
@@ -605,7 +601,7 @@ class Tmux(Host):
 class Orca(Host):
     """Orca (an agent development environment) terminal tabs, through its `orca` CLI."""
 
-    GONE = ("stale", "not found", "no terminal", "unknown terminal")  # answers that mean the tab is gone
+    GONE = ("stale", "not found", "no terminal", "unknown terminal")
 
     def _orca(self, *args: str) -> tuple[subprocess.CompletedProcess[str], Any]:
         p = _run([*procs.command(os.environ.get("TOWER_ORCA_BIN", "orca")), *args, "--json"], "orca")
@@ -853,7 +849,7 @@ def _epoch(stamp: str) -> float | None:
     return base + float(m.group(2) or 0)
 
 
-COMPACT_TYPE_GAP = 2.0  # seconds between `/compact` and the message typed behind it
+COMPACT_SENT, COMPACT_PENDING, COMPACT_TYPED = "sent", "pending", "typed"
 
 WHOLE_BYTES = 256 * 1024 * 1024  # the ledger reads a transcript whole
 
@@ -904,8 +900,6 @@ class ClaudeTerm(TerminalSession, Claude):
         return [*argv, "--settings", str(settings), *extra]
 
     def compact(self, sid: str, focus: str, then: str) -> str | None:
-        """Type `/compact` itself (a tower note would not be a slash command), then the message that continues the
-        task: Claude Code queues what is typed while it compacts and runs it after, so the Stop hook ends that turn."""
         if self.status() in ("busy", "asking"):
             raise RuntimeFailure(f"{self.lane.id}: still busy")
         handle = self._handle()
@@ -913,9 +907,7 @@ class ClaudeTerm(TerminalSession, Claude):
             raise RuntimeFailure(f"{self.lane.id}: no window to type into")
         write_signal(self.cfg.home, self.lane.id, state="busy")
         self._host().send(handle, f"/compact {focus}")
-        time.sleep(COMPACT_TYPE_GAP)
-        self._type(then)
-        return "sent"
+        return COMPACT_TYPED
 
     def open(self, prompt: str) -> str:
         sid = str(uuid.uuid4())
@@ -1185,7 +1177,6 @@ class Runtimes:
         return self._a(lane).open(prompt)
 
     def sync(self, lane: str) -> str:
-        """A worktree lane session: merge the workspace's branch into its branch before a task (branchsync)."""
         from .branchsync import sync_worktree
         return sync_worktree(self.cfg, self.cfg.all_lanes[lane])
 

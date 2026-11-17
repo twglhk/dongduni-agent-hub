@@ -80,7 +80,7 @@ if sub == "create":
     print(json.dumps({"result": {"terminal": {"handle": wid}}}))
 elif sub == "show":
     w = wins.get(opt(args, "--terminal"))
-    mode = os.environ.get("FAKE_ORCA_ENDED")  # newer Orca: an ended tab still answers ok
+    mode = os.environ.get("FAKE_ORCA_ENDED")
     if w and not alive(w) and mode:
         term = {"exitCause": "exited", "connected": False, "writable": False} if mode == "cause" else \
                {"connected": False, "writable": False}
@@ -201,7 +201,7 @@ HTTPServer(("127.0.0.1", port), H).serve_forever()
 
 def subprocess_alive(pid: int) -> bool:
     try:
-        os.kill(pid, 0)  # POSIX only: this test class is skipped on Windows
+        os.kill(pid, 0)
     except OSError:
         return False
     return True
@@ -296,14 +296,15 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.cfg.state_dir / "term").glob("hub*")),
                          ["hub.settings.json", "hub.sh"])  # notes, handle and signal are gone
 
-    def test_claude_in_a_window_types_compact_then_the_message_that_continues(self) -> None:
-        import agent_hub.runtimes as rt_mod
-        rt_mod.COMPACT_TYPE_GAP, gap = 0.0, rt_mod.COMPACT_TYPE_GAP
-        self.addCleanup(setattr, rt_mod, "COMPACT_TYPE_GAP", gap)
+    def test_claude_in_a_window_types_only_compact_and_returns_at_once(self) -> None:
         sid = self.rt.open("hub", "first")
         wait_for(lambda: self.rt.last_text("hub") == ["did: first"])
         self.settle()
-        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on now"), "sent")
+        started = time.monotonic()
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on now"), "typed")
+        self.assertLess(time.monotonic() - started, 1.0)
+        wait_for(lambda: self.rt.last_text("hub", 2) == ["did: first", "did: /compact keep the plan"])
+        self.rt.send("hub", sid, "go on now")
         wait_for(lambda: self.rt.last_text("hub", 2) == ["did: /compact keep the plan", "did: go on now"])
 
     def _alive(self, wid: str) -> bool:
@@ -426,10 +427,10 @@ class TerminalTest(unittest.TestCase):
                 wait_for(lambda: not subprocess_alive(self.windows()[handle]["pid"]))
                 os.environ["FAKE_ORCA_ENDED"] = mode
                 try:
-                    self.assertFalse(host.alive(handle))  # ok:true, exitCause or connected:false; not "unknown"
+                    self.assertFalse(host.alive(handle))
                 finally:
                     del os.environ["FAKE_ORCA_ENDED"]
-                self.assertFalse(host.alive(handle))  # and the old answer (stale handle error) still means gone
+                self.assertFalse(host.alive(handle))
 
     def test_codex_in_an_orca_tab(self) -> None:
         sid = self.rt.open("docs", "write the docs")

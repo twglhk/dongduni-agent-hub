@@ -43,9 +43,6 @@ def store(c: Config | None = None) -> Store:
 
 
 def who(args: argparse.Namespace, c: Config) -> str:
-    """The calling lane. Inside a tower session TOWER_LANE is the truth: `--as` naming the session's own lane by its base
-    name (`--as docs` from `docs#3`) still writes as the session itself, and `--as` any other lane or instance is
-    refused, so a wrapped always lets go of the session's own task."""
     asked, env = getattr(args, "as_", None), os.environ.get("TOWER_LANE")
     me = asked or env
     if asked and env and asked != env:
@@ -396,8 +393,6 @@ def cmd_memo(args: argparse.Namespace) -> None:
 
 def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, model: str | None = None,
                effort: str | None = None) -> None:
-    """Infra runs only on a hub request; the human's approval, when there is one, travels with it. `--model` and
-    `--effort` become the memo's `model:` / `effort:` lines, which its infra session opens with."""
     if me != HUB or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
     if bad := stagemodel.problems(model, effort):
@@ -783,12 +778,10 @@ def stop_loop(c: Config) -> int | None:
     return pid
 
 
-RESTART_WAIT_SECONDS = 15  # a service manager (Restart=always) brings a stopped tower back within about this long
+RESTART_WAIT_SECONDS = 15
 
 
 def cmd_restart(_args: argparse.Namespace) -> None:
-    """Load changed agent-hub code: stop the loop only (lane sessions keep running). A service that restarts it
-    (systemd Restart=always) is given time to; otherwise it is started here."""
     c = cfg()
     pid = stop_loop(c)
     print(f"tower stopped (pid {pid}); lane sessions keep running" if pid else "the tower was not running")

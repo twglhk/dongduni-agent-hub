@@ -1,14 +1,3 @@
-"""The model and effort a lane session really runs with, for the board's session cards.
-
-A Claude Code transcript (`~/.claude/projects/*/<session>.jsonl`) writes each assistant turn with `message.model`
-(the full id, e.g. `claude-opus-5-5`) and a top-level `effort`. The newest such entry is what the session runs with
-now, whatever the tower passed or the CLI picked by itself. When the transcript says nothing yet, the values the tower
-opened the session with (`.tower/state/logs/<lane>.opts.json`, the lane's `model`) stand in; what nothing tells is
-"unknown" with the reason.
-
-describe() -> {"model", "effort", "text", "state": "live" | "last" | "next", "why"}: live = the session open now,
-last = the lane's last session (it rests), next = what its next session would start with (no session seen yet).
-"""
 from __future__ import annotations
 
 import json
@@ -22,11 +11,10 @@ _TAIL = 262144
 _MAX_SCAN = 8 * _TAIL
 _ID = re.compile(r"^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$")
 _paths: dict[str, Path] = {}
-_read: dict[str, tuple[int, int, dict[str, Any] | None]] = {}  # session -> (mtime_ns, size, what was read)
+_read: dict[str, tuple[int, int, dict[str, Any] | None]] = {}
 
 
 def label(model: str | None) -> str | None:
-    """`claude-opus-5-5` -> `Opus 5.5`, `opus` -> `Opus`; any other id as it is."""
     if not model:
         return None
     m = _ID.match(model.strip().lower())
@@ -48,7 +36,6 @@ def transcript(sid: str | None, projects: Path = CLAUDE_PROJECTS) -> Path | None
 
 
 def from_transcript(sid: str | None, projects: Path = CLAUDE_PROJECTS) -> dict[str, Any] | None:
-    """The newest assistant entry's model and effort, read from the end of the transcript; None when none is found."""
     p = transcript(sid, projects)
     if p is None:
         return None
@@ -58,7 +45,7 @@ def from_transcript(sid: str | None, projects: Path = CLAUDE_PROJECTS) -> dict[s
         return None
     key = f"{sid}@{projects}"
     seen = _read.get(key)
-    if seen and seen[:2] == (st.st_mtime_ns, st.st_size):  # the board asks often; read again only after a write
+    if seen and seen[:2] == (st.st_mtime_ns, st.st_size):
         return seen[2]
     got = _tail_read(p)
     _read[key] = (st.st_mtime_ns, st.st_size, got)
@@ -77,7 +64,7 @@ def _tail_read(p: Path) -> dict[str, Any] | None:
                 f.seek(pos)
                 chunk = f.read(step) + carry
                 lines = chunk.split(b"\n")
-                carry = lines.pop(0) if pos > 0 else b""  # a line cut at the chunk edge is finished by the next read
+                carry = lines.pop(0) if pos > 0 else b""
                 for raw in reversed(lines):
                     if b'"assistant"' not in raw:
                         continue
@@ -88,7 +75,6 @@ def _tail_read(p: Path) -> dict[str, Any] | None:
                     if not isinstance(e, dict) or e.get("type") != "assistant":
                         continue
                     msg = e.get("message") if isinstance(e.get("message"), dict) else {}
-                    # a synthetic entry (an API error turn) carries model "<synthetic>": not what the session runs
                     m = msg.get("model") if str(msg.get("model") or "").startswith("claude") else None
                     model = model or m
                     effort = effort or e.get("effort") or e.get("perTurnEffort")
@@ -101,8 +87,6 @@ def _tail_read(p: Path) -> dict[str, Any] | None:
 
 def describe(runtime: str, sid: str | None = None, last_sid: str | None = None, opts: dict[str, Any] | None = None,
              configured: str | None = None, projects: Path = CLAUDE_PROJECTS) -> dict[str, Any]:
-    """What the card shows for one lane session. `sid` = the open session, `last_sid` = the last one the lane ran,
-    `opts` = what the tower opened the open session with, `configured` = the lane's model in tower.json."""
     opts = opts or {}
     if runtime != "claude":
         model, effort = opts.get("model") or configured, opts.get("effort")
@@ -116,15 +100,12 @@ def describe(runtime: str, sid: str | None = None, last_sid: str | None = None, 
     t = from_transcript(last_sid, projects)
     if t:
         return _out(t.get("model"), t.get("effort"), "last", None if t.get("effort") else "the transcript has no effort value")
-    # never seen a session: the next one opens with the lane's model; the CLI picks the effort when nothing is passed
     why = "no session opened yet; the effort is set when a session opens" if configured else "no session opened yet and tower.json names no model"
     return _out(configured, None, "next", why)
 
 
 def for_lane(cfg: Any, store: Any, lane: str, runtime: str, model: str | None, session: str | None,
              projects: Path = CLAUDE_PROJECTS) -> dict[str, Any]:
-    """`describe` for one lane of a workspace: the open session, the lane's last session that left a transcript, and what
-    the tower opened the open session with (`.tower/state/logs/<lane>.opts.json`). Never raises: a failed read says why."""
     try:
         opts = json.loads((cfg.state_dir / "logs" / f"{lane}.opts.json").read_text(encoding="utf-8")) if session else {}
     except (OSError, ValueError):
