@@ -1,5 +1,3 @@
-"""The process library (processes.py), its `Line:` header (line.py), and how `dah task`, stagemodel and engines read it."""
-
 import json
 import os
 import subprocess
@@ -54,7 +52,6 @@ def write_full(home: Path, fid: str, title: str, steps: list[tuple[str, str, str
 
 
 def make_library(home: Path) -> None:
-    """Two full processes that share the thumbnail sub-process (the decision's own example)."""
     write_sub(home, "article-planning", "Planning", "confirmed", "confirmed", skill="article-craft")
     write_sub(home, "article-production", "Production", "confirmed", "tuned", skill="article-craft", stage_skill="render-kit")
     write_sub(home, "cover-making", "Cover", "confirmed", "confirmed", skill="covers")
@@ -96,8 +93,8 @@ class ParserTest(unittest.TestCase):
         self.assertEqual([st["name"] for st in s["stages"]], ["First", "Second"])
         self.assertEqual(s["stages"][0]["pattern"]["path"], "processes/sub/article-production/patterns/one.md")
         self.assertTrue(s["stages"][0]["pattern"]["exists"])
-        self.assertEqual(s["stages"][0]["skills"], ["render-kit"])   # a stage's own Skill cell
-        self.assertEqual(s["stages"][1]["skills"], ["article-craft"])  # empty cell: the card's skills
+        self.assertEqual(s["stages"][0]["skills"], ["render-kit"])
+        self.assertEqual(s["stages"][1]["skills"], ["article-craft"])
         self.assertFalse(self.lib["sub"]["article-qa"]["confirmed"])
 
     def test_lane_uses_reads_only_its_section(self) -> None:
@@ -129,7 +126,7 @@ class ReverseRefTest(unittest.TestCase):
         self.assertEqual(self.lib["full"]["demo-app"]["lanes"], ["covers"])
 
     def test_status_of_a_full_process(self) -> None:
-        self.assertEqual(self.lib["full"]["article-publishing"]["status"], "draft")  # article-qa is draft
+        self.assertEqual(self.lib["full"]["article-publishing"]["status"], "draft")
         write_sub(self.home, "article-qa", "QA", "confirmed", "confirmed")
         self.assertEqual(processes.load(self.home)["full"]["article-publishing"]["status"], "confirmed")
 
@@ -145,7 +142,7 @@ class ReverseRefTest(unittest.TestCase):
                      "`orphan` is in no full process", "pattern card processes/sub/orphan/patterns/two.md is missing",
                      "README.md does not list the full process `demo-app`"):
             self.assertIn(word, text)
-        self.assertNotIn("`demo-app` does not hold", text)  # its Frame: exception line
+        self.assertNotIn("`demo-app` does not hold", text)
 
     def test_view_is_json_and_names_skills(self) -> None:
         (self.home / ".claude/skills/article-craft").mkdir(parents=True)
@@ -154,7 +151,7 @@ class ReverseRefTest(unittest.TestCase):
         full = next(f for f in v["full"] if f["id"] == "article-publishing")
         self.assertEqual([(s["sub"], s["title"], s["status"]) for s in full["steps"]][2], ("cover-making", "Cover", "confirmed"))
         sub = next(s for s in v["sub"] if s["id"] == "article-planning")
-        self.assertEqual(sub["skills"], [{"name": "article-craft", "found": True, "doc": None}])  # a folder with no SKILL.md
+        self.assertEqual(sub["skills"], [{"name": "article-craft", "found": True, "doc": None}])
         self.assertEqual(sub["used_by_full"], ["article-publishing"])
         covers = next(s for s in v["sub"] if s["id"] == "cover-making")
         self.assertEqual(covers["skills"], [{"name": "covers", "found": False, "doc": None}])
@@ -168,7 +165,7 @@ class ReverseRefTest(unittest.TestCase):
         self.assertEqual((r["type"], r["skill"], r["process_status"], r["pattern_status"], r["lanes"]),
                          ("Production", "article-craft", "confirmed", "confirmed", ["covers", "writer"]))
         self.assertTrue(all(st["card"]["exists"] for st in r["process"]["stages"]))
-        self.assertTrue(Path(os.path.normpath(skills / r["process"]["stages"][0]["card"]["path"])).is_file())  # as the board joins them
+        self.assertTrue(Path(os.path.normpath(skills / r["process"]["stages"][0]["card"]["path"])).is_file())
         self.assertTrue(engines.confirmed(r))
         self.assertEqual(len(engines.library(self.home / "processes/full/demo-app.md")), 2)
         view = engines.row_view(rows, "article-publishing/article-production", "2")
@@ -188,15 +185,15 @@ class LineTest(unittest.TestCase):
     def test_accepts(self) -> None:
         p = self.ok("Line: article-publishing / article-production · stage 2 · process confirmed · pattern confirmed · make\nmodel: opus")
         self.assertEqual((p["full"], p["sub"], p["stage"], p["mode"]), ("article-publishing", "article-production", "2", "make"))
-        self.assertEqual(self.ok("Line: demo-app / cover-making · stage 1-2 · make")["mode"], "make")  # shared sub-process
-        self.assertEqual(self.ok("Line: article-publishing / article-qa · stage 1 · fix")["mode"], "fix")    # fix needs no confirmed card
+        self.assertEqual(self.ok("Line: demo-app / cover-making · stage 1-2 · make")["mode"], "make")
+        self.assertEqual(self.ok("Line: article-publishing / article-qa · stage 1 · fix")["mode"], "fix")
         self.assertEqual(self.ok("Line: article-publishing / article-qa · prepare")["mode"], "prepare")
         self.assertEqual(self.ok("Line: article-publishing · prepare")["sub"], None)
         self.assertTrue(self.ok("Line: none · chore: move the exports")["chore"])
         self.assertTrue(self.ok("Line: new Cover art · prepare")["full_new"])
         self.assertTrue(self.ok("Line: article-publishing / new Cover check · prepare")["sub_new"])
         self.assertFalse(self.ok("Line: new Demo trailer / cover-making · prepare")["sub_new"])
-        self.assertEqual(self.ok("Line: demo-app / article-qa · prepare")["mode"], "prepare")  # adding a step is preparing
+        self.assertEqual(self.ok("Line: demo-app / article-qa · prepare")["mode"], "prepare")
 
     def test_refuses(self) -> None:
         for brief, word in [("do the thing", "does not start with `Line:`"),
@@ -226,7 +223,7 @@ class LineTest(unittest.TestCase):
                          {"line_row": "article-publishing/article-production", "line_stage": "1-2", "line_mode": "make"})
         self.assertEqual(engines.line_fields("Line: article-publishing · prepare")["line_row"], "article-publishing")
         self.assertEqual(engines.line_fields("Line: new Cover art · prepare"), {"line_row": None, "line_stage": None, "line_mode": None})
-        self.assertEqual(engines.line_fields("Line: #1 Storyboard · stage 2 · make")["line_row"], "1")  # an old library row still reads
+        self.assertEqual(engines.line_fields("Line: #1 Storyboard · stage 2 · make")["line_row"], "1")
 
     def test_model_from_the_full_process(self) -> None:
         lib = self.home / "processes"

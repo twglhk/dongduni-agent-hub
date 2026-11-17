@@ -22,14 +22,14 @@ class ProcessRoutesTest(unittest.TestCase):
         self.assertEqual(full["article-publishing"]["lanes"], ["covers", "writer"])
         self.assertEqual([st["sub"] for st in full["demo-app"]["steps"]], ["app-build", "cover-making"])
         step = full["article-publishing"]["steps"][0]
-        self.assertIn("rating", step)  # no rated task yet: None
+        self.assertIn("rating", step)
         self.assertEqual(step["stages"], {})
         sub = {s["id"]: s for s in v["sub"]}
         self.assertEqual(sub["cover-making"]["used_by_full"], ["article-publishing", "demo-app"])
         self.assertEqual(sub["cover-making"]["used_by_lanes"], ["covers", "writer"])
         self.assertEqual(sub["article-planning"]["skills"][0]["doc"], ".claude/skills/article-craft/SKILL.md")
         self.assertEqual(v["lanes"]["writer"], ["article-publishing"])
-        self.assertNotIn("research", v["lanes"])  # a lane file with no `## Processes used`
+        self.assertNotIn("research", v["lanes"])
 
     def test_doc_serves_only_what_the_library_names(self) -> None:
         for path in ("processes/full/demo-app.md", "processes/sub/article-qa/process.md",
