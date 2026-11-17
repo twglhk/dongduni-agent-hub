@@ -7,7 +7,7 @@ Run the tower and the agents on a server when the team should not depend on one 
 - EC2 (or Lightsail), Ubuntu or Amazon Linux, 2 vCPU / 4–8 GB is enough for a hub, infra and two team lanes. The agents do the heavy lifting remotely; the box mostly runs git, tests and builds.
 - Install the agent CLIs you use and log them in once over SSH (`opencode auth login`, `claude`, `codex login`). Put API keys in the environment of the service, not in the repo.
 - Install the `dah` command (`uv tool install dongduni-agent-hub` or `pipx install dongduni-agent-hub`), clone your workspace, then `dah init` as in the setup playbook (`dah guide`).
-- Run it as a service, in the workspace:
+- Run it as a service, in the workspace (the full server guide, with Orca, swap and troubleshooting, is [linux-server.md](linux-server.md)):
 
 ```ini
 # /etc/systemd/system/tower.service
@@ -21,6 +21,9 @@ WorkingDirectory=/home/ubuntu/workspace
 EnvironmentFile=/home/ubuntu/.tower.env
 ExecStart=/home/ubuntu/.local/bin/dah run
 Restart=always
+RestartSec=5
+# keep lane sessions alive when the tower restarts (the default kills the whole cgroup)
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
@@ -39,7 +42,8 @@ Pick one:
    ```
 
    then pin people with `dah member add ana --ident <their subject id>`. Keep the instance's security group open only to the ALB.
-4. **No public endpoint**: `aws ssm start-session --target <id> --document-name AWS-StartPortForwardingSession --parameters portNumber=8787,localPortNumber=8787` and open `http://127.0.0.1:8787` locally (laptop only, not phones).
+4. **Caddy + oauth2-proxy** on the instance (Google or any OIDC, no load balancer): [oauth2-proxy.md](oauth2-proxy.md).
+5. **No public endpoint**: `aws ssm start-session --target <id> --document-name AWS-StartPortForwardingSession --parameters portNumber=8787,localPortNumber=8787` and open `http://127.0.0.1:8787` locally (laptop only, not phones).
 
 ## Backups
 
@@ -48,3 +52,5 @@ All tower state is one SQLite file. Copy it safely while running and ship it to 
 ```sh
 sqlite3 .tower/state/tower.db ".backup /tmp/tower.db" && aws s3 cp /tmp/tower.db s3://<bucket>/tower/$(date +%F).db
 ```
+
+For a daily job with an integrity check, size verification, pruning, a systemd timer and restore steps, use the shipped script: [tower-db-backup.md](tower-db-backup.md).

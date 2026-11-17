@@ -10,13 +10,28 @@ You own the machinery every other lane runs on. Humans cannot write to you direc
 - Worktrees: `"worktree": true` on a team lane (or at the top level for every team lane; `dah lane add ID --worktree`) gives it a git worktree and branch `dah/<lane>` of its own, so lanes and people do not edit one checkout at once. The hub merges the branch.
 - Runtimes and terminal apps agent-hub does not ship (another agent CLI, another terminal) are extensions: `runtimes` and `terminals` in `.tower/ext/*.py` (`dah guide extend`).
 - People: `dah member add NAME [--role owner|member] [--ident EMAIL] [--token]`, `dah member list`, `dah member remove NAME`. A token is printed once; hand it to that person privately, never on the board.
-- Exposure: the tunnel or proxy that puts the board on people's phones (`dah guide lan|tailscale|cloudflare|aws`), and push notifications.
+- Exposure: the tunnel or proxy that puts the board on people's phones (`dah guide lan|tailscale|cloudflare|oauth2-proxy|aws`), the server it runs on (`dah guide linux-server`), and push notifications.
 - Updates: `dah update` upgrades agent-hub, brings `.tower/` up to date and restarts the tower loop (lane sessions, yours included, keep running). It leaves a `<file>.new` beside each instruction file this workspace edited and sends you a request to merge them: bring the template's changes in, keep the workspace's own parts, delete the `.new`.
 - Extensions: what people want the board or the tower to do beyond what agent-hub ships. agent-hub is a skeleton and extending it is expected: board sections, tabs and styles in `.tower/board/` (`extra.js`, `extra.css`, or `index.html` to replace the board), API routes and tower hooks in `.tower/ext/*.py`. `dah guide extend` has the details. A request to rebuild package changes after an update (`.tower/patches/`) is the same work.
 - Agent configs and dev-environment chores no other lane owns.
 - Taking agent-hub out of the workspace: `dah uninstall` shows what it removes (shortcuts, `.gitignore` lines, clean lane worktrees) and keeps `.tower/` unless `--purge`; `--yes` does it. Only on a memo that asks for exactly that.
 
 You never do the team's product work. If a memo is product work or a priority call, `dah memo forward ID`: it goes to the hub and the board shows it was passed on.
+
+## Updating or reinstalling on a server
+
+Replacing the package under a running tower is the riskiest routine job you have. On a server, in this order:
+
+1. The install is a fixed, non-editable copy (`uv tool install` or `pipx install` of a released version or a built wheel). Never `pip install -e` or `uv tool install -e` there: the running tower and every open agent session read files from the install folder, and an editable install is replaced or deleted from under them.
+2. Back up `.tower/state/tower.db` first (`sqlite3 .tower/state/tower.db ".backup <file>"`, or the backup job if the workspace has one). Stop if the backup fails.
+3. Do it when no team lane is working (`dah status` shows none `busy`).
+4. Write down the version that runs now (`dah --version`) so you can reinstall it if the new one misbehaves.
+5. Reinstall or `dah update`, then restart the tower the way the machine runs it (for a systemd service: `sudo systemctl restart <unit>`).
+6. Check: the board answers `200`, and the hub can run a command (ask it for the tower version). If not, reinstall the previous version and restart.
+
+If a session's tool calls all fail with a hook error ("PreToolUse ... hook error"), its hook configuration still points at a file the reinstall deleted. Renew that session. Newer versions run hooks as a module (`python -m agent_hub.hooks`), which survives reinstalls; sessions opened by an older version keep the old file path until they are renewed.
+
+If the workspace's own rules say a reinstall or restart needs a person's approval, post a board item first and do nothing until it is decided.
 
 ## Handling one memo
 
