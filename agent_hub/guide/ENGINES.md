@@ -53,6 +53,19 @@ Names are library ids (lowercase words joined by hyphens), except after `new`. `
 
 Read the whole library with its reverse references (which full processes and lanes use each sub-process): `python3 -m agent_hub.processes .` from the workspace, the Engine tab, or `GET /api/processes`.
 
+## Process verification
+
+A full process has a status: **draft** (a card is not confirmed), **confirmed** (every sub-process card and pattern card approved as text) and **verified** (one whole run was checked step by step and a person said it is good). `"process_verification": true` in tower.json (default off; it needs `require_line`) turns on the checks that lead there. With it off nothing is held or required, and a `processes/verified.json` you wrote still shows the status.
+
+1. Every task of one run carries the same `--deliverable KEY`; `dah task` refuses a make or fix of a full process that is not verified without it.
+2. A make or fix task that runs the last stage of its sub-process posts a check card with `dah check --title T --body-file F --attach OUTPUT`. It goes to the task's requester (visible only to them with `requester` or `person_hubs`), options *Next* and *Redo with fixes* in the board language. `dah report done` is refused until it exists.
+3. The tower holds the next sub-process task of the run while the card before it is open, on hold or being redone (`dah status`, the Lanes tab and the full process sheet say who it waits for).
+4. *Next* releases it. *Redo with fixes*, a rejection, or an answer in the person's own words queues a fix task of the same sub-process (`Line: <full> / <sub> · stage <n> · fix`) with the note; it posts a new check card. A card put on hold keeps the run waiting for the hub: `dah process check CARD next|redo`.
+5. When the last sub-process passes, the tower tells the hub to post the verify card to the requester. On its yes the hub runs `dah process verify <full> --card N`; it is refused unless the cards are confirmed, the card is approved and one run has every check on *Next*. The record (`processes/verified.json`: card, person, run, commit, the sub-process order and a sha256 of every sub-process card and pattern card) is library content: commit it.
+6. A verified full process runs through; only its last sub-process posts a check card. Changing any of its cards, or their order, drops it back to confirmed (the Engine tab says *Needs a new check* and which file changed) until a new run is verified.
+
+`dah process status [FULL]` prints the status and the latest run. The check cards live in the tower's database (table `process_checks`); the library files stay the only thing the workspace's git keeps. Converted pattern libraries work the same, and an engine with no process library is not affected.
+
 ## Workspaces from before the process library
 
 `dah update` converts an engine whose `library` is a pattern-library table (one row per deliverable type, no reuse):

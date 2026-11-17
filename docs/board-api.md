@@ -15,7 +15,7 @@
 | `GET /api/engines` | every engine: id, label, lanes, library rows |
 | `GET /api/engines/<id>/map` | lanes with skills, pipelines with ratings, skills, tools and experiments from `engine.json`, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged) |
 | `GET /api/engines/<id>/doc?path=P` | `{path, text}` of a card or skill document the map names (nothing else is served) |
-| `GET /api/processes` | the process library (`processes.view`): processes with sub-processes, stages and skills, who uses what, ratings (ETag) |
+| `GET /api/processes` | the process library (`processes.view`): processes with sub-processes, stages and skills, who uses what, ratings (ETag). Each full process carries `verified`, `reverify`, `changes` and, with `process_verification` on, `run` (its latest run and check card, only for people who may see them); the top level has `verification` (the key's state) |
 | `GET /api/processes/doc?path=P` | `{path, text}` of a document the library names |
 | `GET /api/workspaces` | every workspace registered on this machine, for the board's switcher |
 | `GET /api/machine` | load, CPU, memory, swap graded g/a/r (`machine.py`), why queued tasks wait, Claude usage percent when `usage_percent` is set |

@@ -18,6 +18,15 @@ Post an item when someone else must choose or approve before part of your work c
 
 Don't post for a choice inside your already-approved scope, a progress update (`dah report note`), something the repo or the workspace's memory already answers, or something already asked. Check first with `dah items` and `dah show ID`.
 
+## Check cards (a full process not verified yet)
+
+With `process_verification` on, a make or fix task of a full process that is not verified posts a check card when it runs the last stage of its sub-process: `dah check --title T --body-file F --attach OUTPUT`, never `dah item add`. It goes straight to the task's requester with two fixed options, Next (the next sub-process starts) and Redo with fixes (this sub-process runs again with their note); `dah report done` waits for it.
+
+- Title: the sub-process and what it made, e.g. `Plan check: idea-03 plan.md`.
+- Body (`##` sections, in the board language): what was made (the output in two or three lines), how it was checked (the stage gates and checks that passed, with numbers), what to look at (the one or two things only a person can judge), what starts on Next.
+- Attach the output itself (the document, or a small preview of a large file with its path in the body), so the person judges it on the phone.
+- Running `dah check` again while the card is open revises it. A Redo with fixes comes back as a fix task with the note; that task posts a new check card.
+
 ## Approvals are separate
 
 - Keeping an idea, allowing a trial, and final adoption (locked numbers, paid generation, shipping it) are three approvals. Don't stretch one into the next, and don't fill in values nobody decided.
