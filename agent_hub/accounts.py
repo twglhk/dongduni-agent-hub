@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -7,10 +9,19 @@ from .config import Config, base_lane
 from .store import INFRA, Store, StoreError
 
 CREDENTIALS = ".credentials.json"
+_PLAIN = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
+_SLUG = re.compile(r"[^a-z0-9]+")
 
 
 def root_dir(root: Path | None = None) -> Path:
     return root or Path.home() / ".claude-accounts"
+
+
+def folder_name(member: str) -> str:
+    if _PLAIN.fullmatch(member) and ".." not in member:
+        return member
+    slug = _SLUG.sub("-", member.lower()).strip("-")[:32] or "u"
+    return f"{slug}-{hashlib.sha1(member.encode('utf-8')).hexdigest()[:8]}"
 
 
 def person(c: Config, s: Store, who: Any) -> str | None:
@@ -52,5 +63,17 @@ def for_session(c: Config, s: Store, lane: str, task: dict[str, Any] | None = No
 def config_dir(member: str | None, root: Path | None = None) -> Path | None:
     if not member:
         return None
-    d = root_dir(root) / member
+    d = root_dir(root) / folder_name(member)
     return d if (d / CREDENTIALS).is_file() else None
+
+
+def overview(s: Store, root: Path | None = None) -> list[dict[str, str]]:
+    out = []
+    for m in s.members():
+        name = str(m["name"])
+        if config_dir(name, root):
+            state = "connected"
+        else:
+            state = "ended" if s.account_seen(name) else "none"
+        out.append({"member": name, "state": state})
+    return out

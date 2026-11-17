@@ -22,6 +22,10 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
+  GET  /api/me/claude             the viewer's own Claude account: {state: none|pending|connected|expired, url?, email?, plan?,
+                                  expires?, ended?}; 404 unless tower.json sets claude_accounts (accountroutes.py)
+  POST /api/me/claude             {action: start|code|cancel|disconnect, code?}: sign the viewer's account folder in or out; the
+                                  code goes straight to `claude auth login`, never stored or logged
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
   POST /api/uploads/start         {text, files: [{name, type, size}]} → {id, files: [{n, mode: chunks, chunk} |
                                   {n, mode: put, url, headers} | {n, mode: multipart, part_size, parts}]}: the request is
@@ -65,6 +69,8 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
+from . import accountroutes
+from . import accounts as accounts_mod
 from . import config as config_mod
 from . import engines as engines_mod
 from . import processes as processes_mod
@@ -490,6 +496,8 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "my_hub": my_hub,
         "my_hub_state": my_hub_view(cfg, s, me),
         "requester": cfg.requester,
+        "claude_accounts": cfg.claude_accounts,
+        "accounts": accounts_mod.overview(s) if cfg.claude_accounts and vis.sees_all(me) else None,
         "running": tower_pid(cfg) is not None,
         "version": __version__,
         "local_only": cfg.local_only,
@@ -820,6 +828,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, prefs_mod.view(st, str(me["name"])))
                 except prefs_mod.PrefsError as e:
                     return self._json(403, {"error": str(e)})
+            if path == "/api/me/claude":
+                code, out = accountroutes.answer(c, st, me, {"action": "status"}, log)
+                return self._json(code, out)
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
@@ -1021,6 +1032,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, {"ok": True, "item": it})
                 if path == "/api/me/prefs":
                     return self._prefs(who, body)
+                if path == "/api/me/claude":
+                    code, out = accountroutes.answer(c, st, me, body, log)
+                    return self._json(code, out)
                 if path == "/api/memo":
                     text = str(body.get("text") or "").strip()
                     to = str(body.get("to") or HUB)

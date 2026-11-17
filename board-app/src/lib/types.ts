@@ -80,6 +80,8 @@ export interface BoardState {
   queues?: Record<string, LaneQueue>;
   my_hub_state?: MyHubState;
   requester?: boolean;
+  claude_accounts?: boolean;
+  accounts?: { member: string; state: 'connected' | 'ended' | 'none' }[] | null;
   uploads?: UploadsInfo | null;
   running: boolean;
   version: string;

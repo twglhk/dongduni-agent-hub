@@ -8,6 +8,9 @@ import { Empty } from '../Section';
 import { Icon } from '../Icon';
 import { Seg } from '../Seg';
 import { secName } from './names';
+import { ClaudeRow } from '../account/ClaudeSheet';
+import { useBoard } from '../../state/board';
+import { openAccount } from '../../state/claude';
 
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -66,6 +69,7 @@ function Sections({ tab }: { tab: SecTab }) {
 
 export function PrefsBody() {
   const { L } = useL();
+  const { data } = useBoard();
   const { p, ok, set, reset } = usePrefs();
   if (ok === false) return <Empty><div className="font-semibold text-ink">{L.pf.noMember}</div><div className="mt-1">{L.pf.noMemberSub}</div></Empty>;
   if (DEFAULT_MODE) {
@@ -80,6 +84,7 @@ export function PrefsBody() {
   }
   return (
     <>
+      {data?.claude_accounts && <ClaudeRow onOpen={openAccount} />}
       <p className="px-1 text-t6 leading-normal text-ink-3">{L.pf.live}</p>
       <Group title={L.pf.first}>
         <div className="-mx-1"><Seg opts={TABS.map(t => ({ id: t, label: L.tabs[t] }))} cur={p.first_tab} onPick={t => set({ first_tab: t as Prefs['first_tab'] })} /></div>
