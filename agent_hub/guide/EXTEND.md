@@ -50,7 +50,7 @@ routes = {("GET", "stats"): stats, ("POST", "jira/sync"): sync}
 
 - `("GET", "stats")` answers `GET api/x/stats`; `("POST", "jira/sync")` answers `POST api/x/jira/sync`.
 - `fn(ctx, body)` returns a JSON value (status 200) or `(status, value)`. An exception is a 500 with its message.
-- `ctx`: `cfg` (the workspace config), `store` (the board's state: items, tasks, reports, memos), `me` (who is signed in), `query` (the URL query, one value per key), `log`.
+- `ctx`: `cfg` (the workspace config), `store` (the board's state: items, tasks, reports, memos; it is not filtered for the viewer, so a route that returns rows of it shows everyone's work to any signed-in member), `me` (who is signed in), `gate` (an `agent_hub.visibility.Gate` for `me`: `visibility.mine(gate, items)`, `can_see(gate, item)`, `task_row(gate, task)` and `report_row(gate, report)` give the rows that person may see, hidden ones as `{id, hidden: true, ...}`; `gate.owner` is true for the owner), `query` (the URL query, one value per key), `log`.
 - Only signed-in people reach them, with the workspace's own auth. POSTs need the `x-tower: 1` header, as every board POST does (`dah.post` sends it).
 - Another workspace shown on the same board (`/w/<workspace>/`) serves its own routes.
 

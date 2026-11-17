@@ -360,6 +360,36 @@ class HostAndOriginTest(unittest.TestCase):
         self.assertEqual(self.b.srv.RequestHandlerClass.timeout, 30)
 
 
+class HostileInputTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.b = Board()
+        self.host = f"127.0.0.1:{self.b.srv.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def test_a_deeply_nested_body_is_a_400_before_sign_in(self) -> None:
+        deep = b"[" * 200000
+        code, _, _ = raw(self.b, "POST", "/api/memo", {"host": self.host, "x-tower": "1",
+                                                       "content-length": str(len(deep))}, deep)
+        self.assertEqual(code, 400)
+        self.assertEqual(self.b.req("GET", "/api/state")[0], 200)
+
+    def test_out_of_range_numbers_are_a_400_not_a_traceback(self) -> None:
+        big = "9" * 30
+        for path in (f"/api/history?kind=closed&offset={big}", f"/api/items/{big}", "/api/history?kind=closed&offset=" + "9" * 5000):
+            self.assertEqual(self.b.req("GET", path)[0], 400, path[:40])
+        self.assertEqual(self.b.req("POST", f"/api/items/{big}/decide", {"verdict": "ok"}, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", f"/api/uploads/chunk?id={big}&n=1&offset=0", None, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", f"/api/uploads/chunk?id=1&n=1&offset={big}", None, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", "/api/uploads/finish", {"id": 10 ** 30}, POST)[0], 409)
+
+    def test_a_huge_range_is_ignored_not_a_crash(self) -> None:
+        (self.b.cfg.workdir / "a.txt").write_text("hello", encoding="utf-8")
+        code, _, _ = raw(self.b, "GET", "/f/a.txt", {"host": self.host, "range": "bytes=" + "9" * 5000 + "-"})
+        self.assertEqual(code, 200)
+
+
 class SiblingAuthTest(unittest.TestCase):
     H = "Tailscale-User-Login"
 

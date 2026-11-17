@@ -14,6 +14,7 @@ SWEEP_EVERY = 60
 CACHE = "private, max-age=3600"
 READ = 1 << 16
 VIEW_SECONDS = 86400
+MAX_NUMBER = 10 ** 15
 
 
 def info(cfg: Config) -> dict[str, Any] | None:
@@ -107,7 +108,7 @@ def steps(h: Any, cfg: Config, st: Store, who: str, step: str, body: dict[str, A
 
 
 def _whole(v: Any) -> int:
-    return v if isinstance(v, int) and not isinstance(v, bool) else 0
+    return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_NUMBER else 0
 
 
 def chunk(h: Any, cfg: Config, st: Store, who: str) -> None:
@@ -116,6 +117,8 @@ def chunk(h: Any, cfg: Config, st: Store, who: str) -> None:
         size = int(h.headers.get("content-length") or 0)
         rid, n, offset = int(q.get("id", "")), int(q.get("n", "")), int(q.get("offset", ""))
     except ValueError:
+        return h._json(400, {"error": "id, n and offset must be whole numbers"})
+    if not all(0 <= v <= MAX_NUMBER for v in (rid, n, offset)):
         return h._json(400, {"error": "id, n and offset must be whole numbers"})
     if not 0 <= size <= CHUNK:
         if 0 < size <= 2 * CHUNK:

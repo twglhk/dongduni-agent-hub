@@ -43,6 +43,7 @@ BLOCKED_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pem", 
 BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials", "client_secret", "client-secret",
                     "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "rclone.conf")
 MAX_BODY = 1024 * 1024
+MAX_ID = 10 ** 15
 PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
@@ -806,7 +807,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
-                    rows = history_rows(vis.Gate.of(c, st, me), (q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])))
+                    offset = max(0, int((q.get("offset") or ["0"])[0]))
+                    if offset > MAX_ID:
+                        raise ValueError("offset is too large")
+                    rows = history_rows(vis.Gate.of(c, st, me), (q.get("kind") or [""])[0], offset)
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
@@ -848,6 +852,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 return self._json(200, got) if got else self._json(404, {"error": "no such session"})
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
+                if len(m.group(1)) > 15:
+                    return self._json(400, {"error": "item number out of range"})
                 try:
                     it = st.item(int(m.group(1)))
                 except StoreError as e:
@@ -886,7 +892,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             fn = self.site.ext.routes().get((method, name.strip("/")))
             if fn is None:
                 return self._json(404, {"error": "not found"})
-            ctx = {"cfg": self.site.cfg, "store": self.site.s, "me": me, "log": log,
+            ctx = {"cfg": self.site.cfg, "store": self.site.s, "me": me, "gate": vis.Gate.of(self.site.cfg, self.site.s, me), "log": log,
                    "query": {k: v[-1] for k, v in parse_qs(self.query).items()}}
             try:
                 out = fn(ctx, body)
@@ -916,7 +922,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             ctype = mime(full.name)
             size = full.stat().st_size
             start, end = 0, size - 1
-            rng = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("range", ""))
+            rng = re.match(r"bytes=(\d{0,15})-(\d{0,15})$", self.headers.get("range", ""))
             partial = bool(rng and size)
             if rng and size:
                 if rng.group(1):
@@ -975,7 +981,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 return self._json(413, {"error": "too large"})
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
-            except json.JSONDecodeError:
+            except (ValueError, RecursionError):
                 return self._json(400, {"error": "invalid JSON"})
             if not isinstance(body, dict):
                 return self._json(400, {"error": "invalid JSON"})
@@ -995,6 +1001,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             try:
                 m = re.fullmatch(r"/api/items/(\d+)/decide", path)
                 if m:
+                    if len(m.group(1)) > 15:
+                        return self._json(400, {"error": "item number out of range"})
                     if not vis.can_see(vis.Gate.of(c, st, me), st.item(int(m.group(1)))):
                         return self._json(404, {"error": f"item #{m.group(1)} not found"})
                     choices = body.get("choices")
