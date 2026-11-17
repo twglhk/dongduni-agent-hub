@@ -28,7 +28,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import engines as engines_mod, leftovers, procs, processes, schedules, stagemodel
+from . import engines as engines_mod, leftovers, procs, processes, rulewatch, schedules, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -399,6 +399,8 @@ class Engine:
         self.catch_up_at: float | None = None
         self.catch_up_told: dict[str, str] = {}
         self.sync_retry: dict[str, float] = {}
+        self.rules = rulewatch.RuleWatch(cfg.home, store, cfg.state_dir, cfg.rule_watch, cfg.lang, clock, log,
+                                         lambda k: self.person_of(k)) if cfg.rule_watch else None
 
     def inherit(self, old: Engine) -> None:
         self.compacting, self.hub_asked = old.compacting, old.hub_asked
@@ -523,6 +525,10 @@ class Engine:
         """Team lanes plus their parallel instances (`docs#2` ...)."""
         return [*self._team, *(k for k in self.cfg.instances if base_lane(k) in self._team)]
 
+    def person_of(self, lane: str) -> str | None:
+        ln = self.cfg.person_hubs.get(lane)
+        return ln.owner if ln and ln.owner else None
+
     def conflict(self, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
         return conflict_of(self.store, task, also)
 
@@ -599,6 +605,11 @@ class Engine:
             self._catch_up_branches(statuses)
         except Exception as e:
             self.log(f"branch sync: {e}")
+        try:
+            if self.rules:
+                self.rules.tick()
+        except Exception as e:
+            self.log(f"rules: {e}")
         self._extensions(statuses)
 
     # ---------- extensions ----------
