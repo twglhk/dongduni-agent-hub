@@ -285,10 +285,11 @@ class HubHandoffTest(Base):
         import os
         from unittest import mock
         from agent_hub import cli
+        from agent_hub.cli import lanes
         sid = self.s.lane("hub")["session"]
         args = argparse.Namespace(kind="handoff", text="[now] y", attach=[], as_="hub")
         with mock.patch.dict(os.environ, {"TOWER_HOME": str(self.cfg.home), "TOWER_LANE": "hub"}), \
-                mock.patch.object(cli, "cfg", return_value=self.cfg):
+                mock.patch.object(lanes, "cfg", return_value=self.cfg):
             with contextlib.redirect_stdout(io.StringIO()):
                 cli.cmd_report(args)
             args.kind = "done"
