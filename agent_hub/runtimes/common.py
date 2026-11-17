@@ -45,8 +45,8 @@ def pid_alive(pid: int | None) -> bool:
     return procs.alive(pid)
 
 
-def claude_base() -> Path:
-    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+def claude_base(account: Path | str | None = None) -> Path:
+    return Path(account or os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 
 
 def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
