@@ -4,9 +4,10 @@ import argparse
 import time
 
 from .. import stats
-from ..config import HUB, INFRA
+from ..config import HUB, INFRA, Config
 from ..engine import clip
-from ..store import HUMAN, StoreError
+from ..requester import card_audience, infra_wrapped_text
+from ..store import HUMAN, Store, StoreError
 from .common import TowerError, body_of, cfg, check_paths, need, parse_options, store, verdict_text, who
 
 
@@ -35,13 +36,14 @@ def cmd_item_add(args: argparse.Namespace) -> None:
     task = s.live_task(me) if me in c.team() else None
     audience = HUB if me in c.team() else HUMAN  # hub and infra items go straight to humans
     try:
+        to = card_audience(c, s, args.to, task, me, args.request)
         iid = s.add_item(me, task["id"] if task else None, kind, args.title, body, options, atts, audience, args.multi,
-                         assignee=args.to)
+                         assignee=to)
     except StoreError as e:
         raise TowerError(str(e))
     if audience == HUMAN:
-        print(f"#{iid} posted for humans (push notification). Don't wait: finish your scope; the decision comes back "
-              f"later (`dah show {iid}`).")
+        print(f"#{iid} posted for humans (push notification)" + (f", shown to {to} only" if to else "")
+              + f". Don't wait: finish your scope; the decision comes back later (`dah show {iid}`).")
         return
     s.push(HUB, me, "item", f"Item #{iid} from {me}" + (f" task #{task['id']}" if task else "")
            + f" \"{args.title}\" → `dah show {iid}`", task["id"] if task else None, iid)
@@ -122,11 +124,28 @@ def cmd_report(args: argparse.Namespace) -> None:
     if args.kind == "wrapped":
         if task:
             s.update_task(task["id"], state="closed", closed=time.time())
-        s.set_lane(me, closing=time.time())
-        if me != INFRA:
+        if me == INFRA:
+            infra_wrapped(c, s, text)
+        else:
             s.push(HUB, me, "wrapped", f"Wrapped: {tag}", tid)
+        s.set_lane(me, closing=time.time())
         print("Wrapped. End your turn; the tower closes this session.")
         return
     att = f" (files: {', '.join(atts)})" if atts else ""
     s.push(HUB, me, args.kind, f"{args.kind.capitalize()}: {tag}: {clip(args.text, 700)}{att}", tid)
     print(f"Sent to the hub." + (" Review comes back to this session; you may end your turn." if args.kind == "done" else ""))
+
+
+def infra_wrapped(c: Config, s: Store, text: str) -> None:
+    if not c.requester:
+        return
+    mid = s.lane(INFRA).get("active_message")
+    if mid is None:
+        return
+    try:
+        msg = s.message(int(mid))
+    except StoreError:
+        return
+    if msg["kind"] == "memo" and msg["sender"] == HUB and s.replied(int(mid), INFRA):
+        return
+    s.push(HUB, INFRA, "wrapped", infra_wrapped_text(s, msg, text), None, msg.get("item_id"))

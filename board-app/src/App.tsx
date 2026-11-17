@@ -13,7 +13,7 @@ import { TopBar } from './components/TopBar';
 import { XTabView } from './components/XHost';
 import { useL } from './i18n/context';
 import { HttpError } from './lib/api';
-import { forHuman } from './lib/items';
+import { forHuman, forMe } from './lib/items';
 import { useBoard } from './state/board';
 import { closeDoc, useDoc } from './state/docSheet';
 import { closeItem, useRoute } from './state/route';
@@ -32,7 +32,7 @@ export function App() {
   const r = useRoute();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [lb, setLb] = useState<LbState | null>(null);
-  const badge = data ? data.items.filter(forHuman).length : 0;
+  const badge = data ? data.items.filter(it => forHuman(it) && forMe(data, it)).length : 0;
   const onImage = (list: string[], i: number) => setLb({ list, i });
 
   useEffect(() => { document.title = (badge ? `(${badge}) ` : '') + (data?.title || ''); }, [badge, data?.title]);

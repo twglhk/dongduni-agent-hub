@@ -8,6 +8,7 @@ export interface Item {
   body?: string;
   state: string;
   audience?: string;
+  assignee?: string | null;
   question?: string | null;
   escalation?: string | null;
   options: Option[];
@@ -54,6 +55,7 @@ export interface BoardState {
   lang: string;
   auth_mode: string;
   me: Me | null;
+  requester?: boolean;
   running: boolean;
   version: string;
   local_only: boolean;

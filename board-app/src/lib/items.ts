@@ -2,6 +2,8 @@ import type { BoardState, Item } from './types';
 
 export const isOpen = (it: Item) => it.state === 'open';
 export const forHuman = (it: Item) => isOpen(it) && it.audience === 'human';
+export const forMe = (d: BoardState, it: Item) =>
+  !d.requester || !it.assignee || !d.me || d.auth_mode === 'local' || it.assignee === d.me.name;
 export const newest = (a: Item, b: Item) => (b.created || 0) - (a.created || 0);
 
 export const laneLabel = (d: BoardState | null, id: string) => {

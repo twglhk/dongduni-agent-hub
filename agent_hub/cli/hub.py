@@ -7,6 +7,7 @@ import time
 from .. import stagemodel
 from ..config import HUB, INFRA, Config
 from ..engine import clip
+from ..requester import escalation_audience, infra_reply_text, requester_for
 from ..store import Store, StoreError
 from .common import TowerError, cfg, need, need_team, store, verdict_text, who
 
@@ -39,13 +40,16 @@ def cmd_task(args: argparse.Namespace) -> None:
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
     try:
-        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable)
+        asker = requester_for(c, s, args.request, args.for_)
+        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable,
+                         requester=asker)
     except StoreError as e:
         raise TowerError(str(e))
     s.update_task(tid, **engines_mod.line_fields(args.brief))
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}"
-          + (f" (after task #{live['id']} wraps)" if live else ""))
+          + (f" (after task #{live['id']} wraps)" if live else "")
+          + (f" · for {asker}" if asker else ""))
 
 
 def cmd_stage(args: argparse.Namespace) -> None:
@@ -126,13 +130,12 @@ def cmd_escalate(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
     s = store(c)
-    if args.to and args.to not in {m["name"] for m in s.members()}:
-        raise TowerError(f"no member {args.to} (`dah member list`)")
     try:
-        s.escalate(args.id, args.why, args.to)
+        to = escalation_audience(s, s.item(args.id), args.to, c.requester)
+        s.escalate(args.id, args.why, to)
     except StoreError as e:
         raise TowerError(str(e))
-    print(f"#{args.id} → humans" + (f" ({args.to})" if args.to else "") + ". Carry on with other work.")
+    print(f"#{args.id} → humans" + (f" ({to} only)" if to else " (everyone)") + ". Carry on with other work.")
 
 
 def cmd_cancel(args: argparse.Namespace) -> None:
@@ -154,9 +157,13 @@ def cmd_memo(args: argparse.Namespace) -> None:
     s = store(c)
     try:
         if args.sub == "reply":
-            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes))
+            memo = s.memo(args.id)
+            asker = str(memo["sender"]) if c.requester and str(memo["sender"]) in {m["name"] for m in s.members()} else None
+            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes), asker)
             print(f"Answered #{args.id}; posted as review card #{card} for humans to confirm." if card
                   else f"Answered #{args.id}; it shows on the board.")
+            if me == INFRA and c.requester and memo["sender"] == HUB:
+                s.push(HUB, INFRA, "infra_reply", infra_reply_text(args.id, args.text), item_id=args.id)
         elif args.sub == "forward":
             if me != INFRA:
                 raise TowerError("only infra forwards memos")

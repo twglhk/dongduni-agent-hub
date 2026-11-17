@@ -225,6 +225,12 @@ Optional, all off by default (`tower.json`): `"branch_sync": true` merges your c
 
 Every decision records who made it, and the hub can route an item to one person (`dah escalate ID --to ana`).
 
+### Team options in `tower.json`
+
+All off by default; a single-user install behaves as before.
+
+- `"requester": true`: a task records who asked for it (`dah task LANE --request N` takes the sender of board request N, `--for ana` names the person). Cards that lanes and the hub post for that task default to that person (`dah item add --to ana`, `--to all` for everyone, `--request N` on the hub) and show on the Hub tab of that person only (everyone sees them in a local-mode board and in the history). `dah escalate` keeps the person; `--to all` widens it. The hub's reply card to a request is for the sender. Infra's answers and its `wrapped` reach the hub as news (`infra_reply`, `wrapped`).
+
 ## Development
 
 ```sh

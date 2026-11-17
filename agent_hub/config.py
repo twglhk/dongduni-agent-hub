@@ -127,6 +127,7 @@ class Config:
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
+    requester: bool = False      # cards default to the member who asked for the work, and infra's answers and wraps reach the hub (requester.py)
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -440,6 +441,7 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
     return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
+            "requester": _bool(raw, "requester"),
             "branch_sync": _bool(raw, "branch_sync"),
             "branch_sync_seconds": _int(raw, "branch_sync_seconds", 0, 0),
             "branch_sync_push": _bool(raw, "branch_sync_push")}

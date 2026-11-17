@@ -551,6 +551,7 @@ class Engine:
             ln = self.cfg.all_lanes.get(lane)
             return None, {"lane": base_lane(lane), "title": clip(f"#{it['id']} {it['title']}", 80), "brief": brief,
                           "engine": ln.engine if ln else None, "task_id": it["task_id"],
+                          "requester": src.get("requester"),
                           "text": lambda tid: f"{line} → follow-up task #{tid} for {lane}"}
         if it["decided_by"] != HUB or lane != HUB:
             return (HUB, line), None

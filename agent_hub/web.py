@@ -333,6 +333,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "lang": cfg.lang,
         "auth_mode": cfg.auth_mode,
         "me": me,
+        "requester": cfg.requester,
         "running": tower_pid(cfg) is not None,
         "version": __version__,
         "local_only": cfg.local_only,

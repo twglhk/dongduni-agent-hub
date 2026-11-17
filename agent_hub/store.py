@@ -186,7 +186,8 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
-                ("deliverable", "TEXT"))  # the brief's Line: header and `dah stage`
+                ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
+                ("requester", "TEXT"))  # the member whose request the task serves; NULL = nobody (an automatic task)
 
 
 class StoreError(Exception):
@@ -401,7 +402,13 @@ class Store:
             raise StoreError(f"memo #{memo_id} not found")
         return row
 
-    def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = ()) -> int | None:
+    def replied(self, memo_id: int, by: str) -> bool:
+        with self.conn() as con:
+            return con.execute("SELECT 1 FROM messages WHERE kind='memo_reply' AND item_id=? AND sender=? LIMIT 1",
+                               (memo_id, by)).fetchone() is not None
+
+    def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = (),
+                   assignee: str | None = None) -> int | None:
         """Record the reply. A hub reply to a person's request also becomes a review card for humans
         (one open card per request: a second reply revises it). Returns that item's id, else None."""
         memo = self.memo(memo_id)
@@ -413,9 +420,9 @@ class Store:
                         "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", memo_id, text, now, now))
         if by != HUB or memo["sender"] in (HUB, INFRA, TOWER, "dah update", *machines):
             return None
-        return self.post_memo_card(memo, text)
+        return self.post_memo_card(memo, text, assignee)
 
-    def post_memo_card(self, memo: dict[str, Any], reply: str) -> int:
+    def post_memo_card(self, memo: dict[str, Any], reply: str, assignee: str | None = None) -> int:
         quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in memo["text"].strip().splitlines())
         title = " ".join(memo["text"].split())
         title = title if len(title) <= 80 else title[:79] + "…"
@@ -428,18 +435,26 @@ class Store:
                 return int(row["id"])
             return _id(con.execute(
                 "INSERT INTO items(task_id, lane, kind, title, body, options, multi, attachments, audience, state, "
-                "created, memo_id) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?)",
+                "created, memo_id, assignee) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?,?)",
                 (HUB, "review", title, f"{reply}\n\n{quoted}", HUMAN,
-                 self.clock(), memo["id"])))
+                 self.clock(), memo["id"], assignee)))
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None) -> int:
+    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None,
+                 requester: str | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable) "
-                                   "VALUES(?,?,?,?,?,?,?)",
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable, "
+                                   "requester) VALUES(?,?,?,?,?,?,?,?)",
                                    (lane, title, brief, "queued", self.clock(), engine,
-                                    valid_key(deliverable) if deliverable else None)))
+                                    valid_key(deliverable) if deliverable else None, requester or None)))
+
+    def requester_of_task(self, task_id: int | None) -> str | None:
+        if task_id is None:
+            return None
+        with self.conn() as con:
+            row = con.execute("SELECT requester FROM tasks WHERE id=?", (task_id,)).fetchone()
+        return str(row[0]) if row and row[0] else None
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -623,9 +638,10 @@ class Store:
             if row is None or row[0] is not None:
                 return False
             if follow:
-                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) VALUES(?,?,?,?,?,?)",
+                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, requester) "
+                                      "VALUES(?,?,?,?,?,?,?)",
                                       (follow["lane"], follow["title"], follow["brief"], "queued", self.clock(),
-                                       follow.get("engine"))))
+                                       follow.get("engine"), follow.get("requester"))))
                 self.push(HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
             elif push:
                 self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con)

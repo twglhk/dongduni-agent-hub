@@ -7,7 +7,7 @@ import { Section } from '../components/Section';
 import { XSections } from '../components/XHost';
 import { useL } from '../i18n/context';
 import { fmt } from '../lib/format';
-import { forHuman, isOpen, newest } from '../lib/items';
+import { forHuman, forMe, isOpen, newest } from '../lib/items';
 import type { BoardState, Lane } from '../lib/types';
 
 function Doing({ l }: { l: Lane }) {
@@ -42,9 +42,9 @@ function Handling({ list }: { list: BoardState['items'] }) {
 
 export function HubView({ d }: { d: BoardState }) {
   const { L } = useL();
-  const mine = d.items.filter(forHuman);
+  const mine = d.items.filter(forHuman).filter(it => forMe(d, it));
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
-  const side = d.items.filter(it => isOpen(it) && it.audience === 'hub').sort(newest);
+  const side = d.items.filter(it => isOpen(it) && it.audience === 'hub' && forMe(d, it)).sort(newest);
   const hub = d.lanes.find(l => l.lane === 'hub');
   return (
     <>
