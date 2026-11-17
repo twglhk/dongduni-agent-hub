@@ -62,6 +62,8 @@ export interface MyHubState {
 
 export interface Me { name: string; role?: string }
 
+export interface UploadsInfo { provider: 'local' | 'drive' | 's3'; max_mb: number; max_files: number; chunk: number; accept: string[] }
+
 export interface BoardState {
   title: string;
   lang: string;
@@ -70,6 +72,7 @@ export interface BoardState {
   my_hub?: string;
   my_hub_state?: MyHubState;
   requester?: boolean;
+  uploads?: UploadsInfo | null;
   running: boolean;
   version: string;
   local_only: boolean;

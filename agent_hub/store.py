@@ -23,6 +23,7 @@ ALL_HUBS = "hub*"
 INFRA = "infra"
 HUMAN = "human"
 TOWER = "tower"
+HOLD = "hold:"  # target prefix of a board request whose attachments are still arriving: no lane takes it
 
 TASK_LIVE = ("running", "wrapping")
 OUTCOMES = ("adopted", "redirected", "dropped")
@@ -512,6 +513,12 @@ class Store:
     def task_hubs(self) -> dict[int, str]:
         with self.conn() as con:
             return {int(r[0]): str(r[1]) for r in con.execute("SELECT id, hub FROM tasks WHERE hub IS NOT NULL")}
+
+    def release_held(self, message_id: int, target: str, text: str) -> None:
+        with self.conn() as con:
+            if con.execute("UPDATE messages SET target=?, text=? WHERE id=? AND target=?",
+                           (target, text, message_id, HOLD + target)).rowcount == 0:
+                raise StoreError(f"#{message_id} is not held for {target}")
 
     def pending_targets(self) -> set[str]:
         with self.conn() as con:

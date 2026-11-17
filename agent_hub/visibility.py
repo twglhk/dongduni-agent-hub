@@ -7,7 +7,8 @@ from typing import Any, Callable
 
 from .config import INFRA, Config
 from .requester import visible_to_requester
-from .store import HUMAN, Store, item_view
+from .store import HOLD, HUMAN, Store, item_view
+from .uploads import TAIL
 
 Viewer = dict[str, Any] | None
 ItemRule = Callable[["Gate", dict[str, Any]], bool]
@@ -162,11 +163,32 @@ def memo_count(g: Gate, target: str) -> int:
     return len([m for m in g.s.memos(target, MEMO_SCAN) if can_see_memo(g, target, m)])
 
 
-def file_allowed(g: Gate, rel: str) -> bool:
-    s = g.s
+def _like(text: str) -> str:
+    return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def upload_allowed(g: Gate, rel: str) -> bool:
+    if not g.me:
+        return False
     if g.owner:
         return True
+    pat = _like(rel)
+    with g.s.conn() as con:
+        memos = [dict(r) for r in con.execute(
+            "SELECT id, target, sender, text FROM messages WHERE kind='memo' AND text LIKE ? ESCAPE '\\'", (pat,))]
+        cards = [dict(r) for r in con.execute(
+            "SELECT * FROM items WHERE body LIKE ? ESCAPE '\\' OR attachments LIKE ? ESCAPE '\\'", (pat, pat))]
+    return (any(not str(m["target"]).startswith(HOLD) and can_see_memo(g, str(m["target"]), m) for m in memos)
+            or any(can_see(g, it) for it in cards))
+
+
+def file_allowed(g: Gate, rel: str) -> bool:
+    s = g.s
     rel = "/".join(Path(rel.lstrip("/")).parts)
+    if TAIL.fullmatch(rel):
+        return upload_allowed(g, rel)
+    if g.owner:
+        return True
     folder = rel.rpartition("/")[0] if rel.startswith(BOARD_DIR) else ""
     key = folder + "/" if folder else rel
 

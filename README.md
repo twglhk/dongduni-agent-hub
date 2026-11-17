@@ -264,6 +264,22 @@ All off by default; a single-user install behaves as before.
 - `"person_hubs": true` (or `{"max": 3, "auto": false, "domains": []}`; default `false`): one always-on hub per board member, a copy of the hub lane called `hub-<member>` (the id is made from the member name: lower case letters, digits, `-` and `_`; a name with no Latin letter gets a short hash). Each member's board requests go to their own hub, the Hub tab shows their hub and the cards of the tasks it queued, and news about a task (reports, cards, decisions, done gates, stalls) goes back to the hub that queued it. The team lanes and the task queue stay shared; every hub may task, decide, escalate and ask infra. `max` caps how many hubs run (each is a live agent session that uses memory): members past it wait in line (shown on their board, one board item tells humans), the default hub takes their requests, and the first in line gets a hub when a member is removed. `dah member add/remove` reload the member list; `dah member list` shows each member's hub. `"auto": true` (needs `auth.mode` `header`): a person the proxy lets in who is not a member yet joins on their first visit (the first one becomes owner) and sees a wait screen until their hub is ready; `domains` limits that to those email domains. Lane ids starting with `hub-` are reserved while this is on, and so are member names `hub` and `hub-…`.
 - `"fair_turns": true`: when the tower picks the next waiting team task, each requester's first waiting task comes before anyone's second, so one person's long list does not fill every free session (work already running counts as that person's turn). A task whose `after:` task has finished still goes first. Off: oldest first. `dah status` then lists whose each waiting task is and how many wait per person.
 
+### Chat attachments
+
+The hub chat has a paperclip: people attach images, video, audio, PDF, text, CSV and JSON files to a request. The request waits (held, no lane sees it) until every file is up, then reaches the hub with one line per file: path, type and size. A held request whose browser went away is sent on after two hours with what arrived. Members see only the attachments of requests and cards they can see (`visibility.py`).
+
+```json
+"uploads": {"provider": "local", "max_mb": 25, "max_files": 10, "max_total_mb": 2048}
+```
+
+- `provider`: `"local"` (default), `"drive"`, `"s3"` or `"off"`. Leave the key out for `local`.
+- `max_mb` (default 25) is the cap per file; `max_files` (default 10) the cap per request.
+- `local`: files land in `uploads/<date>/<request>/` under the workspace, where every lane can read them; the day folder carries its own `.gitignore`. `max_total_mb` (default 2048, `0` = no cap) stops new requests when the folder is full.
+- `drive`: `{"provider": "drive", "remote": "mydrive", "root": "hub-files"}` copies each file to an rclone remote (`rclone config` first; rclone must be on PATH, or set `TOWER_RCLONE_BIN`). Bytes go browser, board, remote; the board shows them back by streaming them.
+- `s3`: `{"provider": "s3", "bucket": "example-bucket", "region": "eu-west-1", "prefix": "hub/"}`: the browser uploads straight to the bucket with presigned PUT or multipart. Credentials come from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (`AWS_SESSION_TOKEN`), `~/.aws/credentials` (`AWS_PROFILE`) or an instance role, never from `tower.json`. The bucket needs a CORS rule for the board's address (see [docs/attachments.md](docs/attachments.md)).
+
+Why `local` by default: it needs no account, no tool and no credential, and the caps bound what a member can put on the disk. Set `"provider": "off"` to remove the paperclip and the upload routes. Design, security decisions and the storage interface are in [docs/attachments.md](docs/attachments.md).
+
 ## Development
 
 ```sh

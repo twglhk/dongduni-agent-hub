@@ -1,5 +1,6 @@
 import { useL } from '../../i18n/context';
 import type { Memo } from '../../lib/types';
+import { AttachStrip } from '../AttachStrip';
 import { Chip, Meta, When, type Tone } from '../Chips';
 import { Prose } from '../Prose';
 
@@ -14,6 +15,7 @@ export function MemoRow({ m, label }: { m: Memo; label?: string }) {
       <Meta>{label && <Chip tone="blue">{label}</Chip>}<Chip tone={TONE[st]}>{(L.memo as Record<string, string>)[st]}</Chip>
         <span>#{m.id}</span>{m.sender && <span>{m.sender}</span>}<When at={m.created} className="ml-auto" /></Meta>
       <div className="mt-1.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{m.text}</div>
+      <AttachStrip text={m.text} />
       {reps.map((r, i) => (
         <div key={i} className="mt-3 rounded-tile bg-blue-weak px-4 py-3">
           <Meta><span>{L.label.reply}</span><When at={r.created} /></Meta>
