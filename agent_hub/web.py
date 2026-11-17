@@ -68,7 +68,7 @@ BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "secrets
 BLOCKED_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pem", ".key", ".p12", ".pfx", ".pkcs12", ".ppk",
                     ".jks", ".keystore", ".gpg", ".kdbx", ".tfstate", ".tfvars"}
 BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials.")
-MAX_BODY = 64 * 1024
+MAX_BODY = 1024 * 1024  # a cap on the request, not on the words: board posts are text only
 PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
@@ -806,7 +806,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     log(f"{who} decided #{it['id']}: {it['verdict']} {it['choice'] or ''}")
                     return self._json(200, {"ok": True, "item": it})
                 if path == "/api/memo":
-                    text = str(body.get("text") or "").strip()[:4000]
+                    text = str(body.get("text") or "").strip()
                     to = str(body.get("to") or HUB)
                     if to == INFRA:
                         raise StoreError("infra only takes requests from the hub: ask the hub")
