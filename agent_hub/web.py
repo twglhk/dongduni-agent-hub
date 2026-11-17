@@ -24,7 +24,8 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
   *    /api/goals...              410 Gone (goals were removed in 0.8.0)
-  POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
+  POST /api/settings              {max_lanes: 1..10} or {lane, sessions: 1..5} (a team lane's or infra's max_instances;
+                                   hubs stay at one session each) · written to tower.json, the tower picks it up
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
   GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
   GET|POST /api/x/<name>          routes from the workspace's .tower/ext/*.py (see ext.py)
@@ -81,6 +82,7 @@ PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
+MAX_SESSIONS_LIMIT = 5
 XML_TYPES = ("image/svg+xml", "application/xhtml+xml", "application/xml", "text/xml")
 PAGE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
             "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
@@ -310,6 +312,11 @@ def process_doc(cfg: Config, path: str) -> dict[str, Any] | None:
         return None
 
 
+def memo_title(text: str) -> str:
+    lines = [x.strip() for x in str(text or "").splitlines() if x.strip()]
+    return clip(lines[0] if lines else "", 80)
+
+
 def shown_lanes(cfg: Config, s: Store) -> list[str]:
     out: list[str] = []
     for lid in [*cfg.lanes, *cfg.person_hubs]:
@@ -318,7 +325,7 @@ def shown_lanes(cfg: Config, s: Store) -> list[str]:
             if ln.base != lid:
                 continue
             row = s.lane(key)
-            if row.get("status") not in (None, "closed") or s.live_task(key):
+            if row.get("status") not in (None, "closed") or row.get("active_message") is not None or s.live_task(key):
                 out.append(key)
     return out
 
@@ -332,13 +339,18 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
         doing = None
-        live = row.get("status") not in (None, "closed")
+        memo = None
+        status = row.get("status") or "closed"
+        live = status != "closed"
         if ln.kind == HUB and live and row.get("doing") and (row.get("doing_at") or 0) >= (row.get("opened") or 0):
             doing = clip(row["doing"], 80)
-        elif lid == INFRA and live and row.get("active_message") is not None:
+        elif ln.kind == INFRA and live and row.get("active_message") is not None:
             try:
                 m = s.message(int(row["active_message"]))
                 doing = clip(f"#{m['id']} {m['text']}", 80)
+                memo = {"id": m["id"], "kind": m["kind"], "title": memo_title(m["text"])}
+                if status == "idle":
+                    status = "busy"
             except StoreError:
                 pass
         proc = None
@@ -347,8 +359,9 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
             hit = next((r for r in rows if r["n"] == task["line_row"]), None)
             proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
-                    "owner": ln.owner or None, "status": row.get("status") or "closed", "doing": doing,
+                    "owner": ln.owner or None, "status": status, "doing": doing, "memo": memo,
                     "base": ln.base or None, "branch": cfg.branch_of(lid) or None,
+                    "sessions": None if ln.base or ln.kind == HUB else cfg.instance_cap(lid),
                     "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
                     "requester": task["requester"] if task else None,
@@ -446,7 +459,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "paused": (cfg.state_dir / "paused").exists(),
         "extensions": board_extras(cfg.home),
         "lane_cap": {"used": len({t["lane"] for t in tasks if t["state"] in ("running", "wrapping")}),
-                     "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT},
+                     "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT, "sessions_max": MAX_SESSIONS_LIMIT},
         "runtimes": list(RUNTIMES),
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
@@ -968,6 +981,27 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     mid = st.push(to, who, "memo", text)
                     log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
+                if path == "/api/settings" and "lane" in body:
+                    if me.get("role") != "owner":
+                        return self._json(403, {"error": "only an owner changes settings"})
+                    lid, raw = str(body.get("lane") or ""), body.get("sessions")
+                    ln = c.lanes.get(lid)
+                    if ln is None or ln.kind == HUB:
+                        raise StoreError("sessions are set for a team lane or infra; each hub runs one session per person")
+                    if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_SESSIONS_LIMIT:
+                        raise StoreError(f"sessions must be a whole number from 1 to {MAX_SESSIONS_LIMIT}")
+                    old = c.instance_cap(lid)
+                    held = [k for k, x in c.instances.items() if x.base == lid and int(k.rpartition("#")[2]) > raw
+                            and (st.lane(k).get("active_message") is not None or st.live_task(k))]
+                    if held and ln.kind != "team":
+                        raise StoreError(f"{', '.join(held)} is still working: lower it once that session wraps")
+                    edit_config(c.home, lambda d: d["lanes"][lid].__setitem__("max_instances", raw))
+                    self.site.mtime = -1.0
+                    if raw != old:
+                        st.push(HUB, who, "settings", f"{who} set {lid} sessions {old} → {raw}: {lid} may run up to "
+                                f"{raw} sessions at once.")
+                        log(f"{who} {lid} sessions {old} → {raw}")
+                    return self._json(200, {"ok": True, "lane": lid, "sessions": raw})
                 if path == "/api/settings":
                     if me.get("role") != "owner":
                         return self._json(403, {"error": "only an owner changes settings"})

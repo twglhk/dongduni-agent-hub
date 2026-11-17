@@ -373,5 +373,10 @@
     "hint": "El hub propone el carril (id, rol, runtime) en una tarjeta para que la confirmes; solo entonces se crea. Si lo dejas vacío, el hub te preguntará.",
     "send": "Pedir al hub",
     "sent": "Enviado al hub. En breve llegará una tarjeta con la propuesta a la pestaña Hub."
+  },
+  "ln": {
+    "sessions": "Sesiones",
+    "sessionsOf": "Sesiones de {lane}:",
+    "memo": "Nota #{n}"
   }
 }

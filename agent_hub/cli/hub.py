@@ -5,7 +5,7 @@ import sys
 import time
 
 from .. import stagemodel
-from ..config import HUB, INFRA, Config, base_lane
+from ..config import HUB, INFRA, Config, base_lane, is_infra
 from ..engine import clip
 from ..requester import escalation_audience, infra_reply_text, member_name, requester_for
 from ..store import Store, StoreError
@@ -187,17 +187,27 @@ def cmd_cancel(args: argparse.Namespace) -> None:
 
 def cmd_memo(args: argparse.Namespace) -> None:
     c = cfg()
-    me = need(args, c, HUB, INFRA)
+    me = need(args, c, HUB, *c.infra_sessions())
     s = store(c)
     try:
+        if args.sub == "paths":
+            if not c.is_hub(me):
+                raise TowerError("only the hub sets a memo's paths")
+            msg = s.message(args.id)
+            if msg["target"] != INFRA or msg["delivered"] is not None:
+                raise TowerError(f"#{args.id} is not a waiting infra message")
+            paths = ", ".join(p.strip() for p in args.paths if p.strip()) or None
+            s.set_message_paths(args.id, paths)
+            print(f"#{args.id} paths: {paths or 'none'}")
+            return
         if args.sub == "reply":
             memo = s.memo(args.id)
             asker = member_name(s, str(memo["sender"])) if c.requester else None
-            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes),
+            card = s.reply_memo(args.id, args.text, INFRA if is_infra(me) else me, set(c.all_lanes),
                                 asker if asker in {m["name"] for m in s.members()} else None)
             print(f"Answered #{args.id}; posted as review card #{card} for humans to confirm." if card
                   else f"Answered #{args.id}; it shows on the board.")
-            if me == INFRA and c.requester and c.is_hub(str(memo["sender"])):
+            if is_infra(me) and c.requester and c.is_hub(str(memo["sender"])):
                 s.push(str(memo["sender"]), INFRA, "infra_reply", infra_reply_text(args.id, args.text),
                        item_id=args.id)
         elif args.sub == "bump":
@@ -206,7 +216,7 @@ def cmd_memo(args: argparse.Namespace) -> None:
             s.bump_message(args.id, INFRA)
             print(f"#{args.id} is first in the infra queue: the next free infra session takes it")
         elif args.sub == "forward":
-            if me != INFRA:
+            if not is_infra(me):
                 raise TowerError("only infra forwards memos")
             memo = s.memo(args.id)
             back = memo["sender"] if c.is_hub(memo["sender"]) else HUB
@@ -214,13 +224,13 @@ def cmd_memo(args: argparse.Namespace) -> None:
             s.reply_memo(args.id, "Passed to the hub.", INFRA)
             print(f"memo #{args.id} → hub")
         else:
-            send_infra(c, s, me, args.text, args.approved)
+            send_infra(c, s, me, args.text, args.approved, args.paths)
     except StoreError as e:
         raise TowerError(str(e))
 
 
-def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, model: str | None = None,
-               effort: str | None = None) -> None:
+def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, paths: str | None = None,
+               model: str | None = None, effort: str | None = None) -> None:
     if not c.is_hub(me) or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
     if bad := stagemodel.problems(model, effort):
@@ -230,12 +240,15 @@ def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, mo
         text = "\n".join(head) + "\n\n" + text
     if approved and approved.strip():
         text = f"{text}\n\nApproved by the human: {approved.strip()}"
-    print(f"memo #{s.push(INFRA, me, 'memo', text)} → infra")
+    paths = ", ".join(p.strip() for p in (paths or "").split(",") if p.strip()) or None
+    print(f"memo #{s.push(INFRA, me, 'memo', text, paths=paths)} → infra"
+          + ("" if paths or len(c.infra_sessions()) < 2 else " (no --paths: it runs while no other infra session works)"))
 
 
 def cmd_infra(args: argparse.Namespace) -> None:
     c = cfg()
     try:
-        send_infra(c, store(c), need(args, c, HUB, INFRA), args.text, args.approved, args.model, args.effort)
+        send_infra(c, store(c), need(args, c, HUB, *c.infra_sessions()), args.text, args.approved, args.paths, args.model,
+                   args.effort)
     except StoreError as e:
         raise TowerError(str(e))

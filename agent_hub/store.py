@@ -206,6 +206,12 @@ LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEX
                 ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"))
 
 
+def _in_turns(con: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from .fair import in_turns, message_who
+    held = _rows(con.execute("SELECT m.* FROM messages m JOIN lanes l ON l.active_message = m.id"))
+    return in_turns(rows, message_who, held, lambda m: m.get("rank") is not None)
+
+
 class StoreError(Exception):
     pass
 
@@ -300,8 +306,9 @@ class Store:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             con.execute("CREATE TABLE IF NOT EXISTS schedule_runs(key TEXT PRIMARY KEY, period TEXT NOT NULL, "
                         "fired REAL NOT NULL)")
-            if "rank" not in _columns(con, "messages"):
-                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")
+            for col, decl in (("rank", "REAL"), ("paths", "TEXT")):
+                if col not in _columns(con, "messages"):
+                    con.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
@@ -340,9 +347,9 @@ class Store:
     # ---------- messages ----------
 
     def push(self, target: str, sender: str, kind: str, text: str, task_id: int | None = None,
-             item_id: int | None = None, con: sqlite3.Connection | None = None) -> int:
-        sql = "INSERT INTO messages(target, sender, kind, task_id, item_id, text, created) VALUES(?,?,?,?,?,?,?)"
-        args = (target, sender, kind, task_id, item_id, text, self.clock())
+             item_id: int | None = None, con: sqlite3.Connection | None = None, paths: str | None = None) -> int:
+        sql = "INSERT INTO messages(target, sender, kind, task_id, item_id, text, created, paths) VALUES(?,?,?,?,?,?,?,?)"
+        args = (target, sender, kind, task_id, item_id, text, self.clock(), paths)
         if con is not None:
             return _id(con.execute(sql, args))
         with self.conn() as c:
@@ -373,25 +380,47 @@ class Store:
             raise StoreError(f"message #{message_id} not found")
         return row
 
-    # ---------- infra inbox: one message per session ----------
+    # ---------- infra inbox: one message per session; several sessions (infra, infra#2 ...) at once ----------
 
-    def claim_inbox(self, lane: str) -> dict[str, Any] | None:
+    def claim_inbox(self, lane: str, target: str | None = None, allow: Callable[[dict[str, Any]], bool] | None = None,
+                    fair: bool = False) -> dict[str, Any] | None:
         with self.tx() as con:
             con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
             active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
             if active is None:
-                row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
-                                       "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
-                if row:
+                taken = {r[0] for r in con.execute("SELECT active_message FROM lanes WHERE active_message IS NOT NULL")}
+                rows = _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL "
+                                         "ORDER BY COALESCE(rank, id), id", (target or lane,)))
+                waiting = [r for r in rows if r["id"] not in taken]
+                for row in _in_turns(con, waiting) if fair else waiting:
+                    if allow is not None and not allow(row):
+                        continue
                     active = row["id"]
                     con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
+                    break
             return _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
 
-    def inbox_queue(self, target: str) -> list[dict[str, Any]]:
+    def inbox_queue(self, target: str, fair: bool = False) -> list[dict[str, Any]]:
         with self.conn() as con:
-            return _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
+            rows = _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
                                      "(SELECT active_message FROM lanes WHERE active_message IS NOT NULL) "
                                      "ORDER BY COALESCE(rank, id), id", (target,)))
+            return _in_turns(con, rows) if fair else rows
+
+    def held_messages(self, lanes: Iterable[str]) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        with self.conn() as con:
+            for lane in lanes:
+                row = _one(con.execute("SELECT m.* FROM lanes l JOIN messages m ON m.id=l.active_message WHERE l.lane=?",
+                                       (lane,)))
+                if row:
+                    out[lane] = row
+        return out
+
+    def set_message_paths(self, message_id: int, paths: str | None) -> None:
+        with self.conn() as con:
+            if con.execute("UPDATE messages SET paths=? WHERE id=?", (paths, message_id)).rowcount == 0:
+                raise StoreError(f"message #{message_id} not found")
 
     def bump_message(self, message_id: int, target: str) -> None:
         with self.tx() as con:

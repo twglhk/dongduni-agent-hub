@@ -36,9 +36,11 @@ export interface Lane {
   owner?: string | null;
   base?: string | null;
   branch?: string | null;
+  sessions?: number | null;
+  memo?: { id: number; kind: string; title: string } | null;
 }
 
-export interface LaneCap { used: number; cap: number; max: number }
+export interface LaneCap { used: number; cap: number; max: number; sessions_max?: number }
 
 export interface Reply { text: string; created?: number }
 export interface Memo { id: number; text: string; sender?: string; created?: number; delivered?: number | null; replies?: Reply[] }

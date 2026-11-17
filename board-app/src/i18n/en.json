@@ -373,5 +373,10 @@
     "hint": "Your hub proposes the lane (id, role, runtime) as a card for you to confirm; only then does infra create it. You can leave this empty and the hub will ask.",
     "send": "Ask the hub",
     "sent": "Sent to the hub. A card with its proposal will arrive on the Hub tab shortly."
+  },
+  "ln": {
+    "sessions": "Sessions",
+    "sessionsOf": "Sessions of {lane}:",
+    "memo": "Memo #{n}"
   }
 }

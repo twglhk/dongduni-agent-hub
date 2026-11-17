@@ -29,8 +29,9 @@ export function LaneCard({ l }: { l: Lane }) {
         <span className="ml-auto flex-none"><StatusChip status={l.status} /></span>
       </div>
       {l.task_id ? <div className={`text-t5 font-semibold ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">#{l.task_id}</span>{l.task_title}{l.requester && <span className="ml-2 whitespace-nowrap text-t6 font-semibold text-ink-3">· {fmt(L.lv.by, { who: l.requester })}</span>}</div>
-        : l.doing ? null : <div className="text-t5 text-ink-3">{L.label.noTask}</div>}
-      {l.doing && <div className={`${l.task_id ? 'text-t6 text-ink-2' : 'text-t5 font-semibold'} ${CLAMP2}`}>{l.doing}</div>}
+        : l.doing || l.memo ? null : <div className="text-t5 text-ink-3">{L.label.noTask}</div>}
+      {l.memo && <div className={`text-t5 ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">{fmt(L.ln.memo, { n: l.memo.id })}</span>{l.memo.title}</div>}
+      {l.doing && !l.memo && <div className={`${l.task_id ? 'text-t6 text-ink-2' : 'text-t5 font-semibold'} ${CLAMP2}`}>{l.doing}</div>}
       {(proc || model || l.fixing) && (
         <div className="flex flex-wrap items-center gap-2 text-t6 text-ink-3">
           {proc && <span>{proc}</span>}

@@ -106,13 +106,20 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("id", type=int)
     q = msub.add_parser("forward")
     q.add_argument("id", type=int)
+    q = msub.add_parser("paths", help="hub: set the paths of a waiting infra memo (infra sessions run in parallel "
+                                      "only when their paths do not overlap)")
+    q.add_argument("id", type=int)
+    q.add_argument("paths", nargs="*")
     q = msub.add_parser("send")
     q.add_argument("target", choices=(INFRA,))
     q.add_argument("text")
     q.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
+    q.add_argument("--paths", metavar="A,B", help="files or folders it will touch (lets it run beside other infra sessions)")
     p = sub.add_parser("infra", help="hub: ask infra to do something (infra runs only on a hub request)")
     p.add_argument("text")
     p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
+    p.add_argument("--paths", metavar="A,B", help="files or folders it will touch, comma separated: a memo with paths "
+                   "runs beside other infra sessions whose paths do not overlap")
     p.add_argument("--model", help="the model its infra session opens with (fable, opus, sonnet, haiku or a full id); "
                    "a `model:` line in the text does the same. Default: the infra lane's own")
     p.add_argument("--effort", help="low|medium|high|xhigh|max for its infra session; an `effort:` line does the same")

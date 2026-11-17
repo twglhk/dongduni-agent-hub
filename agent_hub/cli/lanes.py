@@ -4,7 +4,7 @@ import argparse
 import time
 
 from .. import stats
-from ..config import HUB, INFRA, Config
+from ..config import HUB, INFRA, Config, is_infra
 from ..engine import clip
 from ..requester import card_audience, infra_requester, infra_wrapped_text
 from ..store import HUMAN, Store, StoreError
@@ -98,7 +98,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         s.set_lane(me, handoff=args.text, handoff_session=s.lane(me).get("session") or "")
         print("Handoff saved. End your turn; the tower opens a fresh hub session with this handoff.")
         return
-    if me == INFRA and args.kind != "wrapped":
+    if is_infra(me) and args.kind != "wrapped":
         raise TowerError("infra only uses `report wrapped`; answer memos with `dah memo reply`")
     task = s.live_task(me)
     tid = task["id"] if task else None
@@ -129,8 +129,8 @@ def cmd_report(args: argparse.Namespace) -> None:
     if args.kind == "wrapped":
         if task:
             s.update_task(task["id"], state="closed", closed=time.time())
-        if me == INFRA:
-            infra_wrapped(c, s, text)
+        if is_infra(me):
+            infra_wrapped(c, s, text, me)
         else:
             s.push(s.hub_for_task(tid), me, "wrapped", f"Wrapped: {tag}", tid)
         s.set_lane(me, closing=time.time())
@@ -141,10 +141,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(f"Sent to the hub." + (" Review comes back to this session; you may end your turn." if args.kind == "done" else ""))
 
 
-def infra_wrapped(c: Config, s: Store, text: str) -> None:
+def infra_wrapped(c: Config, s: Store, text: str, me: str = INFRA) -> None:
     if not c.requester:
         return
-    mid = s.lane(INFRA).get("active_message")
+    mid = s.lane(me).get("active_message")
     if mid is None:
         return
     try:
@@ -154,6 +154,6 @@ def infra_wrapped(c: Config, s: Store, text: str) -> None:
     sender = str(msg["sender"])
     if msg["kind"] == "memo" and c.is_hub(sender) and s.replied(int(mid), INFRA):
         return
-    asker = infra_requester(c, s)
+    asker = infra_requester(c, s, me)
     hub = sender if c.is_hub(sender) else c.hub_of(asker) if asker else HUB
     s.push(hub, INFRA, "wrapped", infra_wrapped_text(s, msg, text), None, msg.get("item_id"))

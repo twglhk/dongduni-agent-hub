@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import engines as engines_mod, leftovers, procs, processes, schedules, stagemodel
-from .config import HUB, INFRA, Config, base_lane, instance_lane
+from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
 from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError, is_hub_name
@@ -218,6 +218,28 @@ def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tup
     return turns(queued, task_who, running, first)
 
 
+def message_paths(msg: dict[str, Any]) -> list[str] | None:
+    """An infra message's paths: `dah infra --paths` / `dah memo paths` (the column), else a `paths:` line in its text."""
+    if msg.get("paths"):
+        return task_paths({"brief": f"paths: {msg['paths']}"})
+    return task_paths({"brief": msg.get("text")})
+
+
+def message_conflict(msg: dict[str, Any], live: list[dict[str, Any]]) -> str | None:
+    """Why this infra message may not start beside the ones other infra sessions hold (None = it may). Infra sessions
+    share the workspace, so both must declare `paths:` that do not overlap."""
+    mine = message_paths(msg)
+    for o in live:
+        theirs = message_paths(o)
+        if mine is None:
+            return f"beside #{o['id']}: #{msg['id']} has no paths"
+        if theirs is None:
+            return f"beside #{o['id']}: #{o['id']} has no paths"
+        if paths_overlap(mine, theirs):
+            return f"beside #{o['id']}: paths overlap"
+    return None
+
+
 def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
     """The next task continues the one just finished: its brief says `after: <prev id>`."""
     return after_of(nxt) == prev["id"]
@@ -268,6 +290,7 @@ class Engine:
         self.hub_asked: dict[str, tuple[str, float]] = {}
         store.sync_lane_engines({lid: cfg.all_lanes[lid].engine for lid in self.team})
         self.has_infra = INFRA in cfg.lanes
+        self.infra_keys = cfg.infra_sessions()
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
         self.hub_opens: dict[str, list[float]] = {}
@@ -348,9 +371,12 @@ class Engine:
         model, effort = stagemodel.resolve(None, str(msg.get("text") or ""))
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
-    def inbox_prompt(self, msg: dict[str, Any]) -> str:
+    def inbox_prompt(self, msg: dict[str, Any], lane: str = INFRA) -> str:
         body = (f"Memo #{msg['id']} from {msg['sender']}:\n{msg['text']}" if msg["kind"] == "memo" else msg["text"])
-        return f"[tower] You are the infra lane.\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
+        who = "You are the infra lane." if lane == INFRA else (
+            f"You are the infra lane, parallel session {lane}: other infra sessions work in the same checkout at the "
+            f"same time, so stay inside this memo's paths and stage only your own files.")
+        return f"[tower] {who}\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
 
     # ---------- helpers ----------
 
@@ -420,7 +446,7 @@ class Engine:
         return "heavy" if any(p == r or p.startswith(r + "/") for p in paths for r in roots) else "light"
 
     def lanes(self) -> list[str]:
-        return [*self.cfg.hubs(), *([INFRA] if self.has_infra else []), *self.team]
+        return [*self.cfg.hubs(), *self.infra_keys, *self.team]
 
     def tick(self) -> None:
         statuses: dict[str, str] = {}
@@ -454,11 +480,8 @@ class Engine:
                 self._hub(statuses[name], name)
             except Exception as e:
                 self.log(f"{name}: {e}")
-        if INFRA in statuses:
-            try:
-                self._infra(statuses[INFRA])
-            except Exception as e:
-                self.log(f"{INFRA}: {e}")
+        if self.infra_keys:
+            self._infra_all(statuses)
         try:
             self._leftovers()
         except Exception as e:
@@ -552,7 +575,7 @@ class Engine:
                 self.notify([{"id": lane, "lane": lane, "alert": True,
                               "title": f"{lane} waits for an answer in its {self.cfg.all_lanes[lane].terminal} window"}])
                 self.log(f"{lane}: waiting for an answer in its window")
-            if lane == INFRA or self.cfg.is_hub(lane):
+            if is_infra(lane) or self.cfg.is_hub(lane):
                 self._ask_board(lane, st)
             elif st == "asking":
                 for q in self.rt.questions(lane) or []:
@@ -612,7 +635,7 @@ class Engine:
         lane = it["lane"]
         if it.get("memo_id") and it["verdict"] == "ok" and not (it.get("note") or "").strip():
             return None, None
-        if lane == INFRA and self.has_infra:
+        if is_infra(lane) and self.has_infra:
             return (INFRA, line + f"\n(`dah show {it['id']}` for the full item.)"), None
         try:
             src = self.store.task(it["task_id"]) if it["task_id"] else None
@@ -1227,25 +1250,33 @@ class Engine:
 
     # ---------- infra ----------
 
-    def _infra(self, st: str) -> None:
-        self._idle_for(INFRA, st)
-        info = self.store.lane(INFRA)
+    def _infra_all(self, statuses: dict[str, str]) -> None:
+        for key in self.infra_keys:
+            try:
+                self._infra(statuses.get(key, "unknown"), key)
+            except Exception as e:
+                self.log(f"{key}: {e}")
+
+    def _infra(self, st: str, lane: str = INFRA) -> None:
+        self._idle_for(lane, st)
+        info = self.store.lane(lane)
         if info.get("closing"):
             if st not in ("idle", "closed"):
                 return
-            if st == "idle" and self.rt.owned(INFRA):
-                self.rt.close(INFRA)
-                self.log("infra: wrapped, closed")
-            self.store.finish_inbox(INFRA)
+            if st == "idle" and self.rt.owned(lane):
+                self.rt.close(lane)
+                self.log(f"{lane}: wrapped, closed")
+            self.store.finish_inbox(lane)
             if st == "idle":
                 return
         if st != "closed":  # never inject a second item into a live session
             return
-        msg = self.store.claim_inbox(INFRA)
+        live = list(self.store.held_messages([k for k in self.infra_keys if k != lane]).values())
+        msg = self.store.claim_inbox(lane, INFRA, lambda m: message_conflict(m, live) is None, self.cfg.fair_turns)
         if msg is None:
             return
         if msg["delivered"] is not None:  # its session closed without wrapping
-            n = self.store.retry_inbox(INFRA)
+            n = self.store.retry_inbox(lane)
             if n > RESPAWN_LIMIT:
                 if n == RESPAWN_LIMIT + 1:
                     self.notify([{"id": msg["id"], "lane": INFRA, "title": f"infra closed {RESPAWN_LIMIT} times on "
@@ -1253,14 +1284,14 @@ class Engine:
                     self.store.push(msg["sender"] if self.cfg.is_hub(str(msg["sender"])) else HUB, TOWER, "stalled",
                                     f"infra gave up on message #{msg['id']} after "
                                     f"{RESPAWN_LIMIT} closed sessions.")
-                self.store.finish_inbox(INFRA)
+                self.store.finish_inbox(lane)
                 return
         try:
-            self.rt.open(INFRA, self.inbox_prompt(msg), **self._memo_opts(msg))
+            self.rt.open(lane, self.inbox_prompt(msg, lane), **self._memo_opts(msg))
         except Exception as e:
-            self.log(f"infra: message #{msg['id']} failed to open: {e}")
+            self.log(f"{lane}: message #{msg['id']} failed to open: {e}")
             self.store.mark_delivered([msg["id"]])
             return
         self.store.mark_delivered([msg["id"]])
-        self.idle_since.pop(INFRA, None)
-        self.log(f"infra: opened for message #{msg['id']}")
+        self.idle_since.pop(lane, None)
+        self.log(f"{lane}: opened for message #{msg['id']}")

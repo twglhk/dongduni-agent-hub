@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .config import HUB, INFRA, Config
+from .config import HUB, INFRA, Config, is_infra
 from .engine import clip
 from .store import HUMAN, TOWER, Store, StoreError
 
@@ -50,13 +50,13 @@ def card_audience(c: Config, s: Store, to: str | None, task: dict[str, Any] | No
         return s.requester_of_task(task["id"])
     if c.is_hub(me):
         return requester_for(c, s, me, request)
-    if me == INFRA:
-        return infra_requester(c, s)
+    if is_infra(me):
+        return infra_requester(c, s, me)
     return None
 
 
-def infra_requester(c: Config, s: Store) -> str | None:
-    mid = s.lane(INFRA).get("active_message")
+def infra_requester(c: Config, s: Store, me: str = INFRA) -> str | None:
+    mid = s.lane(me).get("active_message")
     if mid is None:
         return None
     try:
