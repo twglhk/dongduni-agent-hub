@@ -9,7 +9,6 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   return <div className="grid gap-1.5"><div className="text-t6 font-semibold text-ink-3">{title}</div><Meta>{children}</Meta></div>;
 }
 
-// Per process its process card, then every skill folder of the engine.
 export function EngineSkills({ d }: { d: EngineMap }) {
   const { L } = useL();
   const n = d.pipelines.length + d.skills.length;

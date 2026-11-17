@@ -21,7 +21,6 @@ def flat(d: dict, prefix: str = "") -> set[str]:
 
 
 class BoardNextTest(unittest.TestCase):
-    """The React board at / (built from board-app/ into agent_hub/board_next/), the single-file board at /old/."""
 
     def setUp(self) -> None:
         self.b = Board()
@@ -75,14 +74,13 @@ class BoardNextTest(unittest.TestCase):
         code, body, _ = self.b.req("GET", "/old/")
         self.assertEqual(code, 200)
         self.assertEqual(body, BOARD.read_bytes())
-        self.assertIn(rb"location.pathname.replace(/old\/[^/]*$/, '')", body)
+        self.assertIn(rb"location.pathname.replace(/\/old\/[^/]*$/, '/')", body)
         self.assertIn(b'href="../manifest.webmanifest"', body)
         self.assertEqual(self.b.req("GET", "/old/index.html")[1], body)
         self.assertEqual(self._location("/old"), (302, "/old/"))
         self.assertNotEqual(self.b.req("GET", "/")[1], body)
 
     def test_the_api_the_app_reads(self) -> None:
-        """Every route the app calls answers, with the fields it reads."""
         code, st, _ = self.b.req("GET", "/api/state")
         self.assertEqual(code, 200)
         for k in ("lane_cap", "runtimes", "default_runtime", "usage", "lanes", "items", "tasks", "reports", "memos", "counts",
@@ -125,7 +123,6 @@ class BoardNextTest(unittest.TestCase):
             self.assertEqual(flat(en) ^ flat(d), set(), code)
 
     def test_every_dictionary_string_the_old_board_has_is_in_the_app(self) -> None:
-        """New board features come with their strings in all five languages; the old board's own keys carry over."""
         old = BOARD.read_text(encoding="utf-8")
         ui = old[old.index("const UI = {"):old.index("const LANGS =")]
         en = json.loads((APP / "src/i18n/en.json").read_text(encoding="utf-8"))
@@ -133,11 +130,10 @@ class BoardNextTest(unittest.TestCase):
                     "mc.title", "use.today", "x.err", "msg.held", "chat.title"):
             self.assertIn(key, flat(en), key)
         self.assertIn("tabs: { hub:", ui)
-        self.assertNotIn("chat.open", flat(en))  # the last-reply strip is gone from the board
+        self.assertNotIn("chat.open", flat(en))
 
 
 class WorkspacePrefixTest(unittest.TestCase):
-    """Other workspaces are served under /w/<slug>/ with the same app and the old board under /w/<slug>/old/."""
 
     def setUp(self) -> None:
         self.front = Board(name="Front")

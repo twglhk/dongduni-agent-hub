@@ -1,12 +1,10 @@
-// A small safe subset of markdown. Every server string is escaped before any tag is added.
+// Every server string is escaped before any tag is added: the result is set as HTML.
 const esc = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const inline = (s: string) => esc(s).split(/(`[^`]+`)/).map((p, i) => i % 2 ? '<code>' + p.slice(1, -1) + '</code>'
   : p.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')).join('');
 
-// `doc` is for whole files (lane documents): front matter is skipped, tables and wrapped list items are drawn.
-// Card and memo text stays without them, as on the single-file board.
 export function markdown(text: string | null | undefined, doc = false): string {
   const out: string[] = [];
   let para: string[] = [], quote: string[] = [], list: { t: string; items: string[] } | null = null, fence: string[] | null = null;

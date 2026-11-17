@@ -2,7 +2,6 @@ import { useL } from '../i18n/context';
 
 const BAR = 'block rounded-md bg-surface-3';
 
-// Grey bars in the content's shape while a real wait happens, in the shape of what is coming.
 export function SkelLines({ widths = [70, 45, 60, 50] }: { widths?: number[] }) {
   return (
     <div aria-hidden className="mt-3 grid gap-4">
@@ -16,7 +15,6 @@ export function SkelLines({ widths = [70, 45, 60, 50] }: { widths?: number[] }) 
   );
 }
 
-// Cards like the history and engine lists: a chip line, a title, a meta line; `rows` adds list rows inside each card.
 export function SkelCards({ n = 4, rows = 0 }: { n?: number; rows?: number }) {
   const { L } = useL();
   return (

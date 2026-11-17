@@ -8,8 +8,6 @@ const DOT: Record<string, string> = { g: 'bg-green', a: 'bg-orange', r: 'bg-red'
 const INK: Record<string, string> = { g: '', a: 'text-orange-ink', r: 'text-red-ink' };
 const pctLv = (p: unknown) => !isNum(p) ? null : p < 60 ? 'g' : p < 85 ? 'a' : 'r';
 
-// A thin line above the tab bar on every tab: tokens used today per runtime, how loaded this machine is and,
-// when the workspace asks for it, how much of the Claude plan is used.
 export function UseBar() {
   const { L } = useL();
   const { data, mach } = useBoard();

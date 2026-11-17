@@ -3,7 +3,6 @@ import type { Item } from '../../lib/types';
 import { Icon } from '../Icon';
 import { H3 } from './H3';
 
-// picks: null = the card is closed, so the options only show what was chosen.
 export function Options({ it, picks, busy, onPick }: { it: Item; picks: string[] | null; busy?: boolean; onPick?: (label: string) => void }) {
   const { L } = useL();
   const live = picks !== null;

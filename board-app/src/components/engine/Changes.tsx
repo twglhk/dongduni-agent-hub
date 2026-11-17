@@ -3,7 +3,6 @@ import type { EngineMap } from '../../lib/engineTypes';
 import { fmt, fmtT } from '../../lib/format';
 import { Empty, Section } from '../Section';
 
-// What changed since the tower's weekly snapshot; last on the tab.
 export function Changes({ ch }: { ch: EngineMap['changes'] }) {
   const { L } = useL();
   const E = L.eg as Record<string, string>;

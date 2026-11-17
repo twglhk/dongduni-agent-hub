@@ -1,7 +1,5 @@
 export interface Disk { mount: string; total_gb?: number | null; used_gb?: number | null; free_gb?: number | null; used_pct?: number | null; lv?: string | null }
 
-// api/machine: this machine graded against its own cores and memory, why queued tasks wait, the Claude usage percent when known.
-// `disks` is there when the tower reads them; without it the Info tab shows no disk card.
 export interface MachineInfo {
   machine: {
     lv?: string; cores?: number; ram_gb?: number; load_per_core?: number; cpu?: number; free_gb?: number; swap_gb?: number;

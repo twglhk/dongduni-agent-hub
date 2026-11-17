@@ -8,7 +8,6 @@ import { Icon } from '../Icon';
 
 const INK: Record<string, string> = { green: 'text-green-ink', amber: 'text-orange-ink', red: 'text-red-ink', none: 'text-ink-3' };
 
-// One process of the engine: its rating, card states and model line; the head opens the process card, a stage its card.
 export function PipeCard({ eid, p }: { eid: string; p: Pipeline }) {
   const { L } = useL();
   const E = L.eg as Record<string, string>, r = p.rating, [name, sub] = pipeTitle(p);

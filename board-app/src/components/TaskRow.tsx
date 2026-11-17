@@ -7,7 +7,6 @@ import { Chip, type Tone } from './Chips';
 
 const TONE: Record<string, Tone> = { queued: 'orange', running: 'blue', wrapping: 'teal', closed: 'green', cancelled: 'red' };
 
-// A task: its state, its title, the lane, and (while queued) why it waits.
 export function TaskRow({ t }: { t: Task }) {
   const { L } = useL();
   const { data, mach } = useBoard();

@@ -46,7 +46,6 @@ export function CardList({ list, empty }: { list: Item[]; empty: string }) {
   return <div className="grid grid-cols-1 gap-3">{list.map(it => <ItemCard key={it.id} it={it} />)}</div>;
 }
 
-// A card the hub is still handling, as one line.
 export function ItemRow({ it }: { it: Item }) {
   const { L } = useL();
   const { data } = useBoard();

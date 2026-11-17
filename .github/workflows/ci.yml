@@ -8,7 +8,6 @@ on:
 
 jobs:
   board:
-    # The React board's build is committed (agent_hub/board_next/) and shipped as it is: it must equal a fresh build.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

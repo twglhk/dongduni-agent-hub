@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// base './': the same build is served at / and at /w/<slug>/ for other workspaces.
+// base './' so the same build works at / and at /w/<slug>/.
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],

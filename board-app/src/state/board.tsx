@@ -9,7 +9,7 @@ const MACH_MS = 10000;
 
 interface Board {
   data: BoardState | null;
-  loads: number;  // successful state loads so far, changed or not
+  loads: number;
   ok: boolean | null;
   locked: boolean;
   ws: Workspace[];

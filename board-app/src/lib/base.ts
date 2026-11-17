@@ -1,4 +1,3 @@
-// Every API path is relative to the board, which is /w/<slug>/ for other workspaces.
 export const BASE = location.pathname.replace(/[^/]*$/, '');
 
 export const fileUrl = (p: string) => BASE + 'f/' + encodeURI(String(p));

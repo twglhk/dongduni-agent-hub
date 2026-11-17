@@ -5,10 +5,7 @@ import { DocText } from '../DocText';
 
 const SLIDE_MS = 300;
 
-// One read-only document (a process or pattern card, a skill) as a sheet from the bottom, above
-// any other sheet. It closes on a drag down, a tap outside, Escape, the phone's back button, or the close
-// button at the bottom where the thumb is. It pushes one history entry without changing the hash, so the router never
-// sees it.
+// Pushes a history entry without touching the hash, so the phone back button closes the sheet and the router never sees it.
 export function DocReader({ title, path, url, onClose }: { title: string; path: string; url: string; onClose: () => void }) {
   const { L } = useL();
   const [open, setOpen] = useState(false);
@@ -39,7 +36,6 @@ export function DocReader({ title, path, url, onClose }: { title: string; path: 
 
   useEffect(() => { if (body.current) body.current.scrollTop = 0; }, [url]);
 
-  // The head drags always; the body only from its top, so a long document still scrolls.
   const start = (y: number, fromBody: boolean) => {
     if (fromBody && (body.current?.scrollTop || 0) > 0) return;
     drag.current = { y0: y, t0: Date.now() };

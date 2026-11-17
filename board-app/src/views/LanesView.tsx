@@ -11,7 +11,6 @@ import { fmt } from '../lib/format';
 import type { BoardState } from '../lib/types';
 import { useCap } from '../state/useSettings';
 
-// Every lane with what it is doing, how many may work at once, the live tasks and the latest reports.
 export function LanesView({ d, onImage }: { d: BoardState; onImage: (imgs: string[], i: number) => void }) {
   const { L } = useL();
   const { busy, setCap } = useCap();

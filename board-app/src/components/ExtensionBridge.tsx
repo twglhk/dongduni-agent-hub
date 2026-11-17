@@ -4,8 +4,6 @@ import { useL } from '../i18n/context';
 import { useBoard } from '../state/board';
 import { useToast } from '../state/toast';
 
-// Lends window.dah the board's current state, language, toast and refresh, runs onState callbacks after each state load,
-// and loads the workspace's extra.css / extra.js once the first state is in.
 export function ExtensionBridge() {
   const { L, lang } = useL();
   const { data, loads, refresh } = useBoard();

@@ -6,8 +6,6 @@ import { useBoard } from '../state/board';
 import { useToast } from '../state/toast';
 import { KbdHint } from './KbdHint';
 
-// The request box: one floating island over every tab. It writes to the hub; the hub's answer comes back as a card
-// on the Hub tab, so the box shows nothing but the input.
 export function ChatBox() {
   const { L } = useL();
   const { refresh } = useBoard();

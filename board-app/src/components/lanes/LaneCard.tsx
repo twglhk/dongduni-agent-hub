@@ -14,7 +14,6 @@ export function TokenLine({ k }: { k?: { new?: number; cache?: number; out?: num
 
 const CLAMP2 = 'line-clamp-2 leading-normal';
 
-// One lane: what it is doing, its process and stage, the model it runs and what it used today. It opens the lane sheet.
 export function LaneCard({ l }: { l: Lane }) {
   const { L } = useL();
   const model = [l.model, l.effort].filter(Boolean).join(' · ');

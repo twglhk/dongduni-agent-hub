@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from 'react';
 
-// A read-only document shown in the bottom sheet (engine tab cards and skills).
 export interface DocRef { title: string; path: string; url: string }
 
 let cur: DocRef | null = null;

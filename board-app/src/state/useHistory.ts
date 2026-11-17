@@ -3,8 +3,6 @@ import { get, HttpError } from '../lib/api';
 
 interface Page<T> { kind: string; rows: T[]; more: boolean; loaded: boolean }
 
-// One api/history kind, 20 rows a page. Rows carry the kind they were loaded for, so a switch never draws one kind's rows
-// as another's.
 export function useHistory<T>(kind: string, onError: (m: string) => void) {
   const [pg, setPg] = useState<Page<T>>({ kind, rows: [], more: false, loaded: false });
   const [busy, setBusy] = useState(false);

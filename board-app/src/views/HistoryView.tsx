@@ -23,7 +23,6 @@ function Rows({ kind, rows, onImage }: { kind: Kind; rows: Row[]; onImage: (imgs
   return <div className="grid grid-cols-1 gap-2 [&>*]:min-w-0">{(rows as Item[]).map(it => <DecidedRow key={it.id} it={it} />)}</div>;
 }
 
-// What happened: the cards people answered, lane reports, closed tasks, and what was asked of infra and of the hub.
 export function HistoryView({ d, onImage }: { d: BoardState; onImage: (imgs: string[], i: number) => void }) {
   const { L } = useL();
   const toast = useToast();

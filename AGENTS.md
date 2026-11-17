@@ -32,6 +32,7 @@ Instructions for coding agents working in this repository.
 ## Rules
 
 - Standard library only, Python 3.10+. No new dependency without a strong reason.
+- No comments and no docstrings by default, in code and tests alike. Names, small functions and tests carry the meaning; usage and design go into `agent_hub/guide/` or `docs/`. Write a comment only where the code cannot say it (a workaround for an outside tool's bug, a constraint nobody would guess), one line, the why and never the what.
 - Every state change goes through `Store`. The engine must stay deterministic given a clock and a runtime; tests inject both (`tests/helpers.py`).
 - A new runtime = one `Adapter` subclass with `status/open/send/close` (+ optional `questions`, `context_k`, `last_text`) and a stand-in CLI test in `tests/test_runtimes.py` (a workspace can also register one from `.tower/ext/`, without changing the package) (terminal windows: `tests/test_terminal.py`, against a stand-in terminal app). Never call a real model in tests.
 - The board is the React app in `board-app/`. Its build is committed in `agent_hub/board_next/` and shipped in the package, so users need no Node; contributors run `cd board-app && npm ci && npm run build` (it typechecks first) and commit source and build together. CI rebuilds and fails when they differ, so keep the build reproducible (pinned versions, `npm ci`, no timestamps). Python code never imports or runs Node.

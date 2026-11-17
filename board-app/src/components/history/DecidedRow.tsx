@@ -8,7 +8,6 @@ import { Chip, VERDICT_TONE } from '../Chips';
 import { Icon } from '../Icon';
 import { verdictLabel } from '../item/Verdict';
 
-// A card a person answered: the answer, the card, and who answered when; it opens the card.
 export function DecidedRow({ it }: { it: Item }) {
   const { L } = useL();
   const { data } = useBoard();

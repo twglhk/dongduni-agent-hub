@@ -2,13 +2,11 @@ import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from '
 import { useL } from '../i18n/context';
 import { Icon } from './Icon';
 
-// side: from 760px wide it is a panel on the right edge instead of a card from the bottom.
 export interface SheetContent { id: string; label: string; head: ReactNode; body: ReactNode; cta?: ReactNode; side?: boolean }
 
 const WIDE = 'min-[760px]:bottom-6 min-[760px]:max-h-[calc(100vh-48px)] min-[760px]:rounded-card';
 const SIDE = 'min-[760px]:inset-y-0 min-[760px]:right-0 min-[760px]:left-auto min-[760px]:m-0 min-[760px]:max-h-none min-[760px]:w-[400px] min-[760px]:max-w-[100vw] min-[760px]:rounded-none min-[760px]:rounded-l-card';
 
-// Keeps showing the last content while it slides down, so closing never flashes empty.
 export function Sheet({ content, onClose }: { content: SheetContent | null; onClose: () => void }) {
   const [shown, setShown] = useState<SheetContent | null>(content);
   const [open, setOpen] = useState(false);

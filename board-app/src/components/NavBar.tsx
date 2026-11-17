@@ -5,14 +5,12 @@ import { go, TABS, type View } from '../state/route';
 import { Icon } from './Icon';
 import { UseBar } from './UseBar';
 
-// An extension may hand over a DOM node as its icon; it is cloned into the button.
 function NodeIcon({ node }: { node: Node }) {
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => { box.current?.replaceChildren(node.cloneNode(true)); }, [node]);
   return <span ref={box} aria-hidden="true" className="flex size-6 items-center justify-center [&>svg]:size-6 [&>svg]:fill-none [&>svg]:stroke-current" />;
 }
 
-// The tab bar: the built-in tabs, then the ones an extension added. The Hub tab carries the count of cards waiting for you.
 export function NavBar({ view, badge }: { view: View; badge: number }) {
   const { L, lang } = useL();
   useXVersion();

@@ -3,7 +3,6 @@ import { fmt } from '../lib/format';
 import type { Day } from '../lib/laneTypes';
 import { tok } from '../lib/machine';
 
-// Tokens per day, one column each, scaled to the busiest day.
 export function DaysChart({ days }: { days: Day[] }) {
   const { L } = useL();
   const max = Math.max(1, ...days.map(x => x.tokens_in + x.tokens_out));

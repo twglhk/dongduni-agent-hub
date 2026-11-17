@@ -1,7 +1,6 @@
 import type { MapEntry } from '../../lib/engineTypes';
 import { Section } from '../Section';
 
-// Tools and experiments a person wrote into the engine's engine.json.
 export function EntryList({ title, list, status }: { title: string; list: MapEntry[]; status?: boolean }) {
   if (!list.length) return null;
   return (

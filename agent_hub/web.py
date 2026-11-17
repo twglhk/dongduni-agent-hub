@@ -145,7 +145,6 @@ def engines_view(cfg: Config) -> list[dict[str, Any]]:
 
 
 def _home_rel(cfg: Config, base: Path, rel: str | None) -> str | None:
-    """A card path (relative to `base`) as a path below the workspace; None when the file is outside it."""
     if not rel:
         return None
     try:
@@ -155,7 +154,6 @@ def _home_rel(cfg: Config, base: Path, rel: str | None) -> str | None:
 
 
 def _skill_doc(cfg: Config, skills_dir: Path, name: str) -> str | None:
-    """`<skills>/<name>/SKILL.md` as a path below the workspace, when that file exists."""
     f = skills_dir / name / "SKILL.md"
     return _home_rel(cfg, skills_dir, f"{name}/SKILL.md") if f.is_file() else None
 
@@ -218,7 +216,6 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
 
 
 def engine_doc(cfg: Config, s: Store, eid: str, path: str) -> dict[str, Any] | None:
-    """A document the engine map names (process card, pattern card, skill document); None for any other path."""
     m = engine_map(cfg, s, eid, time.time())
     named = {p["card"] for p in m["pipelines"]} | {st["card"]["path"] for p in m["pipelines"] for st in p["stages"] if st["card"]}
     named |= {x["doc"] for x in m["skills"]}
@@ -563,14 +560,12 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
 
         def _next(self, rel: str) -> None:
-            """The React app: its page, or one file below board_next/ (never anything else)."""
             full = BOARD_NEXT / "index.html" if rel in ("", "index.html") else safe_file(BOARD_NEXT, rel)
             if not full or not full.is_file() or (full.suffix.lower() not in STATIC_SUFFIXES and full.suffix != ".html"):
                 return self._json(404, {"error": "not found"})
             ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
             if ctype.startswith("text/") and "charset" not in ctype:
                 ctype += "; charset=utf-8"
-            # Vite puts a content hash in every file name under assets/, so a new build never reuses an old URL.
             self._static(full, ctype, "public, max-age=31536000, immutable" if rel.startswith("assets/") else "no-cache")
 
         def _ext(self, method: str, name: str, me: dict[str, Any], body: dict[str, Any]) -> None:

@@ -11,7 +11,6 @@ import { usePoll } from './usePoll';
 
 const LANE_MS = 10000;
 
-// The sheet for #lane-<id>.
 export function useLaneSheet(id: string | null): SheetContent | null {
   const { L } = useL();
   const { data } = useBoard();

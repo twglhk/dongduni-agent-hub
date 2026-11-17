@@ -1,6 +1,5 @@
 export interface SegOpt { id: string; label: string; n?: number }
 
-// A row of pill tabs inside a view (engines, history sections).
 export function Seg({ opts, cur, onPick }: { opts: SegOpt[]; cur: string; onPick: (id: string) => void }) {
   return (
     <div role="tablist" className="no-scrollbar mb-4 flex gap-1.5 overflow-x-auto px-1">

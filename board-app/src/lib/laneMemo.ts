@@ -2,7 +2,6 @@ export const LANE_ID = /^[A-Za-z0-9_-]+$/;
 
 export interface LaneForm { id: string; runtime: string; label: string; model: string; agent: string; role: string }
 
-// The memo the hub gets: the template's lines for empty optional fields are left out.
 export function laneMemo(template: string, f: LaneForm): string {
   const arg = (s: string) => /^[\w./:@+-]+$/.test(s) ? s : JSON.stringify(s);
   const v: Record<string, string> = { ...f };

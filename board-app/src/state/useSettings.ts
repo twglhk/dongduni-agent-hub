@@ -4,7 +4,6 @@ import { HttpError, post } from '../lib/api';
 import { useBoard } from './board';
 import { useToast } from './toast';
 
-// The lane cap: how many team lanes may work at once. One change at a time; the tower picks it up on its next tick.
 export function useCap() {
   const { L } = useL();
   const { refresh } = useBoard();

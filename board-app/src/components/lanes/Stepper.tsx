@@ -4,7 +4,6 @@ import { Icon } from '../Icon';
 
 interface Props { n: number; max: number; busy: boolean; label: string; showLabel?: boolean; prefix?: string; onSet: (n: number) => void }
 
-// − n + in a pill. After a change lands, focus returns to the pressed side (or the other one once it is disabled).
 export function Stepper({ n, max, busy, label, showLabel, prefix, onSet }: Props) {
   const { L } = useL();
   const less = useRef<HTMLButtonElement>(null), more = useRef<HTMLButtonElement>(null), dir = useRef(0);

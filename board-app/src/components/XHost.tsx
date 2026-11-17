@@ -4,8 +4,6 @@ import { useL } from '../i18n/context';
 import { useBoard } from '../state/board';
 import { Icon } from './Icon';
 
-// Paints what one extension render returns into its own div, and repaints only when the output changed, so scroll,
-// focus and typed text inside it survive the board's polling. Returning the same Node again keeps it mounted.
 function XHost({ name, render }: { name: string; render: Render }) {
   const { L } = useL();
   const { data } = useBoard();
@@ -30,7 +28,6 @@ function XHost({ name, render }: { name: string; render: Render }) {
       setErr(msg);
     }
   });
-  // A failing render is tried again when the data changes.
   useEffect(() => { setErr(''); }, [data, render]);
   if (err) return (
     <section role="alert" className="mb-8 grid gap-1 rounded-card bg-red-weak px-5 py-4">
@@ -41,7 +38,6 @@ function XHost({ name, render }: { name: string; render: Render }) {
   return <div ref={box} data-x={name} />;
 }
 
-// Everything extensions added to one built-in tab, after that tab's own sections.
 export function XSections({ tab }: { tab: string }) {
   useXVersion();
   const list = xSections(tab);
@@ -49,7 +45,6 @@ export function XSections({ tab }: { tab: string }) {
   return <>{list.map(s => <XHost key={s.id} name={s.id} render={s.render} />)}</>;
 }
 
-// The body of an extension tab (#x-<id>).
 export function XTabView({ view }: { view: string }) {
   useXVersion();
   const { L } = useL();

@@ -405,7 +405,6 @@ def migration_notes(cfg: Config, report: dict[str, list[str]]) -> list[str]:
 
 PATCHES_DIR = "patches"
 PYPI_JSON = "https://pypi.org/pypi/{package}/{version}/json"
-# The built-in board is the React app's build; its page names every hashed asset, so this hash changes with any change of the app.
 BUILTIN_BOARD = Path(__file__).resolve().parent / "board_next" / "index.html"
 
 

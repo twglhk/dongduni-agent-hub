@@ -6,7 +6,6 @@ import { Prose } from '../Prose';
 
 const TONE: Record<string, Tone> = { replied: 'green', delivered: 'grey', wait: 'orange' };
 
-// A request a person sent to the hub, or a memo the hub sent to infra, with every answer under it.
 export function MemoRow({ m, label }: { m: Memo; label?: string }) {
   const { L } = useL();
   const reps = m.replies || [];

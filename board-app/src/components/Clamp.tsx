@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useL } from '../i18n/context';
 
-// Long text folds to a few lines with a more / less toggle.
 export function Clamp({ long, children }: { long: boolean; children: ReactNode }) {
   const { L } = useL();
   const [open, setOpen] = useState(false);

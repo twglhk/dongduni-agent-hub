@@ -7,7 +7,6 @@ const BAR: Record<string, string> = { g: 'bg-green', a: 'bg-orange', r: 'bg-red'
 const TONE = { g: 'green', a: 'orange', r: 'red' } as const;
 const gb = (v?: number | null) => (v == null ? '?' : v >= 100 ? String(Math.round(v)) : v.toFixed(1));
 
-// Each disk's size, use and free space, read fresh with every machine poll.
 export function DiskCard({ disks }: { disks: Disk[] }) {
   const { L } = useL();
   const D = L.disk;

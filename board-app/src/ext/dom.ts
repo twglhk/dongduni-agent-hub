@@ -1,5 +1,3 @@
-// The small DOM builders `window.dah` hands to extensions (dah.h, dah.svg, dah.sec, dah.empty). Extensions return DOM
-// nodes, so these build nodes, not React elements.
 type Kid = Node | string | number | false | null | undefined | readonly unknown[];
 type Attrs = Record<string, unknown> | null | undefined;
 
@@ -32,7 +30,6 @@ export function svg(d: string, cls?: string): SVGSVGElement {
   return s;
 }
 
-// A section with the board's heading line: title, an optional count, then the body.
 export function sec(title: string, n?: number | null, body?: Kid, ext?: Kid): HTMLElement {
   return h('section', { class: 'mb-8' },
     h('div', { class: 'mb-3 flex items-center gap-2 px-1 text-t3 font-bold leading-snug tracking-[-.01em]' },

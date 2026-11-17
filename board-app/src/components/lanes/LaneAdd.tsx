@@ -14,7 +14,6 @@ function Fr({ label, id, children }: { label: string; id?: string; children: Rea
   return <div className="grid min-w-0 content-start gap-1.5"><label htmlFor={id} className="px-1 text-t6 font-semibold text-ink-2">{label}</label>{children}</div>;
 }
 
-// The form asks the hub for a lane; the hub has infra make it and fill its role file.
 export function LaneAdd({ d }: { d: BoardState }) {
   const { L } = useL();
   const { refresh } = useBoard();

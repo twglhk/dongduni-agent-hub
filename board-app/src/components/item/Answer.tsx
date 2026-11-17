@@ -6,8 +6,6 @@ import { KbdHint } from '../KbdHint';
 
 export type Verdict = 'ok' | 'answer' | 'hold';
 
-// A decision card: write an answer of your own, pick options and decide, or put it on hold.
-// A review card: done (a note turns it into an answer), or hold.
 export function Answer({ it, note, setNote, picked, busy, decide }: {
   it: Item; note: string; setNote: (s: string) => void; picked: number; busy: boolean; decide: (v: Verdict) => void;
 }) {

@@ -3,8 +3,6 @@ import { get, HttpError } from '../lib/api';
 
 export interface Polled<T> { data: T | null; missing: boolean; reload: () => void }
 
-// Polls one GET route while the page is visible. `missing` is true when the route answers 404 (an older tower,
-// or a workspace without the extension that serves it).
 export function usePoll<T>(path: string | null, ms: number): Polled<T> {
   const [data, setData] = useState<T | null>(null);
   const [missing, setMissing] = useState(false);

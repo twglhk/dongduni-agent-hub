@@ -4,7 +4,6 @@ export interface Stage { n: string | number; name: string }
 
 export interface Day { day: string; tokens_in: number; tokens_out: number }
 
-// api/lanes/<id>: everything the lane sheet shows.
 export interface LaneDetail {
   lane: string; label?: string; kind: string; runtime: string; engine?: string | null; model?: string | null; status: string;
   skills: { name: string; found: boolean }[];

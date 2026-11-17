@@ -16,7 +16,6 @@ import { usePoll } from '../state/usePoll';
 const MS = 5000;
 const hashEngine = () => /^#engine-(.+)$/.exec(location.hash)?.[1] || null;
 
-// Tokens per day, processes with their stages and cards, the skills that write them down, then what changed.
 export function EngineView() {
   const { L } = useL();
   const list = usePoll<{ engines: EngineInfo[] }>('api/engines', MS);

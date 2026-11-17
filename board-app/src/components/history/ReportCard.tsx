@@ -6,7 +6,6 @@ import { Chip, LaneChip, Meta, When, type Tone } from '../Chips';
 
 export const REPORT_TONE: Record<string, Tone> = { done: 'green', blocked: 'red', handoff: 'teal', wrapped: 'teal', note: 'grey' };
 
-// One report a lane sent: three lines until tapped; its images open in the viewer.
 export function ReportCard({ r, onImage }: { r: Report; onImage: (imgs: string[], i: number) => void }) {
   const { L } = useL();
   const [open, setOpen] = useState(false);

@@ -5,7 +5,6 @@ import { Chip, type Tone } from './Chips';
 
 const TONE: Record<string, Tone> = { g: 'green', a: 'orange', r: 'red' };
 
-// This machine graded against its own cores and memory, the Claude usage percent when known, and why tasks wait.
 export function MachineCard({ j }: { j: MachineInfo }) {
   const { L } = useL();
   const m = j.machine, U = L.mc;

@@ -23,7 +23,7 @@ async function req<T>(path: string, opt?: RequestInit): Promise<T> {
 
 export const get = <T>(path: string) => req<T>(path);
 
-// The server refuses a POST without x-tower: a custom header forces a CORS preflight, so other sites cannot post.
+// A custom header forces a CORS preflight, so other sites cannot post.
 export const post = <T>(path: string, body?: unknown) => req<T>(path, {
   method: 'POST', headers: { 'x-tower': '1', 'content-type': 'application/json' }, body: JSON.stringify(body || {}),
 });

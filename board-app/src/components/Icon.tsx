@@ -16,7 +16,6 @@ export const ICON = {
 
 export type IconName = keyof typeof ICON;
 
-// `d` draws an icon from a raw SVG path (an extension tab brings its own).
 export function Icon({ name, d, className = 'size-5', stroke = 2.2 }: { name?: IconName; d?: string; className?: string; stroke?: number }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={`flex-none fill-none stroke-current ${className}`}

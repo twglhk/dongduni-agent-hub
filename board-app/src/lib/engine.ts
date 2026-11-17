@@ -7,7 +7,6 @@ export const rtTone = (c?: string | null): Tone => RT_TONE[c || ''] || 'grey';
 export const cardColor = (word?: string | null) =>
   ['confirmed', 'tuned'].includes(word || '') ? 'green' : ['collecting', 'draft', 'reviewed'].includes(word || '') ? 'amber' : 'none';
 
-// "Planning: idea → plan.md" is a name and what it makes.
 export function pipeTitle(p: Pipeline): [string, string] {
   const i = p.type.indexOf(':');
   return i < 0 ? [p.type, ''] : [p.type.slice(0, i).trim(), p.type.slice(i + 1).trim()];

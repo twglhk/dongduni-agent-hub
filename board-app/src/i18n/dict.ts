@@ -17,7 +17,6 @@ function merge<T extends object>(a: T, b: object): T {
   return o;
 }
 
-// Every language falls back to English for a key it lacks.
 export function dictFor(code: Lang): Dict {
   return code === 'en' ? en : merge(en, RAW[code]);
 }
@@ -29,6 +28,5 @@ const KEY = 'tower.lang';
 export function savedLang(): string { try { return localStorage.getItem(KEY) || ''; } catch { return ''; } }
 export function saveLang(c: Lang): boolean { try { localStorage.setItem(KEY, c); return true; } catch { return false; } }
 
-// This device's pick, then the workspace language, then the browser's.
 export const pickLang = (server: string): Lang =>
   ([savedLang(), baseLang(server), baseLang(navigator.language)].find(isLang) as Lang | undefined) || 'en';

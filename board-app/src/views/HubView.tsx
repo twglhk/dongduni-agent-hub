@@ -10,7 +10,6 @@ import { fmt } from '../lib/format';
 import { forHuman, isOpen, newest } from '../lib/items';
 import type { BoardState, Lane } from '../lib/types';
 
-// What the hub is doing right now.
 function Doing({ l }: { l: Lane }) {
   const { L } = useL();
   const text = l.doing || (l.task_title ? `#${l.task_id} ${l.task_title}` : '');
@@ -26,7 +25,6 @@ function Doing({ l }: { l: Lane }) {
   );
 }
 
-// Cards the hub is still working through, folded away until asked for.
 function Handling({ list }: { list: BoardState['items'] }) {
   const { L } = useL();
   const [open, setOpen] = useState(false);
@@ -42,7 +40,6 @@ function Handling({ list }: { list: BoardState['items'] }) {
   );
 }
 
-// Questions first, then everything else waiting for you; the newest on top.
 export function HubView({ d }: { d: BoardState }) {
   const { L } = useL();
   const mine = d.items.filter(forHuman);

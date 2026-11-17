@@ -6,12 +6,6 @@ import type { BoardState } from '../lib/types';
 import { TABS } from '../state/route';
 import { empty, h, sec, svg } from './dom';
 
-// A workspace extends the board from .tower/: the server reports extensions.{css,js} in api/state and serves the files
-// at x/<path>. extra.js talks to the board only through window.dah (see guide/EXTEND.md):
-//   dah.addSection(tab, id, render)      painted after that tab's own sections
-//   dah.addTab(id, label, icon, render)  a tab after the built-in ones, opened at #x-<id>
-//   dah.onState(fn)                      fn(state) after every state load, and once right after registering
-// render(state) returns a Node, a string, an array of those, or null.
 export type Render = (state: BoardState | null) => unknown;
 export interface XSection { id: string; render: Render }
 export interface XTab { id: string; label: unknown; icon: unknown; render: Render }
@@ -24,7 +18,6 @@ let version = 0;
 let started = false;
 const subs = new Set<() => void>();
 
-// What the React side lends window.dah: the current state, language and the board's own helpers.
 export const bridge: { data: BoardState | null; lang: string; L: Dict | null; refresh: () => void; toast: (m: string, err?: boolean) => void } =
   { data: null, lang: 'en', L: null, refresh: () => {}, toast: () => {} };
 
@@ -46,7 +39,6 @@ export function xLabel(label: unknown, id: string, lang: string): string {
   return id;
 }
 
-// What a render returned, as text: equal text means equal output, so the painted DOM can stay.
 export function xKey(x: unknown): string {
   if (x === null || x === undefined || x === false || x === '') return '';
   if (Array.isArray(x)) return x.map(xKey).join('\u0001');
@@ -86,17 +78,15 @@ function addTab(id: string, label: unknown, icon?: unknown, fn?: Render) {
 function onState(fn: (s: BoardState | null) => void) {
   if (typeof fn !== 'function') return bad('onState: fn must be a function');
   states.push(fn);
-  if (bridge.data) setTimeout(() => call(fn), 0);  // once right after registering
+  if (bridge.data) setTimeout(() => call(fn), 0);
   return true;
 }
 
-// Called by the bridge after every successful state load, changed or not.
 export function xLoaded() {
   if (!bridge.data) return;
   for (const fn of states) call(fn);
 }
 
-// After the first state load the board adds x/extra.css and x/extra.js, once.
 export function xStart(ext?: { css?: boolean; js?: boolean }) {
   if (started) return;
   started = true;
@@ -110,7 +100,6 @@ const API = {
   BASE: BASE.replace(/\/$/, ''),
   get lang() { return bridge.lang; },
   get L() { return bridge.L; },
-  // Only `data` (the server state) is kept from the single-file board's state object.
   get S() { return { data: bridge.data }; },
   h, svg, sec, empty,
   toast: (m: string, err?: boolean) => bridge.toast(m, err),

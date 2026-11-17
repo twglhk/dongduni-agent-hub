@@ -458,9 +458,7 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
-// The same file serves this workspace at /old/ and other workspaces at /w/<name>/old/: every URL is relative to BASE,
-// which is the board's root, one level above /old/.
-const BASE = location.pathname.replace(/old\/[^/]*$/, '').replace(/[^/]*$/, '');
+const BASE = location.pathname.replace(/\/old\/[^/]*$/, '/').replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
