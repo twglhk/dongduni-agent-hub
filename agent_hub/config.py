@@ -327,6 +327,10 @@ def load(home: Path | None = None) -> Config:
         raise ConfigError("auth.mode must be local, header or token")
     if mode == "header" and not auth.get("header"):
         raise ConfigError("auth.mode header needs auth.header (e.g. Cf-Access-Authenticated-User-Email)")
+    exposed = str(web.get("host") or "127.0.0.1") not in ("127.0.0.1", "localhost", "::1") or web.get("public_url") or raw.get("tunnel")
+    if mode == "local" and exposed and not auth.get("allow_exposed"):
+        raise ConfigError("auth.mode local trusts everyone who reaches the board, but web.host, web.public_url or tunnel "
+                          "expose it: use auth.mode header or token (or set auth.allow_exposed true to accept that)")
     project = raw.get("project")
     engines = _engines(raw.get("engines"), lanes)
     return Config(

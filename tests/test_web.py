@@ -434,5 +434,15 @@ class SettingsRoleTest(unittest.TestCase):
             b.srv.shutdown()
 
 
+class ExposedLocalModeTest(unittest.TestCase):
+    def test_local_mode_refuses_to_be_exposed_without_opt_in(self) -> None:
+        for extra in ({"web": {"host": "0.0.0.0"}}, {"web": {"public_url": "https://b.example.com"}}, {"tunnel": "cloudflared run x"}):
+            with self.assertRaises(config_mod.ConfigError, msg=extra):
+                make_home(**extra)
+            make_home(**extra, auth={"mode": "local", "allow_exposed": True})
+            make_home(**extra, auth={"mode": "token"})
+        make_home(web={"host": "127.0.0.1", "port": 9000})
+
+
 if __name__ == "__main__":
     unittest.main()

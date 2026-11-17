@@ -84,7 +84,7 @@ Do not skip this phase silently: a board that only opens on this machine is easy
 | agents should run on a server | EC2 + one of the above, or an ALB with OIDC | `dah guide aws`; any Linux box: `dah guide linux-server` (systemd unit, swap, Orca) |
 
 1. Follow the guide. Opening the board beyond this machine is their call: show each command first.
-2. Set `web.public_url` and `auth` in `tower.json`; add members (`dah member add NAME [--ident EMAIL] [--token]`; tokens are printed once, hand them over privately). Restart the tower (`dah stop && dah start`) when `web` or `auth` changed.
+2. Set `web.public_url` and `auth` in `tower.json`; add members (`dah member add NAME [--ident EMAIL] [--token]`; tokens are printed once, hand them over privately). Restart the tower (`dah restart`) when `web` or `auth` changed.
 3. Check from outside the machine: `curl -s -o /dev/null -w "%{http_code}\n" <public_url>/api/state` answers (`401` without sign-in is right for token mode; through Access or Tailscale it needs their sign-in). Then have them open it on the phone and add it to the home screen.
 4. More than one workspace: expose one board only. The others are reachable through it (`/w/<name>/`, switched from the board's title); a workspace in `local` auth mode is hidden behind a board that signs people in.
 

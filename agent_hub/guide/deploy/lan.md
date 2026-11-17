@@ -17,10 +17,12 @@ The quickest way to open the board on a phone: no account, no domain, no tunnel.
 
    The machine's address: `ipconfig getifaddr en0` (macOS) or `hostname -I` (Linux).
 
-3. Restart the tower (`dah stop && dah start`), open `http://<machine-ip>:8787` on the phone, paste the token once. Add it to the home screen; it opens like an app.
+3. Restart the tower (`dah restart`), open `http://<machine-ip>:8787` on the phone, paste the token once. Add it to the home screen; it opens like an app.
 
 4. Check it from the phone, or from another machine: `curl -s -o /dev/null -w "%{http_code}\n" http://<machine-ip>:8787/api/state` prints `401` (signed out, as it should be). A firewall prompt on macOS needs "Allow" for Python.
 
-Never use `"auth": {"mode": "local"}` with host `0.0.0.0`: local mode makes everyone who reaches the port the owner. Outside the network, use [Tailscale](tailscale.md) (simplest) or [Cloudflare](cloudflare.md).
+Never use `"auth": {"mode": "local"}` with host `0.0.0.0`: local mode makes everyone who reaches the port the owner, and the tower refuses to start with it unless `auth.allow_exposed` is `true`. Outside the network, use [Tailscale](tailscale.md) (simplest) or [Cloudflare](cloudflare.md).
 
-One board shows every workspace on the machine (`dah workspaces`): switch from its title. Workspaces in `local` mode stay hidden behind a token-mode board.
+One board shows every workspace on the machine (`dah workspaces`): switch from its title. Workspaces in `local` mode stay hidden behind a token-mode board, and a header-mode workspace is only served by a board in header mode with the same header name.
+
+The board answers only requests whose `Host` it knows (loopback with its port, the host of `web.public_url`, the `web.host` address, any IP address when the bind is `0.0.0.0`); anything else gets `421`. Set `web.public_url` whenever the board is reached through a name (a proxy or tunnel), and use the IP address or that name in the browser.
