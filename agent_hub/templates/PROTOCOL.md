@@ -25,7 +25,10 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 - `done` = finished and checked against the brief; `blocked` = you cannot continue and it is not a decision (missing input, broken tool); `note` = something the hub must know that is not a status.
 - Wrap: commit only your own files (`git add <paths>`, never `git add -A`), delete the temp dirs you made, save what was decided where the workspace keeps memory, then `wrapped`.
 - Before `wrapped`, delete the temp dirs and worktrees you made. Commit and push your files; if the index is locked or the push is rejected, wait a few seconds and retry once. Still failing: say so in the wrapped line. Never force-push, rebase or amend to get past it.
-- When the tower asks for a handoff, send `dah report handoff "..."` in at most 12 lines: `[now]` the step you are on and the next action, `[plan]` what remains with each criterion pass/fail/unchecked, `[files]` paths changed, `[items]` open item ids. Then end the turn.
+- **Context limit**: when the workspace sets `context_limit_k` (tower.json; off by default, a number or a table by model name, a lane may set its own), the tower reads each team lane session's context against it. Past it, the tower asks for a handoff: close out as above and hand off. Hand off on your own too when the rest of the task clearly will not fit.
+- **Handoff**: `dah report handoff "..."` in at most 12 lines: `[mode] fresh` or `[mode] compact`, `[now]` the step you are on and the next action, `[plan]` what remains with each criterion pass/fail/unchecked, `[files]` paths changed, `[items]` open item ids. Then end the turn.
+  - `[mode] fresh` (the default): the tower closes this session and a new one continues the task from the brief and your handoff. Pick it whenever the next step can start from what you wrote down.
+  - `[mode] compact`: the tower compacts this session (`/compact`) and it goes on. Pick it only for closely continuous work: mid-edit in the same files, state that is hard to write down. Claude Code lanes only; on other runtimes the tower falls back to fresh.
 
 ## Engines
 

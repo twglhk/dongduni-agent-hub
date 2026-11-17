@@ -24,6 +24,9 @@ RUNTIMES = ("opencode", "claude", "codex")
 TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
+# Team lane sessions are asked to hand off past this many k tokens of context. Off (0) by default: a workspace turns it
+# on with `context_limit_k` in tower.json (a number, or a table by model name).
+DEFAULT_CONTEXT_LIMIT_K = 0
 INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
 DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
 FIRST_OPENCODE_PORT = 4301
@@ -72,6 +75,7 @@ class Lane:
     worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
+    context_limit_k: int | None = None  # team lanes and the hub: its own context limit (None = the top-level one)
 
 
 @dataclass
@@ -114,6 +118,9 @@ class Config:
     max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
     heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
     memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
+    context_limit_k: int = DEFAULT_CONTEXT_LIMIT_K  # a team lane session over this many k tokens is asked to hand off; 0 = off
+    model_limits_k: dict[str, int] = field(default_factory=dict)  # per-model limits: a key found in the session's model
+                                 # name ("sonnet" in "claude-sonnet-5-5") beats context_limit_k
     instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
     done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
     scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
@@ -151,6 +158,26 @@ class Config:
         """Where a lane's agent works: the workspace, or the lane's own git worktree."""
         base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
         return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
+
+    def context_limit(self, lane: str, model: str = "") -> int:
+        """k tokens a team lane session may hold before the tower asks for a handoff (0 = no limit): the lane's own
+        number, else the limit of the model it runs (`model`, the task's, or the lane's), else context_limit_k."""
+        ln = self.lanes.get(base_lane(lane))
+        if not ln or ln.kind != "team":
+            return 0
+        if ln.context_limit_k is not None:
+            return ln.context_limit_k
+        name = (model or ln.model).lower()
+        for key in sorted(self.model_limits_k, key=len, reverse=True):
+            if key in name:
+                return self.model_limits_k[key]
+        return self.context_limit_k
+
+    def hub_context_limit(self, lane: str) -> int:
+        """k tokens the hub session may hold before the tower asks it to hand over to a fresh hub session: the hub
+        lane's own context_limit_k. Not the top-level one (that is for team lanes): 0 = the engine's HUB_ROTATE_K."""
+        ln = self.lanes.get(lane)
+        return (ln.context_limit_k or 0) if ln and ln.kind == HUB else 0
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]
@@ -199,6 +226,11 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
     if raw.get("worktree") and kind != "team":
         raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
+    limit = raw.get("context_limit_k")
+    if limit is not None and kind == INFRA:
+        raise ConfigError(f"lane {lid}: \"context_limit_k\" is for team lanes and the hub (infra runs one memo per session)")
+    if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 0):
+        raise ConfigError(f"lane {lid}: \"context_limit_k\" must be a whole number of k tokens (0 = no limit)")
     engine = str(raw.get("engine") or "")
     if engine and kind != "team":
         raise ConfigError(f"lane {lid}: \"engine\" is for team lanes; {lid} runs the whole install")
@@ -212,6 +244,7 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
         terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
         worktree=bool(raw["worktree"]) if "worktree" in raw else (worktree and kind == "team"),
+        context_limit_k=limit,
     )
 
 
@@ -324,9 +357,40 @@ def load(home: Path | None = None) -> Config:
         max_instances=max_instances,
         heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
         memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
+        context_limit_k=_limit_k(raw),
+        model_limits_k=_model_limits_k(raw),
         instances=instances,
         **_extras(raw, home, project),
     )
+
+
+LIMIT_K_ERROR = ("context_limit_k must be a whole number of k tokens (0 = no limit), or a table of them by model: "
+                 "{\"default\": 400, \"sonnet\": 300, \"opus\": 400}")
+
+
+def _whole_k(v: Any) -> int:
+    if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+        raise ConfigError(LIMIT_K_ERROR)
+    return v
+
+
+def _limit_k(raw: dict[str, Any]) -> int:
+    """The top-level limit for a model the table does not name (the whole number, or the table's "default")."""
+    v = raw.get("context_limit_k", DEFAULT_CONTEXT_LIMIT_K)
+    if isinstance(v, dict):
+        return _whole_k(v.get("default", DEFAULT_CONTEXT_LIMIT_K))
+    return _whole_k(v)
+
+
+def _model_limits_k(raw: dict[str, Any]) -> dict[str, int]:
+    """The per-model part of a table context_limit_k, keys lower-cased; {} for a whole number."""
+    v = raw.get("context_limit_k")
+    if not isinstance(v, dict):
+        return {}
+    out = {str(k).strip().lower(): _whole_k(n) for k, n in v.items() if str(k).strip().lower() != "default"}
+    if "" in out:
+        raise ConfigError(LIMIT_K_ERROR)
+    return out
 
 
 def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:

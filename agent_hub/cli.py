@@ -188,7 +188,12 @@ def cmd_report(args: argparse.Namespace) -> None:
     c = cfg()
     s, me = store(c), who(args, c)
     if me == HUB:
-        raise TowerError("the hub does not report; it decides, tells and wraps")
+        if args.kind != "handoff":
+            raise TowerError("the hub does not report; it decides, tells and wraps (only `report handoff` when the "
+                             "tower asks it to hand over to a fresh hub session)")
+        s.set_lane(me, handoff=args.text, handoff_session=s.lane(me).get("session") or "")
+        print("Handoff saved. End your turn; the tower opens a fresh hub session with this handoff.")
+        return
     if me == INFRA and args.kind != "wrapped":
         raise TowerError("infra only uses `report wrapped`; answer memos with `dah memo reply`")
     task = s.live_task(me)

@@ -1,7 +1,7 @@
 import unittest
 
 from agent_hub.config import base_lane
-from agent_hub.engine import (BATCH_SECONDS, CHAIN_CONTEXT_K, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
+from agent_hub.engine import (BATCH_SECONDS, CHAIN_CONTEXT_K, HUB_HANDOFF_WAIT, HUB_STUCK_SECONDS, NUDGE_AFTER, NUDGE_LIMIT,
                               RESPAWN_LIMIT, SETTLE_SECONDS, Engine, conflict_of, paths_overlap, task_paths)
 from agent_hub.memwatch import POLL_SECONDS, MemWatch, Proc, parse_ps
 from agent_hub.store import HUB, HUMAN, INFRA, Store
@@ -84,6 +84,11 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.rt.st[HUB] = "idle"
         self.rt.ctx[HUB] = 999
+        self.run_ticks(10, step=5)
+        self.assertNotIn(HUB, self.rt.closed)  # asked to hand off first
+        self.assertEqual(len([x for x in self.rt.sent if "dah report handoff" in x[2]]), 1)
+        self.rt.st[HUB] = "idle"
+        self.clock.tick(HUB_HANDOFF_WAIT)  # it never hands off: renewed anyway once quiet
         self.run_ticks(10, step=5)
         self.assertIn(HUB, self.rt.closed)
         self.assertEqual(sum(1 for lane, _ in self.rt.opened if lane == HUB), 2)

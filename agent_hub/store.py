@@ -110,7 +110,9 @@ CREATE TABLE IF NOT EXISTS lanes(
   active_retries INTEGER DEFAULT 0,
   doing TEXT,
   doing_at REAL,
-  engine TEXT                       -- the engine a team lane belongs to, kept in step with tower.json
+  engine TEXT,                      -- the engine a team lane belongs to, kept in step with tower.json
+  handoff TEXT,                     -- hub: what it handed over to the next hub session
+  handoff_session TEXT              -- hub: the session that wrote that handoff
 );
 CREATE TABLE IF NOT EXISTS members(
   name TEXT PRIMARY KEY,
@@ -223,6 +225,9 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"))
+
+
 class Store:
     def __init__(self, path: Path, clock: Callable[[], float] = time.time):
         self.path = Path(path)
@@ -233,6 +238,10 @@ class Store:
             for table in ("tasks", "lanes"):  # additive only: databases made before engines get a NULL column
                 if "engine" not in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
                     con.execute(f"ALTER TABLE {table} ADD COLUMN engine TEXT")
+            have_lanes = {r[1] for r in con.execute("PRAGMA table_info(lanes)")}
+            for col, decl in LANE_COLUMNS:  # a hub's handoff: databases made before it get NULL columns
+                if col not in have_lanes:
+                    con.execute(f"ALTER TABLE lanes ADD COLUMN {col} {decl}")
             have = {r[1] for r in con.execute("PRAGMA table_info(tasks)")}
             for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
@@ -826,6 +835,11 @@ class Store:
         """A lane's latest tasks, newest first (any state)."""
         with self.conn() as con:
             return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
+
+    def set_session_ctx(self, lane: str, session: str, ctx_k: int) -> None:
+        """Overwrite a session's last context reading (after a compaction the old one no longer holds)."""
+        with self.conn() as con:
+            con.execute("UPDATE usage SET ctx_k=? WHERE lane=? AND session=?", (ctx_k, lane, session))
 
     def session_ctx(self, lane: str, session: str | None) -> int | None:
         if not session:

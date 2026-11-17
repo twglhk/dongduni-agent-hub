@@ -45,6 +45,8 @@ class FakeRuntime:
         self.use: dict[str, dict[str, Any]] = {}
         self.ledger_use: dict[str, dict[str, Any]] = {}  # lane -> {"new", "cache", "out", "turns"}
         self.not_owned: set[str] = set()
+        self.compacts: list[tuple[str, str, str]] = []  # (lane, sid, then)
+        self.compact_how: str | None = "sent"  # what compact() answers: "sent", "pending", or None (cannot)
         self.synced: list[str] = []  # lanes whose branch sync() was asked for
         self.sync_conflict: dict[str, str] = {}
 
@@ -82,6 +84,12 @@ class FakeRuntime:
     def send(self, lane: str, sid: str, text: str) -> None:
         self.sent.append((lane, sid, text))
         self.st[lane] = "busy"
+
+    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
+        if self.compact_how:
+            self.compacts.append((lane, sid, then))
+            self.st[lane] = "busy"
+        return self.compact_how
 
     def close(self, lane: str) -> None:
         self.closed.append(lane)

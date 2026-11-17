@@ -296,6 +296,16 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.cfg.state_dir / "term").glob("hub*")),
                          ["hub.settings.json", "hub.sh"])  # notes, handle and signal are gone
 
+    def test_claude_in_a_window_types_compact_then_the_message_that_continues(self) -> None:
+        import agent_hub.runtimes as rt_mod
+        rt_mod.COMPACT_TYPE_GAP, gap = 0.0, rt_mod.COMPACT_TYPE_GAP
+        self.addCleanup(setattr, rt_mod, "COMPACT_TYPE_GAP", gap)
+        sid = self.rt.open("hub", "first")
+        wait_for(lambda: self.rt.last_text("hub") == ["did: first"])
+        self.settle()
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on now"), "sent")
+        wait_for(lambda: self.rt.last_text("hub", 2) == ["did: /compact keep the plan", "did: go on now"])
+
     def _alive(self, wid: str) -> bool:
         out = subprocess.run([self.env["TOWER_TMUX_BIN"], "list-windows", "-a", "-F", "#{window_id} #{pane_dead}"],
                              capture_output=True, text=True).stdout.split()

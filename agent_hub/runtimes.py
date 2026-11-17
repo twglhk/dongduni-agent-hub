@@ -220,6 +220,12 @@ class Adapter:
     def context_k(self, sid: str | None) -> int:
         return 0
 
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        """Compact the session's context in place instead of a fresh session. None: this runtime cannot; "sent": the
+        compaction and `then` (the message that continues the task) are both on their way; "pending": only the
+        compaction is, and the engine sends `then` once the session is idle again."""
+        return None
+
     def usage(self, sid: str | None) -> dict[str, Any] | None:
         """Totals for one session: tokens_in (cache included), tokens_out, cost (USD or None), ctx_k."""
         return None
@@ -413,6 +419,10 @@ class Claude(Headless):
 
     def resume_argv(self, sid: str, text: str) -> list[str]:
         return [*self._base(), "--resume", sid, text]
+
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        self.send(sid, f"/compact {focus}")  # print mode runs the slash command as the whole run
+        return "pending"
 
     def _results(self) -> list[dict[str, Any]]:
         return [e for e in self._events() if e.get("type") == "result" or "result" in e]
@@ -843,6 +853,8 @@ def _epoch(stamp: str) -> float | None:
     return base + float(m.group(2) or 0)
 
 
+COMPACT_TYPE_GAP = 2.0  # seconds between `/compact` and the message typed behind it
+
 WHOLE_BYTES = 256 * 1024 * 1024  # the ledger reads a transcript whole
 
 
@@ -890,6 +902,20 @@ class ClaudeTerm(TerminalSession, Claude):
         settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
                                                   "Notification": hook, **hooks_mod.claude_hooks()}}), encoding="utf-8")
         return [*argv, "--settings", str(settings), *extra]
+
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        """Type `/compact` itself (a tower note would not be a slash command), then the message that continues the
+        task: Claude Code queues what is typed while it compacts and runs it after, so the Stop hook ends that turn."""
+        if self.status() in ("busy", "asking"):
+            raise RuntimeFailure(f"{self.lane.id}: still busy")
+        handle = self._handle()
+        if not handle:
+            raise RuntimeFailure(f"{self.lane.id}: no window to type into")
+        write_signal(self.cfg.home, self.lane.id, state="busy")
+        self._host().send(handle, f"/compact {focus}")
+        time.sleep(COMPACT_TYPE_GAP)
+        self._type(then)
+        return "sent"
 
     def open(self, prompt: str) -> str:
         sid = str(uuid.uuid4())
@@ -1171,6 +1197,9 @@ class Runtimes:
 
     def context_k(self, lane: str, sid: str | None) -> int:
         return self._a(lane).context_k(sid)
+
+    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
+        return self._a(lane).compact(sid, focus, then)
 
     def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
         return self._a(lane).usage(sid)
