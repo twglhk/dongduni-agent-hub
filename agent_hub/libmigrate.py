@@ -35,6 +35,8 @@ Status: draft
 Converted from row {n} of the pattern library `{library}` (process: {process}; pattern: {pattern}). That row had no
 process card: add the stages table (`#`, `Stage`, `Input`, `Output`, `Gate`, `Passed by`, `Pattern card`).
 """
+_STUB_DEST = re.compile(r"Moved to `([^`]+)`")
+_CONVERTED_FROM = re.compile(r"from the pattern library `([^`]+)`")
 _NON_ID = re.compile(r"[^a-z0-9]+")
 _RULE = re.compile(r":?-{2,}:?")
 
@@ -52,6 +54,10 @@ def _read(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ""
+
+
+def _is_stub(text: str) -> bool:
+    return text.startswith("Moved to `") or text.startswith("Copied by `dah update`")
 
 
 def _pattern_source(card: Path, cell: str, skill: str, skills: Path) -> tuple[str, Path] | None:
@@ -97,45 +103,59 @@ def _convert_card(text: str, card: Path, row: dict[str, Any], skills: Path) -> t
     return "\n".join(lines) + "\n", list(moved.items())
 
 
+def _free(dest: Path, content: str, taken: set[str]) -> bool:
+    if dest.name in taken:
+        return False
+    return _read(dest / "process.md") in ("", content)
+
+
 def _plan(cfg: Config, eid: str, library_rel: str, rows: list[dict[str, Any]], skills: Path) -> dict[str, Any]:
     home = cfg.home
     fid = slug(eid) or "engine"
     full_rel = f"{processes.DIR}/full/{fid}.md"
-    if (home / full_rel).exists():
-        raise Skipped(f"{full_rel} already exists")
-    taken = {p.name for p in (home / processes.DIR / "sub").glob("*")} if (home / processes.DIR / "sub").is_dir() else set()
+    sub_root = home / processes.DIR / "sub"
     files: dict[Path, str] = {}
     stubs: dict[Path, str] = {}
     ids: dict[str, str] = {}
     by_card: dict[Path, str] = {}
     copies: dict[Path, list[str]] = {}
+    taken: set[str] = set()
     table = []
     label = cfg.engines[eid].label or eid
     for r in rows:
         proc = r["process"]
         card = Path(os.path.normpath(skills / proc["path"])) if proc else None
         text = _read(card) if card else ""
+        stub = _STUB_DEST.match(text) if text else None
         if text and card in by_card:
             sid = ids[r["n"]] = by_card[card]
+        elif stub:
+            sid = ids[r["n"]] = by_card[card] = Path(stub.group(1)).parent.name
+            taken.add(sid)
         else:
+            moved: list[tuple[Path, str]] = []
+            if text:
+                content, moved = _convert_card(text, card, r, skills)
+            else:
+                content = SKELETON.format(
+                    title=r["type"], skill=r["skill"] or "none", n=r["n"], library=library_rel, process=r["process_text"] or "-", pattern=r["pattern_text"] or "-")
             base = f"{fid}-{slug(r['type']) or 'row-' + slug(r['n'])}"
             sid, n = base, 2
-            while sid in taken:
+            while not _free(sub_root / sid, content, taken):
                 sid, n = f"{base}-{n}", n + 1
             taken.add(sid)
             ids[r["n"]] = sid
-            dest = home / processes.DIR / "sub" / sid
+            dest = sub_root / sid
+            files[dest / "process.md"] = content
             if text:
                 by_card[card] = sid
-                new, moved = _convert_card(text, card, r, skills)
-                files[dest / "process.md"] = new
                 stubs[card] = STUB.format(dest=f"{processes.DIR}/sub/{sid}/process.md")
                 for src, name in moved:
-                    files[dest / "patterns" / name] = _read(src)
+                    source = _read(src)
+                    if _is_stub(source):
+                        continue
+                    files[dest / "patterns" / name] = source
                     copies.setdefault(src, []).append(f"{processes.DIR}/sub/{sid}/patterns/{name}")
-            else:
-                files[dest / "process.md"] = SKELETON.format(
-                    title=r["type"], skill=r["skill"] or "none", n=r["n"], library=library_rel, process=r["process_text"] or "-", pattern=r["pattern_text"] or "-")
         table.append(f"| {len(table) + 1} | {r['n']} |  | `{sid}` | {r['type'].replace('|', '/')} | {r['model_text'].replace('|', '/')} |")
     for src, dests in copies.items():
         stubs[src] = STUB.format(dest=dests[0]) if len(dests) == 1 else SPLIT_STUB.format(dests=", ".join(f"`{d}`" for d in dests))
@@ -181,7 +201,6 @@ def _convert(cfg: Config, eid: str, rows: list[dict[str, Any]], library_rel: str
     bak = lib.with_name(lib.name + ".bak")
     if not bak.exists():
         bak.write_text(_read(lib), encoding="utf-8")
-    lib.write_text(POINTER.format(full=full_rel, bak=bak.relative_to(home).as_posix()), encoding="utf-8")
 
     def point(data: dict) -> None:
         for e in (data.get("engines") or {}).values():
@@ -190,9 +209,14 @@ def _convert(cfg: Config, eid: str, rows: list[dict[str, Any]], library_rel: str
 
     edit_config(home, point)
     if cfg.db.is_file():
-        Store(cfg.db).remap_line_rows(eid, {r["n"]: f"{fid}/{plan['ids'][r['n']]}" for r in rows})
+        remap = {r["n"]: f"{fid}/{plan['ids'][r['n']]}" for r in rows}
+        store = Store(cfg.db)
+        for other, e in cfg.engines.items():
+            if other == eid or e.library in (library_rel, full_rel):
+                store.remap_line_rows(other, remap)
     for src, text in plan["stubs"].items():
         src.write_text(text, encoding="utf-8")
+    lib.write_text(POINTER.format(full=full_rel, bak=bak.relative_to(home).as_posix()), encoding="utf-8")
     subs = len(set(plan["ids"].values()))
     out = [f"{library_rel}: converted into the process library: {full_rel} with {len(rows)} step(s) and {subs} sub-process(es) in "
            f"{processes.DIR}/sub/ ({library_rel}.bak keeps the original table; the old card files now point to their new place)"]
@@ -202,23 +226,39 @@ def _convert(cfg: Config, eid: str, rows: list[dict[str, Any]], library_rel: str
     return out
 
 
+def _unfinished(cfg: Config, e: Any) -> str | None:
+    full = _read(cfg.home / e.library)
+    m = _CONVERTED_FROM.search(full)
+    if not m or not processes.is_full(full):
+        return None
+    old = cfg.home / m.group(1)
+    text = _read(old)
+    if not text or text.startswith("# Pattern library: moved") or not old.with_name(old.name + ".bak").is_file():
+        return None
+    return m.group(1)
+
+
 def migrate(cfg: Config) -> list[str]:
     report: list[str] = []
     done: set[str] = set()
     for eid, e in cfg.engines.items():
         if e.implicit or not e.library or e.library in done:
             continue
-        path = cfg.home / e.library
-        text = _read(path)
-        if not text or processes.is_full(text):
+        library = e.library
+        text = _read(cfg.home / library)
+        if text and processes.is_full(text):
+            library = _unfinished(cfg, e) or ""
+            if not library:
+                continue
+        elif not text:
             continue
         skills = engines.skills_root(cfg.home, e.skills)
-        rows = engines.build(path, skills)
+        rows = engines.build(cfg.home / library, skills)
         if not rows:
             continue
         done.add(e.library)
         try:
-            report += _convert(cfg, eid, rows, e.library, skills)
+            report += _convert(cfg, eid, rows, library, skills)
         except Skipped as why:
-            report.append(f"{e.library}: not converted ({why}); it keeps working as an old pattern library")
+            report.append(f"{library}: not converted ({why}); it keeps working as an old pattern library")
     return report

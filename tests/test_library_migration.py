@@ -5,8 +5,9 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from agent_hub import config as config_mod, engines, line, processes, stagemodel
+from agent_hub import config as config_mod, engines, libmigrate, line, processes, stagemodel
 from agent_hub.install import refresh
 from agent_hub.store import Store
 from tests.helpers import make_home
@@ -140,6 +141,87 @@ class ConversionTest(OldWorkspace):
         self.assertEqual(refresh(cfg)["converted"], [])
         self.assertFalse((cfg.home / "processes").exists())
         self.assertTrue(set(before) <= set(tree(cfg.home)))
+
+
+class HalfDoneTest(OldWorkspace):
+    def crash_at(self, target: str) -> None:
+        with mock.patch(target, side_effect=OSError("boom")), self.assertRaises(OSError):
+            libmigrate.migrate(config_mod.load(self.home))
+
+    def engine_rows(self) -> list[dict]:
+        cfg = config_mod.load(self.home)
+        return engines.build(self.home / cfg.engines["anim"].library, self.home / SKILLS)
+
+    def converted_sub_folders(self) -> list[str]:
+        return sorted(p.name for p in (self.home / "processes/sub").iterdir())
+
+    def test_a_crash_before_tower_json_changes_leaves_the_engine_working_and_the_next_update_finishes(self) -> None:
+        original = (self.home / OLD).read_text(encoding="utf-8")
+        self.crash_at("agent_hub.install.edit_config")
+        self.assertEqual((self.home / OLD).read_text(encoding="utf-8"), original)
+        self.assertEqual(len(self.engine_rows()), 3)
+        out = self.update()
+        self.assertIn(f"converted: {OLD}", out)
+        self.assertEqual(len(self.engine_rows()), 3)
+        self.assertIn(NEW, (self.home / OLD).read_text(encoding="utf-8"))
+        self.assertEqual(self.converted_sub_folders(), ["anim-sound-cue", "anim-storyboard", "anim-title-card"])
+
+    def test_a_crash_after_tower_json_changed_is_finished_and_the_tasks_are_remapped(self) -> None:
+        s = Store(self.cfg.db)
+        tid = s.add_task("story", "old task", "Line: #1 Storyboard · stage 2 · make", "anim", None)
+        s.update_task(tid, line_row="1", line_stage="2", line_mode="make")
+        self.crash_at("agent_hub.store.Store.remap_line_rows")
+        self.assertEqual(json.loads((self.home / ".tower/tower.json").read_text())["engines"]["anim"]["library"], NEW)
+        self.assertEqual(len(self.engine_rows()), 3)
+        self.assertEqual(Store(self.cfg.db).task(tid)["line_row"], "1")
+        out = self.update()
+        self.assertIn("converted:", out)
+        self.assertEqual(Store(self.cfg.db).task(tid)["line_row"], "anim/anim-storyboard")
+        self.assertIn(NEW, (self.home / OLD).read_text(encoding="utf-8"))
+        self.assertIn("processes/sub/anim-storyboard/process.md", (self.home / CARD).read_text(encoding="utf-8"))
+        self.assertEqual(self.converted_sub_folders(), ["anim-sound-cue", "anim-storyboard", "anim-title-card"])
+
+    def test_a_crash_with_only_some_cards_turned_into_pointers_is_finished(self) -> None:
+        Store(self.cfg.db)
+        self.crash_at("agent_hub.store.Store.remap_line_rows")
+        (self.home / CARD).write_text("Moved to `processes/sub/anim-storyboard/process.md` (the process library) by `dah update`. Edit it there.\n",
+                                      encoding="utf-8")
+        self.update()
+        self.assertEqual(self.converted_sub_folders(), ["anim-sound-cue", "anim-storyboard", "anim-title-card"])
+        self.assertIn(NEW, (self.home / OLD).read_text(encoding="utf-8"))
+        self.assertIn("anim-storyboard", (self.home / CARD).read_text(encoding="utf-8"))
+        self.assertIn("beats", (self.home / "processes/sub/anim-storyboard/patterns/beats.md").read_text(encoding="utf-8").lower())
+
+    def test_a_full_file_written_before_the_crash_does_not_block_the_next_update(self) -> None:
+        self.crash_at("agent_hub.libmigrate._add_lane_sections")
+        self.assertTrue((self.home / NEW).is_file())
+        out = self.update()
+        self.assertNotIn("not converted", out)
+        self.assertEqual(self.converted_sub_folders(), ["anim-sound-cue", "anim-storyboard", "anim-title-card"])
+        self.assertIn(NEW, (self.home / OLD).read_text(encoding="utf-8"))
+
+    def test_a_sub_folder_of_your_own_with_another_card_is_not_overwritten(self) -> None:
+        mine = self.home / "processes/sub/anim-storyboard"
+        mine.mkdir(parents=True)
+        (mine / "process.md").write_text("# Process: mine\n", encoding="utf-8")
+        self.update()
+        self.assertEqual((mine / "process.md").read_text(encoding="utf-8"), "# Process: mine\n")
+        self.assertIn("anim-storyboard-2", self.converted_sub_folders())
+
+    def test_a_half_made_empty_sub_folder_is_reused(self) -> None:
+        (self.home / "processes/sub/anim-storyboard").mkdir(parents=True)
+        self.update()
+        self.assertEqual(self.converted_sub_folders(), ["anim-sound-cue", "anim-storyboard", "anim-title-card"])
+
+    def test_tasks_of_a_second_engine_on_the_same_library_are_remapped(self) -> None:
+        raw = json.loads((self.home / ".tower/tower.json").read_text())
+        raw["engines"]["anim2"] = {**raw["engines"]["anim"], "lanes": []}
+        (self.home / ".tower/tower.json").write_text(json.dumps(raw))
+        s = Store(self.cfg.db)
+        tid = s.add_task("story", "second", "Line: #1 Storyboard · stage 2 · make", "anim2", None)
+        s.update_task(tid, line_row="1", line_stage="2", line_mode="make")
+        self.update()
+        self.assertEqual(Store(self.cfg.db).task(tid)["line_row"], "anim/anim-storyboard")
 
 
 class EngineShowAfterConversionTest(OldWorkspace):
