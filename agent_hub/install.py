@@ -296,7 +296,7 @@ def init(home: Path, name: str, lang: str, hub: str, infra: str, project: str | 
     return path
 
 
-def _lock(path: Path) -> Path:
+def lock_file(path: Path) -> Path:
     lock = path.with_name(path.name + ".lock")
     deadline = time.time() + 10
     while True:
@@ -317,7 +317,7 @@ def _lock(path: Path) -> Path:
 
 def edit_config(home: Path, fn) -> bool:
     path = home / TOWER_DIR / CONFIG_NAME
-    lock = _lock(path)
+    lock = lock_file(path)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         before = copy.deepcopy(data)

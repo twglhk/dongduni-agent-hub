@@ -250,10 +250,15 @@ class RestartTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.mock = mock
 
-    def run_restart(self, stopped: int | None, pids: list[int | None]) -> str:
+    def run_restart(self, stopped: int | None, pids: list[int | None], managed: bool = False) -> str:
         import contextlib
         import io
         out = io.StringIO()
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        marker = self.cfg.state_dir / "tower.managed"
+        marker.unlink(missing_ok=True)
+        if managed:
+            marker.write_text("1")
         with self.mock.patch.object(self.cli, "stop_loop", return_value=stopped), \
                 self.mock.patch.object(self.cli, "tower_pid", side_effect=pids + [pids[-1]] * 400), \
                 contextlib.redirect_stdout(out):
@@ -266,9 +271,20 @@ class RestartTest(unittest.TestCase):
         self.assertEqual(self.calls, ["start"])
 
     def test_a_service_that_brings_it_back_is_left_alone(self) -> None:
-        out = self.run_restart(4242, [None, None, 5151])
+        out = self.run_restart(4242, [None, None, 5151], managed=True)
         self.assertIn("tower back (pid 5151), started by its service", out)
         self.assertEqual(self.calls, [])
+
+    def test_without_a_service_manager_it_starts_at_once_and_does_not_wait(self) -> None:
+        out = self.run_restart(4242, [None])
+        self.assertIn("tower stopped (pid 4242)", out)
+        self.assertEqual(self.calls, ["start"])
+        self.assertEqual(self.cli.time.sleep.call_count, 0)
+
+    def test_a_service_that_does_not_bring_it_back_is_waited_for_then_started_here(self) -> None:
+        self.run_restart(4242, [None], managed=True)
+        self.assertEqual(self.calls, ["start"])
+        self.assertEqual(self.cli.time.sleep.call_count, self.cli.RESTART_WAIT_SECONDS * 4)
 
     def test_a_tower_that_was_not_running_is_started_without_waiting(self) -> None:
         out = self.run_restart(None, [None])
@@ -314,3 +330,35 @@ class EditConfigTest(unittest.TestCase):
         threading.Timer(0.3, lock.unlink).start()
         edit_config(self.home, lambda d: d.__setitem__("name", "B"))
         self.assertIn('"B"', self.path.read_text(encoding="utf-8"))
+
+
+class ClaimPidTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from tests.helpers import make_home
+        self.cfg = make_home()
+        self.pid_file = self.cfg.state_dir / "tower.pid"
+
+    def test_a_second_tower_is_refused_and_a_stale_pid_is_replaced(self) -> None:
+        from agent_hub import cli
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        self.pid_file.write_text("999999999")
+        cli.claim_pid(self.cfg)
+        self.assertEqual(self.pid_file.read_text(), str(os.getpid()))
+        self.assertFalse(self.pid_file.with_name("tower.pid.lock").exists())
+        with self.assertRaises(cli.TowerError):
+            self.pid_file.write_text(str(os.getppid()))
+            cli.claim_pid(self.cfg)
+        self.assertEqual(self.pid_file.read_text(), str(os.getppid()))
+
+    def test_the_service_marker_follows_the_environment(self) -> None:
+        from unittest import mock
+        from agent_hub import cli
+        marker = self.cfg.state_dir / "tower.managed"
+        with mock.patch.dict(os.environ, {"INVOCATION_ID": "abc"}):
+            cli.claim_pid(self.cfg)
+        self.assertTrue(marker.exists())
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("INVOCATION_ID", None)
+            os.environ.pop("DAH_SERVICE", None)
+            cli.claim_pid(self.cfg)
+        self.assertFalse(marker.exists())

@@ -22,7 +22,8 @@ from . import procs, stagemodel, stats
 from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, base_lane, tower_pid
 from .engine import VERDICT_WORD, Engine, clip, conflict_of
 from .memwatch import MemWatch
-from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
+from .install import (SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, lock_file, remove_shims,
+                      write_shims)
 from .notify import notifier
 from .store import HUMAN, Store, StoreError
 
@@ -677,16 +678,37 @@ def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
             say(f"{lid}: runtime, terminal or worktree changed, closed its session; it reopens the new way")
 
 
+def claim_pid(c: Config) -> None:
+    c.state_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = c.state_dir / "tower.pid"
+    lock = lock_file(pid_file)
+    try:
+        running = tower_pid(c)
+        if running and running != os.getpid():
+            raise TowerError(f"the tower already runs (pid {running})")
+        pid_file.unlink(missing_ok=True)
+        fd = os.open(pid_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, str(os.getpid()).encode())
+        finally:
+            os.close(fd)
+    finally:
+        lock.unlink(missing_ok=True)
+    managed = c.state_dir / "tower.managed"
+    if os.environ.get("INVOCATION_ID") or os.environ.get("DAH_SERVICE"):
+        managed.write_text("1", encoding="utf-8")
+    else:
+        managed.unlink(missing_ok=True)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     from .ext import Extensions
     from .runtimes import Runtimes
     from .web import server
 
     c = cfg()
-    if tower_pid(c) and tower_pid(c) != os.getpid():
-        raise TowerError(f"the tower already runs (pid {tower_pid(c)})")
+    claim_pid(c)
     s = store(c)
-    (c.state_dir / "tower.pid").write_text(str(os.getpid()), encoding="utf-8")
     config_mod.register(c.home)
     if not args.no_hub:
         s.set_lane(HUB, enabled=1)
@@ -790,9 +812,10 @@ RESTART_WAIT_SECONDS = 15
 
 def cmd_restart(_args: argparse.Namespace) -> None:
     c = cfg()
+    managed = (c.state_dir / "tower.managed").exists()
     pid = stop_loop(c)
     print(f"tower stopped (pid {pid}); lane sessions keep running" if pid else "the tower was not running")
-    for _ in range(RESTART_WAIT_SECONDS * 4 if pid else 0):
+    for _ in range(RESTART_WAIT_SECONDS * 4 if pid and managed else 0):
         if tower_pid(c):
             print(f"tower back (pid {tower_pid(c)}), started by its service")
             return
