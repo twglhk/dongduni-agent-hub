@@ -112,7 +112,7 @@ A larger release: board server hardening, a process library, a React board, and 
 
 **CLI**
 
-- New: `dah restart`, `dah prefs show|set|reset`, `dah paths`, `dah overlap CARD go|after|merge`, `dah memo cancel|reply --covers|bump|paths`, `dah task bump`, `dah infra --model/--effort/--paths/--alone`, `dah task --request/--for`, `dah item add --to/--recommend/--request`, `dah escalate --to all`, `dah member list` shows each member's hub, `dah guide help` lists every guide.
+- New: `dah restart`, `dah prefs show|set|reset`, `dah paths`, `dah overlap CARD go|after|merge`, `dah memo cancel`, `dah memo bump`, `dah memo paths`, `dah memo reply --covers N`, `dah task bump`, `dah infra --model`, `dah infra --effort`, `dah infra --paths`, `dah infra --alone`, `dah task --request`, `dah task --for`, `dah item add --to`, `dah item add --recommend`, `dah item add --request`; `dah member list` shows each member's hub and `dah guide -h` lists every guide.
 - `dah init` / `dah update`: `--force` keeps an edited file as `.bak`; `dah restart` waits only for a service manager.
 - Real model and effort per lane session; `dah task` and the shipped `ENGINE-audit` skill are checked against the parser by a test that now covers the README, guides and docs.
 
