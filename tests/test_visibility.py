@@ -309,6 +309,64 @@ class RequesterWithoutPersonHubsTest(ScopeCase):
         self.assertEqual(self.get("/api/history?kind=decided", "bo")[1]["rows"], [])
 
 
+class PersonHubsWithoutRequesterTest(ScopeCase):
+    requester, person_hubs = False, True
+
+    def test_a_member_sees_their_own_hub_cards_but_not_anothers(self) -> None:
+        self.assertEqual(self.card_ids("bo"), {self.hub_card["bo"], self.human_card["bo"], self.everyone})
+        for cid in (self.hub_card["cy"], self.human_card["cy"], self.shared_card):
+            self.assertEqual(self.get(f"/api/items/{cid}", "bo")[0], 404, cid)
+            code, _, _ = self.b.req("POST", f"/api/items/{cid}/decide", {"verdict": "ok", "choice": "A"},
+                                    {**POST, H: "bo@x.com"})
+            self.assertEqual(code, 404, cid)
+            self.assertEqual(self.b.s.item(cid)["state"], "open")
+        self.assertEqual(self.get(f"/api/items/{self.hub_card['bo']}", "bo")[0], 200)
+        self.assertEqual(self.get(f"/api/items/{self.hub_card['cy']}", "ana")[0], 200)
+
+    def test_a_card_for_a_task_of_the_shared_hub_stays_hidden_without_requester(self) -> None:
+        tid = self.b.s.add_task("docs", "t", "brief", requester="bo")
+        cid = self.b.s.add_item("docs", tid, "review", "shared hub triage", "x", [], [], audience=HUB)
+        self.assertNotIn(cid, self.card_ids("bo"))
+
+    def test_decided_history_pages_and_counts_follow_the_same_rule(self) -> None:
+        for cid in (*self.hub_card.values(), self.shared_card):
+            self.b.s.decide(cid, "ok", "ana")
+        for cid in self.human_card.values():
+            self.b.s.decide(cid, "ok", "ana", "A")
+        self.assertEqual(self.get("/api/state", "bo")[1]["counts"]["decided"], 2)
+        rows = self.get("/api/history?kind=decided", "bo")[1]["rows"]
+        self.assertEqual({r["id"] for r in rows}, {self.hub_card["bo"], self.human_card["bo"]})
+        self.assertEqual(self.get("/api/history?kind=decided&offset=2", "bo")[1]["rows"], [])
+
+    def test_attachments_follow_their_card(self) -> None:
+        self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "bo")[0], 404)
+        self.assertEqual(self.get("/f/docs/board/d/bo/shot.png", "bo")[0], 200)
+        self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "ana")[0], 200)
+
+    def test_another_persons_hub_chat_is_never_sent_but_the_shared_chat_stays(self) -> None:
+        self.assertEqual(self.chat("bo"), {"bo asks shared", "cy asks shared", "tower notice", "bo asks own hub",
+                                           "notice in bo hub"})
+        self.assertEqual(len(self.chat("ana")), 6)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertEqual({m["text"] for m in st["memos"][HUB]}, {"bo asks own hub", "notice in bo hub"})
+        self.assertEqual(st["counts"]["requests"], 5)
+        self.assertEqual(self.get("/api/state", "ana")[1]["counts"]["requests"], 6)
+
+    def test_chat_pages_after_filtering(self) -> None:
+        for i in range(25):
+            self.b.s.push("hub-cy", "cy", "memo", f"cy more {i}")
+        self.assertEqual(len(self.chat("bo")), 5)
+        self.assertEqual(self.get("/api/history?kind=requests&offset=20", "bo")[1]["rows"], [])
+
+    def test_infra_memos_are_the_ones_the_members_hub_sent(self) -> None:
+        self.assertEqual(self.infra("bo"), {"bo hub tells infra"})
+        self.assertEqual(self.infra("cy"), {"cy hub tells infra"})
+        self.assertEqual(len(self.infra("ana")), 3)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertEqual([m["text"] for m in st["memos"][INFRA]], ["bo hub tells infra"])
+        self.assertEqual(st["counts"]["memos"], 1)
+
+
 class FlagsOffTest(ScopeCase):
     requester, person_hubs = False, False
 
@@ -326,7 +384,6 @@ class FlagsOffTest(ScopeCase):
         for cid in (*self.hub_card.values(), self.shared_card):
             self.assertEqual(self.get(f"/api/items/{cid}", "bo")[0], 404)
             self.assertEqual(self.get(f"/api/items/{cid}", "ana")[0], 200)
-
 
 
 class LocalModeSeesAllTest(unittest.TestCase):

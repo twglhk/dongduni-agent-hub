@@ -43,13 +43,14 @@ class Gate:
         return [lid for lid, who in self.person_hubs.items() if who == self.name]
 
     def in_my_hub(self, it: dict[str, Any]) -> bool:
-        if not (self.requester and self.person_hubs and self.name):
+        if not (self.person_hubs and self.name):
             return False
         if it.get("lane") in self.own_hubs:
             return True
         tid = it.get("task_id")
-        return tid is not None and (self.s.hub_for_task(tid) in self.own_hubs
-                                    or self.s.requester_of_task(tid) == self.name)
+        if tid is None:
+            return False
+        return self.s.hub_for_task(tid) in self.own_hubs or (self.requester and self.s.requester_of_task(tid) == self.name)
 
 
 def _on_the_humans_side_or_in_my_hub(g: Gate, it: dict[str, Any]) -> bool:
@@ -64,6 +65,11 @@ ITEM_RULES: tuple[ItemRule, ...] = (_on_the_humans_side_or_in_my_hub, _addressed
 
 
 MEMO_RULES: tuple[MemoRule, ...] = ()
+
+
+def _not_another_persons_hub(g: Gate, target: str, memo: dict[str, Any]) -> bool:
+    where = str(memo.get("target") or target)
+    return where not in g.person_hubs or where in g.own_hubs
 
 
 def _my_requests_or_my_hub_chat(g: Gate, target: str, memo: dict[str, Any]) -> bool:
@@ -81,7 +87,7 @@ def mine(g: Gate, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _caused_by_me(g: Gate, memo: dict[str, Any]) -> bool:
-    return g.requester and str(memo.get("sender") or "") in g.own_hubs
+    return str(memo.get("sender") or "") in g.own_hubs
 
 
 def can_see_memo(g: Gate, target: str, memo: dict[str, Any]) -> bool:
@@ -91,6 +97,8 @@ def can_see_memo(g: Gate, target: str, memo: dict[str, Any]) -> bool:
         return True
     if target == INFRA:
         return _caused_by_me(g, memo)
+    if not _not_another_persons_hub(g, target, memo):
+        return False
     if g.requester and not _my_requests_or_my_hub_chat(g, target, memo):
         return False
     return all(rule(g, target, memo) for rule in MEMO_RULES)
@@ -102,14 +110,20 @@ def _item_where(g: Gate) -> tuple[str, tuple[Any, ...]]:
     if not g.me:
         return " AND 0", ()
     side, side_vals = " AND audience=?", [HUMAN]
-    if g.requester and g.person_hubs:
+    if g.person_hubs:
         hubs = g.own_hubs
         marks = ",".join("?" * len(hubs))
-        lane_clause = f" OR lane IN ({marks})" if hubs else ""
-        hub_clause = f" OR hub IN ({marks})" if hubs else ""
-        side = (f" AND (audience=?{lane_clause} OR task_id IN "
-                f"(SELECT id FROM tasks WHERE requester=?{hub_clause}))")
-        side_vals = [HUMAN, *hubs, g.name, *hubs]
+        by_task = [f"hub IN ({marks})"] if hubs else []
+        task_vals = list(hubs)
+        if g.requester:
+            by_task.append("requester=?")
+            task_vals.append(g.name)
+        clauses = ["audience=?"] + ([f"lane IN ({marks})"] if hubs else [])
+        side_vals = [HUMAN, *hubs]
+        if by_task:
+            clauses.append(f"task_id IN (SELECT id FROM tasks WHERE {' OR '.join(by_task)})")
+            side_vals += task_vals
+        side = f" AND ({' OR '.join(clauses)})"
     return (side + " AND (assignee IS NULL OR assignee='' OR assignee=?)", (*side_vals, g.name))
 
 
@@ -128,7 +142,7 @@ def decided_count(g: Gate) -> int:
 
 
 def _everything_shown(g: Gate, target: str) -> bool:
-    return g.owner or bool(g.me and target != INFRA and not g.requester and not MEMO_RULES)
+    return g.owner or bool(g.me and target != INFRA and not g.requester and not g.person_hubs and not MEMO_RULES)
 
 
 def memos(g: Gate, target: str, limit: int, offset: int = 0) -> list[dict[str, Any]]:

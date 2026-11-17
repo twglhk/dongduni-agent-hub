@@ -404,6 +404,8 @@ class WebTest(unittest.TestCase):
         _, st, _ = self.b.req("GET", "/api/state", headers={self.H: "bo@x.com"})
         self.assertEqual((st["my_hub"], st["memos"]["hub"]), ("hub-bo", []))
         _, hist, _ = self.b.req("GET", "/api/history?kind=requests", headers={self.H: "bo@x.com"})
+        self.assertNotIn("ana's ask", json.dumps(hist))
+        _, hist, _ = self.b.req("GET", "/api/history?kind=requests", headers={self.H: "ana@x.com"})
         self.assertIn("ana's ask", json.dumps(hist))
 
     def test_a_card_belongs_to_the_hub_of_its_task(self) -> None:
@@ -419,12 +421,12 @@ class WebTest(unittest.TestCase):
         code, _, _ = self.b.req("GET", "/api/lanes/hub-nobody", headers={self.H: "ana@x.com"})
         self.assertEqual(code, 404)
 
-    def test_the_history_counts_requests_of_every_hub(self) -> None:
+    def test_the_history_counts_the_members_own_hub_and_the_shared_hub(self) -> None:
         self.b.s.push("hub-ana", "ana", "memo", "one")
         self.b.s.push("hub-bo", "bo", "memo", "two")
         self.b.s.push(HUB, "cy", "memo", "three")
         _, st, _ = self.b.req("GET", "/api/state", headers={self.H: "ana@x.com"})
-        self.assertEqual(st["counts"]["requests"], 3)
+        self.assertEqual(st["counts"]["requests"], 2)
 
 
 def auto_board(cap: int = 2, domains: list[str] | None = None) -> Board:
