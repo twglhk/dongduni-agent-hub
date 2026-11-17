@@ -11,6 +11,7 @@ import dataclasses
 import json
 import os
 import re
+import shutil
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -199,6 +200,30 @@ def ext_names(home: Path, table: str) -> list[str]:
     return sorted(registry(home).table(table))
 
 
+def _int(raw: dict[str, Any], key: str, default: int, minimum: int | None = None, where: str = "tower.json") -> int:
+    v = raw.get(key)
+    if v is None or v == "":
+        return default
+    if isinstance(v, bool) or not isinstance(v, (int, str)):
+        raise ConfigError(f"{where}: \"{key}\" must be a whole number, got {v!r}")
+    try:
+        n = int(v)
+    except ValueError:
+        raise ConfigError(f"{where}: \"{key}\" must be a whole number, got {v!r}")
+    if minimum is not None and n < minimum:
+        raise ConfigError(f"{where}: \"{key}\" must be at least {minimum}, got {n}")
+    return n
+
+
+def _bool(raw: dict[str, Any], key: str, default: bool = False, where: str = "tower.json") -> bool:
+    v = raw.get(key, default)
+    if v is None:
+        return default
+    if not isinstance(v, bool):
+        raise ConfigError(f"{where}: \"{key}\" must be true or false (a JSON boolean), got {v!r}")
+    return v
+
+
 def _terminal(where: str, value: Any, home: Path) -> str:
     term = str(value or "none")
     if term not in TERMINALS and term not in ext_names(home, "terminals"):
@@ -217,7 +242,7 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
     if agent and runtime == "codex":
         raise ConfigError(f"lane {lid}: codex has no agents; pick a profile with \"args\": [\"--profile\", NAME]")
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
-    if raw.get("worktree") and kind != "team":
+    if _bool(raw, "worktree", False, f"lane {lid}") and kind != "team":
         raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
     limit = raw.get("context_limit_k")
     if limit is not None and kind == INFRA:
@@ -229,14 +254,14 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
         raise ConfigError(f"lane {lid}: \"engine\" is for team lanes; {lid} runs the whole install")
     return Lane(
         id=lid, kind=kind, engine=engine, runtime=runtime, label=str(raw.get("label") or lid),
-        port=int(raw["port"]) if raw.get("port") else (port if runtime == "opencode" else None),
+        port=_int(raw, "port", 0, 1, f"lane {lid}") or (port if runtime == "opencode" else None),
         model=str(raw.get("model") or ""),
         agent=agent,
         args=[str(a) for a in raw["args"]] if isinstance(raw.get("args"), list) else list(DEFAULT_ARGS.get(runtime, [])),
         instructions=str(raw.get("instructions") or f"{TOWER_DIR}/lanes/{lid}.md"),
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
         terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
-        worktree=bool(raw["worktree"]) if "worktree" in raw else (worktree and kind == "team"),
+        worktree=_bool(raw, "worktree", False, f"lane {lid}") if "worktree" in raw else (worktree and kind == "team"),
         context_limit_k=limit,
     )
 
@@ -301,15 +326,15 @@ def load(home: Path | None = None) -> Config:
         raise ConfigError("tower.json needs a `hub` lane.")
     lanes: dict[str, Lane] = {}
     terminal = _terminal("tower.json", raw.get("terminal"), home)
-    worktree = bool(raw.get("worktree"))
-    first_port = int(raw.get("opencode_port") or FIRST_OPENCODE_PORT)
+    worktree = _bool(raw, "worktree")
+    first_port = _int(raw, "opencode_port", FIRST_OPENCODE_PORT, 1)
     next_port = first_port
     for lid, lraw in lanes_raw.items():
         if not lid.replace("-", "").replace("_", "").isalnum():
             raise ConfigError(f"lane id {lid!r}: use letters, digits, - and _")
         lanes[lid] = _lane(lid, lraw or {}, next_port, terminal, home, worktree)
         next_port += 1
-    max_instances = max(1, int(raw.get("max_instances") or 1))
+    max_instances = _int(raw, "max_instances", 1, 1)
     instances: dict[str, Lane] = {}
     for lid, ln in list(lanes.items()):
         for n in range(2, max_instances + 1) if ln.kind == "team" else ():
@@ -332,10 +357,10 @@ def load(home: Path | None = None) -> Config:
     return Config(
         home=home, name=str(raw.get("name") or "Agent Hub"), lang=str(raw.get("lang") or "en"),
         project=(home / project).resolve() if project else None,
-        web_host=str(web.get("host") or "127.0.0.1"), web_port=int(web.get("port") or 8787),
+        web_host=str(web.get("host") or "127.0.0.1"), web_port=_int(web, "port", 8787, 1, "web"),
         public_url=str(web.get("public_url") or ""),
         auth_mode=mode, auth_header=str(auth.get("header") or ""),
-        max_lanes=int(raw.get("max_lanes") or 2),
+        max_lanes=_int(raw, "max_lanes", 2, 1),
         opencode_port=first_port,
         notify={str(k): str(v) for k, v in (raw.get("notify") or {}).items()},
         tunnel=str(raw.get("tunnel") or ""),
@@ -343,13 +368,13 @@ def load(home: Path | None = None) -> Config:
         terminal=terminal,
         worktree=worktree,
         stage_table=str(raw.get("stage_table") or ""),
-        require_model_lines=bool(raw.get("require_model_lines")),
-        require_line=bool(raw.get("require_line")),
+        require_model_lines=_bool(raw, "require_model_lines"),
+        require_line=_bool(raw, "require_line"),
         engines=engines,
-        light_lanes=int(raw["light_lanes"]) if raw.get("light_lanes") is not None else None,
+        light_lanes=_int(raw, "light_lanes", 0, 0) if raw.get("light_lanes") is not None else None,
         max_instances=max_instances,
         heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
-        memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
+        memory_limit_mb=_int(raw, "memory_limit_mb", 0, 0),
         context_limit_k=_limit_k(raw),
         model_limits_k=_model_limits_k(raw),
         instances=instances,
@@ -403,11 +428,11 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
     if usage and usage not in PROVIDERS:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
     return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
-            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600,
-            "leftover_sweep": bool(raw.get("leftover_sweep", False)),
-            "branch_sync": bool(raw.get("branch_sync", False)),
-            "branch_sync_seconds": max(0, int(raw.get("branch_sync_seconds") or 0)),
-            "branch_sync_push": bool(raw.get("branch_sync_push", False))}
+            "scratch_grace": _int(raw, "scratch_grace", 600, 0),
+            "leftover_sweep": _bool(raw, "leftover_sweep"),
+            "branch_sync": _bool(raw, "branch_sync"),
+            "branch_sync_seconds": _int(raw, "branch_sync_seconds", 0, 0),
+            "branch_sync_push": _bool(raw, "branch_sync_push")}
 
 
 def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,
@@ -445,12 +470,26 @@ def registry_path() -> Path:
     return Path(base).expanduser() / "workspaces.json"
 
 
-def workspaces() -> dict[str, Path]:
-    """slug -> workspace home, in the order they were registered."""
+def _registry_data(strict: bool) -> Any:
+    path = registry_path()
     try:
-        data = json.loads(registry_path().read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         return {}
+    except (OSError, ValueError) as e:
+        if not strict:
+            return {}
+        backup = path.with_name(path.name + ".bak")
+        try:
+            shutil.copyfile(path, backup)
+        except OSError:
+            raise ConfigError(f"{path} cannot be read ({e}); fix or remove it first")
+        raise ConfigError(f"{path} cannot be read ({e}); a copy is at {backup}. Fix or remove it, then try again")
+
+
+def workspaces(strict: bool = False) -> dict[str, Path]:
+    """slug -> workspace home, in the order they were registered."""
+    data = _registry_data(strict)
     raw = data.get("workspaces") if isinstance(data, dict) else None
     return {str(k): Path(v["home"]) for k, v in (raw or {}).items() if isinstance(v, dict) and v.get("home")}
 
@@ -459,12 +498,14 @@ def _save_workspaces(regs: dict[str, Path]) -> None:
     path = registry_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {"workspaces": {k: {"home": str(v)} for k, v in regs.items()}}
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def register(home: Path) -> str:
     home = home.resolve()
-    regs = workspaces()
+    regs = workspaces(strict=True)
     for slug, h in regs.items():
         if h == home:
             return slug
@@ -478,7 +519,7 @@ def register(home: Path) -> str:
 
 
 def unregister(slug: str) -> None:
-    regs = workspaces()
+    regs = workspaces(strict=True)
     if slug not in regs:
         raise ConfigError(f"no workspace {slug} (`dah workspaces`)")
     del regs[slug]

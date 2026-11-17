@@ -714,7 +714,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
                     memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
                     say("tower.json reloaded")
-            except (ConfigError, OSError) as e:
+            except (ConfigError, OSError, ValueError, TypeError) as e:
                 say(f"tower.json not reloaded: {e}")
             if c.tunnel and (tunnel is None or tunnel.poll() is not None) and time.time() - tunnel_at >= TUNNEL_RETRY:
                 tunnel, tunnel_at = start_tunnel(c.tunnel), time.time()
