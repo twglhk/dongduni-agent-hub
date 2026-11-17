@@ -33,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from .config import TOWER_DIR
+
 if TYPE_CHECKING:
     from .config import Config
 
@@ -70,6 +72,8 @@ def repo_file(start: Path, text: str) -> Path | None:
         for base in (start, *start.parents):
             if (base / tok).is_file():
                 return base / tok
+            if (base / TOWER_DIR).is_dir():
+                break
     return None
 
 
@@ -343,6 +347,33 @@ def skill_files(skills: Path, name: str) -> list[Path]:
     return sorted(p for p in root.rglob("*") if p.is_file() and not any(x.startswith(".") for x in p.relative_to(root).parts))[:HASH_FILES]
 
 
+_SKILL_HASHES: dict[tuple[str, str], tuple[tuple[Any, ...], str]] = {}
+
+
+def _skill_hash(skills: Path, name: str, files: list[Path]) -> str:
+    sig: list[Any] = []
+    for f in files:
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        sig.append((str(f.relative_to(skills)), st.st_mtime_ns, st.st_size))
+    key, sig_t = (str(skills), name), tuple(sig)
+    hit = _SKILL_HASHES.get(key)
+    if hit and hit[0] == sig_t:
+        return hit[1]
+    h = hashlib.sha1()
+    for f in files:
+        h.update(str(f.relative_to(skills)).encode())
+        try:
+            with f.open("rb") as fh:
+                h.update(fh.read(HASH_BYTES))
+        except OSError:
+            continue
+    _SKILL_HASHES[key] = (sig_t, h.hexdigest()[:12])
+    return _SKILL_HASHES[key][1]
+
+
 def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     """Every folder of the skills directory: {name, files, hash, lanes: [lane ids whose role file or library rows name it]}."""
     try:
@@ -352,14 +383,7 @@ def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]
     out = []
     for n in names:
         files = skill_files(skills, n)
-        h = hashlib.sha1()
-        for f in files:
-            h.update(str(f.relative_to(skills)).encode())
-            try:
-                h.update(f.read_bytes()[:HASH_BYTES])
-            except OSError:
-                pass
-        out.append({"name": n, "files": len(files), "hash": h.hexdigest()[:12],
+        out.append({"name": n, "files": len(files), "hash": _skill_hash(skills, n, files),
                     "lanes": [ln for ln, ss in lane_skills_by_lane.items() if any(s["name"] == n for s in ss)]})
     return out
 
