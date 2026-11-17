@@ -32,11 +32,18 @@ Instructions for coding agents working in this repository.
 | `agent_hub/config.py` person hubs | opt-in (`person_hubs`): `hub-<member>` lanes are built in `config.load` from the member list (`Config.person_hubs`, `hub_of`, `is_hub`, `hubs()`); tasks record the hub that queued them (`tasks.hub`) and news goes there (`Store.hub_for_task`) |
 | `agent_hub/prefs.py` | each member's own board settings, kept in the `member_prefs` table through `Store` and served at `/api/me/prefs`; `dah prefs` (`cli/prefs.py`) is the hub's way in; the board side is `board-app/src/lib/prefs.ts`, `state/prefs.tsx`, `components/prefs/` |
 | `agent_hub/uploads.py` · `uploadroutes.py` · `storage/` | chat attachments (`uploads` in tower.json): the held request, plans in `.tower/state/uploads/`, the sweep, the request text; the board routes; the `Storage` interface with `local`, `drive` (rclone) and `s3` (`s3sign.py`, stdlib SigV4) providers; design in [docs/attachments.md](docs/attachments.md) |
+| `agent_hub/queues.py` · `agent_hub/session_view.py` | the Lanes tab's queue strip (`state.queues`: per lane what its sessions hold now and what waits, with why and per-person counts) and the session sheet (`GET /api/sessions/<key>`); both are filtered through `visibility.Gate` (`sees_scoped`) |
 | `agent_hub/leftovers.py` | opt-in (`leftover_sweep`, Linux): stops lane processes left by closed sessions |
 | `agent_hub/sessinfo.py` | the model and effort a Claude Code lane session really runs with, read from its transcript (`run` in the board state) |
 | `agent_hub/memwatch.py` | renews idle sessions over a memory line |
 | `docs/` | README illustrations, the engine playbook, a Claude lane harness section, runtime adapters and the cli/runtimes module layout, releasing |
 | `tools/skill_lint.py` | lint for OpenCode skills |
+
+## Parallel sessions
+
+- A team lane may run `lane#2` ... up to `max_instances` (top level, or on the lane); with `"worktree": true` every session has its own worktree and branch (`config.lane_dir`, `branch_of`, `lane_branch`: `dah/<lane>`, `dah/<lane>-N`), and branch sync runs per session. Infra takes `max_instances` on its own lane (`Config.infra_sessions()`, default 1); `max_instances` on the hub is refused.
+- Paths are a file lock (`engine.task_block`, `message_block`): a session declares its own with `dah paths` (tasks, `tasks.paths`) or `dah memo paths` (infra, `messages.paths`, `ALONE` = alone, `NOTHING` = touches no files); declared overlap gives the work back (`Store.release_task`, `release_inbox`) and closes the session; work with no paths starts and is waited for `DECLARE_GRACE` seconds. Decisions on an infra card inherit the memo's paths through `items.message_id`. A single-session lane gets none of this text or behaviour.
+- `Store.claim_inbox(lane, target, allow, fair)` and `inbox_queue(target, fair)` take infra messages in `dah memo bump` order, by turns per sending hub when `fair_turns` is on. `Store.cancel_message` backs `dah memo cancel` and `dah memo reply --covers`.
 
 ## Rules
 

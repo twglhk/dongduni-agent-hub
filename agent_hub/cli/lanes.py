@@ -4,7 +4,7 @@ import argparse
 import time
 
 from .. import stats
-from ..config import HUB, INFRA, Config
+from ..config import HUB, INFRA, Config, base_lane, is_infra
 from ..engine import clip
 from ..requester import card_audience, infra_requester, infra_wrapped_text
 from ..store import HUMAN, Store, StoreError
@@ -37,8 +37,9 @@ def cmd_item_add(args: argparse.Namespace) -> None:
     audience = HUB if me in c.team() else HUMAN  # hub and infra items go straight to humans
     try:
         to = card_audience(c, s, args.to, task, me, args.request)
+        held = s.lane(me).get("active_message") if is_infra(me) else None
         iid = s.add_item(me, task["id"] if task else None, kind, args.title, body, options, atts, audience, args.multi,
-                         assignee=to)
+                         assignee=to, message_id=held)
     except StoreError as e:
         raise TowerError(str(e))
     if audience == HUMAN:
@@ -98,7 +99,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         s.set_lane(me, handoff=args.text, handoff_session=s.lane(me).get("session") or "")
         print("Handoff saved. End your turn; the tower opens a fresh hub session with this handoff.")
         return
-    if me == INFRA and args.kind != "wrapped":
+    if is_infra(me) and args.kind != "wrapped":
         raise TowerError("infra only uses `report wrapped`; answer memos with `dah memo reply`")
     task = s.live_task(me)
     tid = task["id"] if task else None
@@ -120,6 +121,8 @@ def cmd_report(args: argparse.Namespace) -> None:
         s.add_retro(tid, me, text, retro["cost"], retro["corrected"], retro["rule"], retro["raw"])
     s.signal(tid)
     tag = me + (f" task #{tid} \"{task['title']}\"" if task else "")
+    if task and c.branch_of(me) and args.kind in ("done", "wrapped"):
+        tag += f" (branch {c.branch_of(me)})"
     if args.kind == "handoff" and task:
         s.update_task(task["id"], handoff=args.text, rotate_ready=time.time())
         print("Handoff saved. End your turn; the tower continues in a fresh session.")
@@ -127,8 +130,8 @@ def cmd_report(args: argparse.Namespace) -> None:
     if args.kind == "wrapped":
         if task:
             s.update_task(task["id"], state="closed", closed=time.time())
-        if me == INFRA:
-            infra_wrapped(c, s, text)
+        if is_infra(me):
+            infra_wrapped(c, s, text, me)
         else:
             s.push(s.hub_for_task(tid), me, "wrapped", f"Wrapped: {tag}", tid)
         s.set_lane(me, closing=time.time())
@@ -139,10 +142,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     print(f"Sent to the hub." + (" Review comes back to this session; you may end your turn." if args.kind == "done" else ""))
 
 
-def infra_wrapped(c: Config, s: Store, text: str) -> None:
+def infra_wrapped(c: Config, s: Store, text: str, me: str = INFRA) -> None:
     if not c.requester:
         return
-    mid = s.lane(INFRA).get("active_message")
+    mid = s.lane(me).get("active_message")
     if mid is None:
         return
     try:
@@ -152,6 +155,36 @@ def infra_wrapped(c: Config, s: Store, text: str) -> None:
     sender = str(msg["sender"])
     if msg["kind"] == "memo" and c.is_hub(sender) and s.replied(int(mid), INFRA):
         return
-    asker = infra_requester(c, s)
+    asker = infra_requester(c, s, me)
     hub = sender if c.is_hub(sender) else c.hub_of(asker) if asker else HUB
     s.push(hub, INFRA, "wrapped", infra_wrapped_text(s, msg, text), None, msg.get("item_id"))
+
+
+def cmd_paths(args: argparse.Namespace) -> None:
+    from ..engine import task_block
+    c = cfg()
+    me = who(args, c)
+    s = store(c)
+    paths = ", ".join(p.strip().strip("/") for p in args.paths if p.strip().strip("/"))
+    if not paths:
+        raise TowerError("name the files and folders you will change")
+    if args.task is not None:
+        if not c.is_hub(me):
+            raise TowerError("only the hub sets the paths of a queued task; a lane declares its own task's")
+        t = s.task(args.task)
+        if t["state"] != "queued":
+            raise TowerError(f"task #{args.task} is not queued (its session declares its own paths)")
+        s.set_task_paths(t["id"], paths)
+        print(f"task #{t['id']} paths: {paths}")
+        return
+    task = s.live_task(me)
+    if not task or task["state"] != "running":
+        raise TowerError(f"{me} has no running task")
+    s.set_task_paths(task["id"], paths)
+    b = task_block(s, {**task, "paths": paths})
+    if b and b[0] == "overlap":
+        s.release_task(task["id"], base_lane(me))
+        print(f"task #{task['id']} paths: {paths}. They overlap #{b[1]['id']} ({b[1]['lane']}): #{task['id']} went back "
+              f"to the queue and this session closes. Change nothing, do not report; end your turn now.")
+        return
+    print(f"task #{task['id']} paths: {paths} (declared by {me}). Stay inside them.")

@@ -185,7 +185,8 @@
     "engine": "Motor",
     "missing": "carpeta no encontrada",
     "none": "Aún nada",
-    "by": "para {who}"
+    "by": "para {who}",
+    "branch": "Rama"
   },
   "eg": {
     "engines": "Motores",
@@ -386,5 +387,29 @@
     "hint": "El hub propone el carril (id, rol, runtime) en una tarjeta para que la confirmes; solo entonces se crea. Si lo dejas vacío, el hub te preguntará.",
     "send": "Pedir al hub",
     "sent": "Enviado al hub. En breve llegará una tarjeta con la propuesta a la pestaña Hub."
+  },
+  "ln": {
+    "sessions": "Sesiones",
+    "sessionsOf": "Sesiones de {lane}:",
+    "memo": "Nota #{n}",
+    "now": "Ahora",
+    "waitingN": "En espera {n}",
+    "more": "+{n}",
+    "sessionN": "sesión {n}",
+    "laneOpen": "Abrir el carril {lane}",
+    "kinds": {
+      "memo": "Nota #{n}",
+      "decision": "Decisión #{n}",
+      "task": "Tarea #{n}"
+    },
+    "by": "de {who}",
+    "requestN": "petición #{n}",
+    "startedAt": "inicio {t}",
+    "endedAt": "fin {t}",
+    "last": "Último",
+    "fullText": "Texto completo",
+    "newestReport": "Último informe",
+    "noWork": "Esta sesión aún no ha tenido trabajo.",
+    "hidden": "El último trabajo de esta sesión es de otra persona."
   }
 }

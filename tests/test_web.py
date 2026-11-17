@@ -100,7 +100,7 @@ class LocalModeTest(unittest.TestCase):
             self.assertEqual(keys(b), base, b[:12])
 
     def test_max_lanes_from_the_board(self) -> None:
-        self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"], {"used": 0, "cap": 2, "max": 10})
+        self.assertEqual(self.b.req("GET", "/api/state")[1]["lane_cap"], {"used": 0, "cap": 2, "max": 10, "sessions_max": 5})
         code, body, _ = self.b.req("POST", "/api/settings", {"max_lanes": 4}, POST)
         self.assertEqual((code, body["max_lanes"]), (200, 4))
         self.assertEqual(config_mod.load(self.b.cfg.home).max_lanes, 4)
@@ -108,6 +108,18 @@ class LocalModeTest(unittest.TestCase):
         self.assertIn("max_lanes 2 → 4", self.b.s.pending(HUB)[-1]["text"])
         for bad in (0, 11, "3", True, None):
             self.assertEqual(self.b.req("POST", "/api/settings", {"max_lanes": bad}, POST)[0], 409)
+
+    def test_sessions_per_lane_from_the_board(self) -> None:
+        code, body, _ = self.b.req("POST", "/api/settings", {"lane": "docs", "sessions": 3}, POST)
+        self.assertEqual((code, body["sessions"]), (200, 3))
+        cfg = config_mod.load(self.b.cfg.home)
+        self.assertEqual((cfg.lanes["docs"].max_instances, cfg.instance_cap("docs"), cfg.instance_cap("infra")), (3, 3, 1))
+        self.assertIn("docs sessions 1 → 3", self.b.s.pending(HUB)[-1]["text"])
+        self.assertEqual(self.b.req("POST", "/api/settings", {"lane": "infra", "sessions": 2}, POST)[0], 200)
+        self.assertEqual(config_mod.load(self.b.cfg.home).infra_sessions(), ["infra", "infra#2"])
+        for bad in ({"lane": "hub", "sessions": 2}, {"lane": "ghost", "sessions": 2}, {"lane": "docs", "sessions": 0},
+                    {"lane": "docs", "sessions": 6}, {"lane": "docs", "sessions": True}):
+            self.assertEqual(self.b.req("POST", "/api/settings", bad, POST)[0], 409)
 
     def test_usage_per_lane_and_runtime(self) -> None:
         self.b.s.set_lane("docs", session="t1", status="busy")

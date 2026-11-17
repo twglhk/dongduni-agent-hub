@@ -19,3 +19,19 @@ export function useCap() {
   };
   return { busy, setCap };
 }
+
+export function useSessions() {
+  const { L } = useL();
+  const { refresh } = useBoard();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const setSessions = async (lane: string, n: number) => {
+    if (busy) return;
+    setBusy(true);
+    try { await post('api/settings', { lane, sessions: n }); toast(L.msg.saved); }
+    catch (e) { if ((e as HttpError).status !== 401) toast((e as Error).message, true); }
+    setBusy(false);
+    refresh();
+  };
+  return { busy, setSessions };
+}

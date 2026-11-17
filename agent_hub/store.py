@@ -204,7 +204,14 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
                 ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
-                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"))
+                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"),
+                ("paths", "TEXT"))
+
+
+def _in_turns(con: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from .fair import in_turns, message_who
+    held = _rows(con.execute("SELECT m.* FROM messages m JOIN lanes l ON l.active_message = m.id"))
+    return in_turns(rows, message_who, held, lambda m: m.get("rank") is not None)
 
 
 class StoreError(Exception):
@@ -246,7 +253,7 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"))
+LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"), ("last_message", "INTEGER"))
 
 
 class _Connection(sqlite3.Connection):
@@ -301,10 +308,13 @@ class Store:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             con.execute("CREATE TABLE IF NOT EXISTS schedule_runs(key TEXT PRIMARY KEY, period TEXT NOT NULL, "
                         "fired REAL NOT NULL)")
-            if "rank" not in _columns(con, "messages"):
-                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")
+            for col, decl in (("rank", "REAL"), ("paths", "TEXT")):
+                if col not in _columns(con, "messages"):
+                    con.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
+            if "message_id" not in _columns(con, "items"):
+                con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")
 
     def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
         if table not in self.columns:
@@ -341,9 +351,9 @@ class Store:
     # ---------- messages ----------
 
     def push(self, target: str, sender: str, kind: str, text: str, task_id: int | None = None,
-             item_id: int | None = None, con: sqlite3.Connection | None = None) -> int:
-        sql = "INSERT INTO messages(target, sender, kind, task_id, item_id, text, created) VALUES(?,?,?,?,?,?,?)"
-        args = (target, sender, kind, task_id, item_id, text, self.clock())
+             item_id: int | None = None, con: sqlite3.Connection | None = None, paths: str | None = None) -> int:
+        sql = "INSERT INTO messages(target, sender, kind, task_id, item_id, text, created, paths) VALUES(?,?,?,?,?,?,?,?)"
+        args = (target, sender, kind, task_id, item_id, text, self.clock(), paths)
         if con is not None:
             return _id(con.execute(sql, args))
         with self.conn() as c:
@@ -374,25 +384,65 @@ class Store:
             raise StoreError(f"message #{message_id} not found")
         return row
 
-    # ---------- infra inbox: one message per session ----------
+    # ---------- infra inbox: one message per session; several sessions (infra, infra#2 ...) at once ----------
 
-    def claim_inbox(self, lane: str) -> dict[str, Any] | None:
+    def claim_inbox(self, lane: str, target: str | None = None, allow: Callable[[dict[str, Any]], bool] | None = None,
+                    fair: bool = False) -> dict[str, Any] | None:
         with self.tx() as con:
             con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
             active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
             if active is None:
-                row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
-                                       "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
-                if row:
+                taken = {r[0] for r in con.execute("SELECT active_message FROM lanes WHERE active_message IS NOT NULL")}
+                rows = _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL "
+                                         "ORDER BY COALESCE(rank, id), id", (target or lane,)))
+                waiting = [r for r in rows if r["id"] not in taken]
+                for row in _in_turns(con, waiting) if fair else waiting:
+                    if allow is not None and not allow(row):
+                        continue
                     active = row["id"]
                     con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
+                    break
             return _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
 
-    def inbox_queue(self, target: str) -> list[dict[str, Any]]:
+    def inbox_queue(self, target: str, fair: bool = False) -> list[dict[str, Any]]:
         with self.conn() as con:
-            return _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
+            rows = _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
                                      "(SELECT active_message FROM lanes WHERE active_message IS NOT NULL) "
                                      "ORDER BY COALESCE(rank, id), id", (target,)))
+            return _in_turns(con, rows) if fair else rows
+
+    def cancel_message(self, message_id: int, target: str, text: str, by: str) -> dict[str, Any]:
+        now = self.clock()
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM messages WHERE id=? AND target=? AND delivered IS NULL "
+                                   "AND kind IN ('memo','decision')", (message_id, target)))
+            if not row:
+                raise StoreError(f"#{message_id} is not a memo or decision waiting in the {target} queue")
+            held = con.execute("SELECT lane FROM lanes WHERE active_message=?", (message_id,)).fetchone()
+            if held:
+                raise StoreError(f"#{message_id} is already held by {held[0]}; that session answers it")
+            con.execute("UPDATE messages SET delivered=? WHERE id=?", (now, message_id))
+            con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created) VALUES(NULL,?,?,?,?,?)",
+                        (target, "note", f"#{message_id}: {text}", "[]", now))
+            if row["kind"] == "memo":
+                con.execute("INSERT INTO messages(target, sender, kind, item_id, text, created, delivered) "
+                            "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", message_id, text, now, now))
+        return row
+
+    def held_messages(self, lanes: Iterable[str]) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        with self.conn() as con:
+            for lane in lanes:
+                row = _one(con.execute("SELECT m.* FROM lanes l JOIN messages m ON m.id=l.active_message WHERE l.lane=?",
+                                       (lane,)))
+                if row:
+                    out[lane] = row
+        return out
+
+    def set_message_paths(self, message_id: int, paths: str | None) -> None:
+        with self.conn() as con:
+            if con.execute("UPDATE messages SET paths=? WHERE id=?", (paths, message_id)).rowcount == 0:
+                raise StoreError(f"message #{message_id} not found")
 
     def bump_message(self, message_id: int, target: str) -> None:
         with self.tx() as con:
@@ -405,6 +455,16 @@ class Store:
                                 (target,)).fetchone()[0]
             con.execute("UPDATE messages SET rank=? WHERE id=?", (float(front) - 1, message_id))
 
+    def release_inbox(self, lane: str) -> int | None:
+        with self.conn() as con:
+            row = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()
+            mid = row[0] if row else None
+            if mid is not None:
+                con.execute("UPDATE messages SET delivered=NULL WHERE id=?", (mid,))
+            con.execute("UPDATE lanes SET active_message=NULL, active_retries=0, closing=? WHERE lane=?",
+                        (self.clock(), lane))
+        return mid
+
     def retry_inbox(self, lane: str) -> int:
         with self.conn() as con:
             con.execute("UPDATE lanes SET active_retries=COALESCE(active_retries, 0)+1 WHERE lane=?", (lane,))
@@ -414,7 +474,8 @@ class Store:
         with self.conn() as con:
             con.execute("UPDATE messages SET delivered=? WHERE delivered IS NULL "
                         "AND id=(SELECT active_message FROM lanes WHERE lane=?)", (self.clock(), lane))
-            con.execute("UPDATE lanes SET active_message=NULL, active_retries=0, closing=NULL WHERE lane=?", (lane,))
+            con.execute("UPDATE lanes SET last_message=COALESCE(active_message, last_message), active_message=NULL, "
+                        "active_retries=0, closing=NULL WHERE lane=?", (lane,))
 
     # ---------- memos: humans -> infra / hub; replies go to target=human with item_id = memo id ----------
 
@@ -593,6 +654,21 @@ class Store:
             con.execute("UPDATE tasks SET rank=? WHERE id=?", (float(front) - 1, task_id))
         return row
 
+    def set_task_paths(self, task_id: int, paths: str) -> None:
+        with self.conn() as con:
+            if con.execute("UPDATE tasks SET paths=? WHERE id=?", (paths, task_id)).rowcount == 0:
+                raise StoreError(f"task #{task_id} not found")
+
+    def release_task(self, task_id: int, base: str) -> None:
+        with self.tx() as con:
+            row = con.execute("SELECT lane FROM tasks WHERE id=? AND state='running'", (task_id,)).fetchone()
+            if not row:
+                raise StoreError(f"task #{task_id} is not running")
+            con.execute("UPDATE tasks SET state='queued', started=NULL, last_prompt=NULL, session=NULL, lane=? "
+                        "WHERE id=?", (base, task_id))
+            con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (row[0],))
+            con.execute("UPDATE lanes SET closing=? WHERE lane=?", (self.clock(), row[0]))
+
     def claim_task(self, task_id: int) -> dict[str, Any] | None:
         now = self.clock()
         with self.conn() as con:
@@ -622,7 +698,8 @@ class Store:
 
     def add_item(self, lane: str, task_id: int | None, kind: str, title: str, body: str,
                  options: list[dict[str, Any]], attachments: list[str], audience: str = HUB,
-                 multi: bool = False, question: str | None = None, assignee: str | None = None) -> int:
+                 multi: bool = False, question: str | None = None, assignee: str | None = None,
+                 message_id: int | None = None) -> int:
         if kind not in ("decision", "review"):
             raise StoreError("kind must be decision or review")
         if kind == "decision" and len(options) < 2:
@@ -634,9 +711,10 @@ class Store:
         with self.conn() as con:
             return _id(con.execute(
                 "INSERT INTO items(task_id, lane, kind, title, body, options, multi, attachments, audience, assignee, "
-                "state, created, question) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "state, created, question, message_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (task_id, lane, kind, title, body, json.dumps(options, ensure_ascii=False), int(multi),
-                 json.dumps(attachments, ensure_ascii=False), audience, assignee, "open", self.clock(), question)))
+                 json.dumps(attachments, ensure_ascii=False), audience, assignee, "open", self.clock(), question,
+                 message_id)))
 
     def item(self, item_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -734,7 +812,8 @@ class Store:
             return [item_view(r) for r in _rows(con.execute(
                 "SELECT * FROM items WHERE state='decided' AND delivered IS NULL AND question IS NULL ORDER BY decided"))]
 
-    def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None) -> bool:
+    def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None,
+                       paths: str | None = None) -> bool:
         with self.tx() as con:
             row = con.execute("SELECT delivered FROM items WHERE id=?", (item_id,)).fetchone()
             if row is None or row[0] is not None:
@@ -746,7 +825,7 @@ class Store:
                                        follow.get("engine"), follow.get("requester"), follow.get("hub"))))
                 self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
             elif push:
-                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con)
+                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con, paths=paths)
             con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
             return True
 

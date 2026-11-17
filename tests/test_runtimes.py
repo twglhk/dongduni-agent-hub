@@ -191,6 +191,20 @@ class HeadlessTest(unittest.TestCase):
         self.assertTrue((tree / "app.txt").is_file())
         self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))
         self.assertEqual(cfg.lane_dir("hub"), home)  # other lanes stay in the workspace
+        data["max_instances"] = 2
+        (home / ".tower/tower.json").write_text(json.dumps(data))
+        cfg = config_mod.load(home)
+        rt = Runtimes(cfg, self.s)
+        tree2 = (home / ".tower/state/worktrees/wt-2").resolve()
+        self.assertEqual((cfg.lane_dir("wt#2"), cfg.branch_of("wt#2"), cfg.branch_of("wt")),
+                         (home / ".tower/state/worktrees/wt-2", "dah/wt-2", "dah/wt"))
+        rt.open("wt#2", "beside it")
+        wait_for(lambda: rt.status("wt#2") == "idle")
+        call = self.calls()[-1]
+        self.assertEqual(Path(call["cwd"]).resolve(), tree2)
+        self.assertIn("branch `dah/wt-2`", call["argv"][-1])
+        rt.close("wt#2")
+        self.assertIn("dah/wt-2", git("branch", "--list", "dah/wt-2"))
         from agent_hub.install import detach
         (tree / "draft.txt").write_text("not committed")
         out = detach(cfg, purge=True)
@@ -200,6 +214,7 @@ class HeadlessTest(unittest.TestCase):
         out = detach(cfg, purge=True)
         self.assertFalse((home / ".tower").exists(), out)
         self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))  # the lane's branch stays
+        self.assertIn("dah/wt-2", git("branch", "--list", "dah/wt-2"))
         with self.assertRaises(ConfigError):
             make_home({"hub": {"runtime": "claude", "worktree": True}})
         self.assertTrue(make_home({"hub": {"runtime": "claude"}, "a": {"runtime": "claude"}}, worktree=True).lanes["a"].worktree)

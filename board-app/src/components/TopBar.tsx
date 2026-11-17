@@ -39,9 +39,9 @@ export function TopBar({ openMenu }: { openMenu: (m: Menu) => void }) {
           <button type="button" onClick={logout} className="whitespace-nowrap rounded-chip px-2 text-t6 font-semibold text-ink-3">{L.btn.logout}</button>
         )}
       </div>
-      {data && data.lanes.length > 0 && (
+      {data && data.lanes.some(l => !l.base) && (
         <div className="no-scrollbar mx-auto flex max-w-col gap-1.5 overflow-x-auto px-5 pb-2" aria-label={L.sec.lanes}>
-          {data.lanes.map(l => (
+          {data.lanes.filter(l => !l.base).map(l => (
             <span key={l.lane} title={(L.status as Record<string, string>)[l.status] || l.status}
               className="inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap rounded-[14px] bg-grey-weak px-2.5 text-t6 font-semibold text-ink-2">
               <StatusDot status={l.status} />{l.label || l.lane}

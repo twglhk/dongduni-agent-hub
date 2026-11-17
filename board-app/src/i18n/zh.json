@@ -185,7 +185,8 @@
     "engine": "引擎",
     "missing": "找不到文件夹",
     "none": "暂无",
-    "by": "{who} 的请求"
+    "by": "{who} 的请求",
+    "branch": "分支"
   },
   "eg": {
     "engines": "引擎",
@@ -386,5 +387,29 @@
     "hint": "中枢会把通道方案(名称、职责、运行时)做成卡片发给你,确认后才会创建。留空的话中枢会来问你。",
     "send": "请求中枢",
     "sent": "已发给中枢。稍后提案卡片会出现在中枢标签页。"
+  },
+  "ln": {
+    "sessions": "会话数",
+    "sessionsOf": "{lane} 的会话数:",
+    "memo": "备忘 #{n}",
+    "now": "进行中",
+    "waitingN": "等待 {n}",
+    "more": "+{n}",
+    "sessionN": "会话 {n}",
+    "laneOpen": "打开通道 {lane}",
+    "kinds": {
+      "memo": "备忘 #{n}",
+      "decision": "决定 #{n}",
+      "task": "任务 #{n}"
+    },
+    "by": "{who} 的请求",
+    "requestN": "请求 #{n}",
+    "startedAt": "开始 {t}",
+    "endedAt": "结束 {t}",
+    "last": "最近",
+    "fullText": "全文",
+    "newestReport": "最新报告",
+    "noWork": "此会话还没有承担过工作。",
+    "hidden": "此会话最近的工作属于其他人。"
   }
 }

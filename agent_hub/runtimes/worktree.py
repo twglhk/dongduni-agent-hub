@@ -3,7 +3,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ..config import Config, Lane
+from ..config import Config, Lane, lane_branch
 from .common import RuntimeFailure
 
 
@@ -18,12 +18,13 @@ def _git(cfg: Config, *args: str) -> subprocess.CompletedProcess[str]:
 
 
 def worktree_branch(lane: Lane) -> str:
-    return f"dah/{lane.base or lane.id}"
+    return lane_branch(lane.id)
 
 
 def lane_cwd(cfg: Config, lane: Lane) -> Path:
-    """Where the lane's agent runs, ready to use: the workspace, or the lane's own git worktree (created on first
-    use on branch dah/<lane>, from the workspace's current commit; an existing branch is checked out as it is)."""
+    """Where the lane's agent runs, ready to use: the workspace, or the session's own git worktree (created on first
+    use on branch dah/<lane> or dah/<lane>-N, from the workspace's current commit; an existing branch is checked out
+    as it is)."""
     path = cfg.lane_dir(lane.id)
     if not lane.worktree or (path / ".git").exists():
         return path

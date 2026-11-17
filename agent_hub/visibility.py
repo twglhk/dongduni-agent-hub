@@ -77,6 +77,16 @@ def _my_requests_or_my_hub_chat(g: Gate, target: str, memo: dict[str, Any]) -> b
     return memo.get("sender") == g.name or str(memo.get("target") or target) in g.own_hubs
 
 
+def sees_scoped(g: Gate, who: str | None) -> bool:
+    if g.owner:
+        return True
+    if not g.me:
+        return False
+    if not (g.person_hubs or g.requester) or not who:
+        return True
+    return who == g.name
+
+
 def can_see(g: Gate, it: dict[str, Any]) -> bool:
     if not g.me:
         return False

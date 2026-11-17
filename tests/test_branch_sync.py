@@ -273,8 +273,12 @@ class CatchUpTest(unittest.TestCase):
         self.assertEqual(len(told), 1)
         self.assertIn("wt: the tower could not merge main", told[0])
 
-    def test_a_worktree_shared_with_a_busy_instance_is_left_alone(self) -> None:
+    def test_each_session_catches_up_its_own_worktree(self) -> None:
+        inst = self.cfg.instances["wt#2"]
+        tree2 = self.cfg.lane_dir("wt#2")
         lane_cwd(self.cfg, self.lane)
+        lane_cwd(self.cfg, inst)
+        self.assertNotEqual(self.tree, tree2)
         before = self.head()
         self.main_commit("app.txt", "v2\n")
         tid = self.s.add_task("wt#2", "Work", "brief")
@@ -283,14 +287,15 @@ class CatchUpTest(unittest.TestCase):
         self.rt.st["wt"] = "closed"
         self.clock.tick(301)
         self.e.tick()
-        self.assertEqual(self.head(), before)
+        main = git(self.home, "rev-parse", "main")
+        self.assertEqual(self.head(), main)
+        self.assertEqual(git(tree2, "rev-parse", "HEAD"), before)
         self.s.update_task(tid, state="closed")
         self.rt.st["wt#2"] = "closed"
         self.clock.tick(301)
-        with mock.patch("agent_hub.branchsync.catch_up", wraps=catch_up) as caught:
-            self.e.tick()
-        self.assertEqual(caught.call_count, 1)
-        self.assertEqual(self.head(), git(self.home, "rev-parse", "main"))
+        self.e.tick()
+        self.assertEqual(git(tree2, "rev-parse", "HEAD"), main)
+        self.assertEqual(git(self.origin, "rev-parse", "dah/wt-2"), main)
 
     def test_everything_is_off_unless_tower_json_asks(self) -> None:
         self.assertEqual((self.cfg.branch_sync_seconds, self.cfg.branch_sync_push), (300, True))

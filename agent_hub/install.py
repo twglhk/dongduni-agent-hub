@@ -594,7 +594,7 @@ def detach_plan(cfg: Config) -> dict[str, list[str]]:
     ours, edited = shim_state(cfg)
     gi = cfg.home / ".gitignore"
     text = gi.read_text(encoding="utf-8").splitlines() if gi.is_file() else []
-    trees = [str(cfg.lane_dir(lid)) for lid, ln in cfg.lanes.items() if ln.worktree and cfg.lane_dir(lid).exists()]
+    trees = [str(cfg.lane_dir(lid)) for lid, ln in cfg.all_lanes.items() if ln.worktree and cfg.lane_dir(lid).exists()]
     return {"shortcuts": [str(p) for p in ours], "edited_shortcuts": [str(p) for p in edited],
             "gitignore": [ln for ln in IGNORED if ln in text], "worktrees": trees, "mentions": mentions(cfg)}
 
@@ -603,13 +603,13 @@ def detach(cfg: Config, purge: bool) -> list[str]:
     """Take agent-hub out of the workspace: worktrees the lanes worked in (only clean ones; their branches stay),
     the shortcuts as written, the .gitignore lines, the registry entry, and with purge the whole .tower/."""
     done, dirty = [], False
-    for lid, ln in cfg.lanes.items():
+    for lid, ln in cfg.all_lanes.items():
         path = cfg.lane_dir(lid)
         if ln.worktree and path.exists():
             p = subprocess.run(["git", "-C", str(cfg.workdir), "worktree", "remove", str(path)], capture_output=True,
                                text=True, encoding="utf-8", errors="replace")
             dirty = dirty or p.returncode != 0
-            done.append(f"removed worktree {path} (branch dah/{lid} kept)" if p.returncode == 0 else
+            done.append(f"removed worktree {path} (branch {cfg.branch_of(lid)} kept)" if p.returncode == 0 else
                         f"kept worktree {path}: {(p.stderr or p.stdout).strip()[:200]}")
     for lid in cfg.lanes:
         done += [f"removed {f}" for f in remove_shims(cfg, lid)]

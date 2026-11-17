@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .config import HUB, INFRA, Config
+from .config import HUB, INFRA, Config, is_infra
 from .engine import clip
 from .store import HUMAN, TOWER, Store, StoreError
 
@@ -50,13 +50,13 @@ def card_audience(c: Config, s: Store, to: str | None, task: dict[str, Any] | No
         return s.requester_of_task(task["id"])
     if c.is_hub(me):
         return requester_for(c, s, me, request)
-    if me == INFRA:
-        return infra_requester(c, s)
+    if is_infra(me):
+        return infra_requester(c, s, me)
     return None
 
 
-def infra_requester(c: Config, s: Store) -> str | None:
-    mid = s.lane(INFRA).get("active_message")
+def infra_requester(c: Config, s: Store, me: str = INFRA) -> str | None:
+    mid = s.lane(me).get("active_message")
     if mid is None:
         return None
     try:
@@ -96,3 +96,16 @@ def infra_wrapped_text(s: Store, msg: dict[str, Any], text: str) -> str:
         f" (item #{msg['item_id']})" if msg.get("item_id") else "")
     return f"Wrapped: infra {what}: {clip(text, 700)}"
 
+
+CANCELLED = {"en": "Cancelled ({by}): {why}", "ko": "취소됨 ({by}): {why}", "ja": "取り消し ({by}): {why}",
+             "zh": "已取消（{by}）：{why}", "es": "Cancelado ({by}): {why}"}
+COVERED = {"en": "handled together in #{memo}", "ko": "#{memo}에서 함께 처리함", "ja": "#{memo} でまとめて対応",
+           "zh": "已在 #{memo} 中一并处理", "es": "atendido junto en #{memo}"}
+
+
+def cancelled_text(lang: str, by: str, why: str) -> str:
+    return CANCELLED.get(lang, CANCELLED["en"]).format(by=by, why=why)
+
+
+def covered_text(lang: str, memo: int) -> str:
+    return COVERED.get(lang, COVERED["en"]).format(memo=memo)

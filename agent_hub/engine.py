@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import engines as engines_mod, leftovers, procs, processes, schedules, stagemodel
-from .config import HUB, INFRA, Config, base_lane, instance_lane
+from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
 from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError, is_hub_name
@@ -152,8 +152,9 @@ def handoff_mode(text: str | None) -> str:
 
 
 def task_paths(task: dict[str, Any]) -> list[str] | None:
-    """The brief's `paths:` line, comma separated and normalised; None when the brief declares none."""
-    m = PATHS_LINE.search(str(task.get("brief") or ""))
+    """The paths its session declared (`dah paths`), else the brief's `paths:` line (the hub's hint), comma separated
+    and normalised; None when neither names any."""
+    m = PATHS_LINE.search(f"paths: {task['paths']}" if task.get("paths") else str(task.get("brief") or ""))
     if not m:
         return None
     out = [p.strip().strip("`").strip().strip("/") for p in re.split(r"[,\n]", m.group(1))]
@@ -169,10 +170,17 @@ def after_of(task: dict[str, Any]) -> int | None:
     return int(m.group(1)) if m else None
 
 
+ALONE = "*"
+NOTHING = "-"
+DECLARE_GRACE = 180
+MEMO_REF = re.compile(r"memo\s*#(\d+)", re.I)
+
+
 def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
     """Why this task may not start now (None = it may). `after: T` waits for T to finish (an unknown T does not block).
-    Two sessions of one lane share one working tree, so beside another live task of the same lane (`also` = tasks the
-    tick has just started) both must declare `paths:` that do not overlap."""
+    Beside other live tasks of the same lane (`also` = tasks the tick has just started) paths are a file lock: declared
+    paths that overlap wait; a task with no paths may start (its session declares them with `dah paths`); a live task
+    with no paths is waited for only DECLARE_GRACE seconds after it started."""
     dep_id = after_of(task)
     if dep_id is not None:
         try:
@@ -181,18 +189,26 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
             dep = None
         if dep and dep["state"] in ("queued", "running", "wrapping"):
             return f"waiting for #{dep['id']}: after"
+    b = task_block(store, task, also)
+    if b is None:
+        return None
+    return (f"blocked beside #{b[1]['id']}: overlap" if b[0] == "overlap"
+            else f"waiting for #{b[1]['id']} to declare its paths")
+
+
+def task_block(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> tuple[str, dict[str, Any]] | None:
     base = base_lane(str(task["lane"]))
     others = [t for t in [*store.tasks(("running", "wrapping"), limit=500), *also]
               if t["id"] != task["id"] and base_lane(str(t["lane"])) == base]
-    mine = task_paths(task)
+    mine, now = task_paths(task), store.clock()
     for o in others:
         theirs = task_paths(o)
-        if mine is None:
-            return f"blocked beside #{o['id']}: no paths (#{task['id']} has no `paths:` line)"
         if theirs is None:
-            return f"blocked beside #{o['id']}: no paths (#{o['id']} has no `paths:` line)"
-        if paths_overlap(mine, theirs):
-            return f"blocked beside #{o['id']}: overlap"
+            if o.get("started") is None or now - float(o["started"]) < DECLARE_GRACE:
+                return "declaring", o
+            continue
+        if mine and paths_overlap(mine, theirs):
+            return "overlap", o
     return None
 
 
@@ -216,6 +232,99 @@ def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tup
         except StoreError:
             return False
     return turns(queued, task_who, running, first)
+
+
+def message_paths(msg: dict[str, Any]) -> list[str] | None:
+    col = str(msg.get("paths") or "").strip()
+    if col == NOTHING:
+        return []
+    if col == ALONE:
+        return [ALONE]
+    if col:
+        return task_paths({"brief": f"paths: {col}"})
+    return task_paths({"brief": msg.get("text")})
+
+
+def paths_label(msg: dict[str, Any]) -> str:
+    ps = message_paths(msg)
+    if ps is None:
+        return "not declared (the session declares them)"
+    if ps == [ALONE]:
+        return "alone"
+    return ", ".join(ps) if ps else "nothing (check only)"
+
+
+def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> tuple[str, dict[str, Any]] | None:
+    mine = message_paths(msg)
+    for o in live:
+        theirs = message_paths(o)
+        if theirs is None:
+            opened = o.get("delivered")
+            if now is None or opened is None or now - float(opened) < DECLARE_GRACE:
+                return "declaring", o
+            continue
+        if theirs == [ALONE]:
+            return "alone", o
+        if mine == [ALONE]:
+            return "busy", o
+        if mine and theirs and paths_overlap(mine, theirs):
+            return "overlap", o
+    return None
+
+
+BLOCK_TEXT = {
+    "en": {"declaring": "waits for #{o} ({lane}) to declare its paths", "alone": "#{o} ({lane}) runs alone",
+           "busy": "runs alone: waits until #{o} ({lane}) and every other infra session finish",
+           "overlap": "paths overlap #{o} ({lane}): waits until it finishes", "full": "all {n} infra sessions are busy",
+           "behind": "waits behind #{o}, which runs alone"},
+    "ko": {"declaring": "#{o}({lane})가 고칠 경로를 선언하는 중이라 대기", "alone": "#{o}({lane})가 혼자 실행 중이라 대기",
+           "busy": "혼자 실행할 메모라 #{o}({lane}) 등 다른 인프라 세션이 끝날 때까지 대기",
+           "overlap": "#{o}({lane})와 고칠 경로가 겹쳐 그것이 끝날 때까지 대기", "full": "인프라 세션 {n}개가 모두 사용 중",
+           "behind": "혼자 실행할 #{o} 차례를 기다리는 중"},
+    "ja": {"declaring": "#{o}（{lane}）が変更するパスを宣言するのを待っています", "alone": "#{o}（{lane}）が単独で実行中のため待機",
+           "busy": "単独実行のメモなので、#{o}（{lane}）ほかの infra セッションが終わるまで待機",
+           "overlap": "#{o}（{lane}）と変更するパスが重なるため、それが終わるまで待機", "full": "infra セッション {n} 件がすべて使用中",
+           "behind": "単独実行の #{o} の順番を待っています"},
+    "zh": {"declaring": "等待 #{o}（{lane}）声明它要修改的路径", "alone": "#{o}（{lane}）正在独占运行，等待",
+           "busy": "此备忘需独占运行：等到 #{o}（{lane}）和其他 infra 会话都结束", "overlap": "与 #{o}（{lane}）要修改的路径重叠，等它结束",
+           "full": "{n} 个 infra 会话全部在用", "behind": "排在需独占运行的 #{o} 之后"},
+    "es": {"declaring": "espera a que #{o} ({lane}) declare sus rutas", "alone": "#{o} ({lane}) se ejecuta a solas",
+           "busy": "se ejecuta a solas: espera a que #{o} ({lane}) y las demás sesiones de infra terminen",
+           "overlap": "las rutas se solapan con #{o} ({lane}): espera a que termine", "full": "las {n} sesiones de infra están ocupadas",
+           "behind": "espera detrás de #{o}, que se ejecuta a solas"},
+}
+
+
+def block_text(why: str, other: dict[str, Any] | None, lang: str = "en", n: int = 0) -> str:
+    t = BLOCK_TEXT.get(lang, BLOCK_TEXT["en"])[why]
+    return t.format(o=other["id"] if other else "", lane=(other or {}).get("_lane") or "infra", n=n)
+
+
+def message_conflict(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> str | None:
+    b = message_block(msg, live, now)
+    return f"beside #{b[1]['id']}: {block_text(b[0], b[1])}" if b else None
+
+
+def infra_waits(store: Store, sessions: list[str], now: float, fair: bool = False,
+                limit: int = 20) -> list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]]:
+    held = store.held_messages(sessions)
+    live = [{**m, "_lane": k} for k, m in held.items()]
+    free = len(sessions) - len(held)
+    out: list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]] = []
+    barrier = None
+    for m in store.inbox_queue(INFRA, fair)[:limit]:
+        b = message_block(m, live, now)
+        if b is None and barrier is not None:
+            b = ("behind", barrier)
+        elif b is None and free <= 0:
+            b = ("full", None)
+        if b is None:
+            free -= 1
+            live.append({**m, "_lane": "next", "delivered": None})
+        elif message_paths(m) == [ALONE] and barrier is None:
+            barrier = m
+        out.append((m, b))
+    return out
 
 
 def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
@@ -260,7 +369,6 @@ class Engine:
         self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
         self.ext_lanes: dict[str, str] | None = None  # lane statuses as extensions last heard them
         self._team = cfg.team()
-        self.max_instances = cfg.max_instances
         self.heavy: dict[str, int] = {}  # lane -> process MB over cfg.memory_limit_mb (memwatch fills it)
         self.rotate_asked: set[tuple[int, str]] = set()  # (task, session) already asked to hand off because the session is fat
         self.ctx_asked: set[tuple[int, str]] = set()
@@ -269,6 +377,7 @@ class Engine:
         self.hub_asked: dict[str, tuple[str, float]] = {}
         store.sync_lane_engines({lid: cfg.all_lanes[lid].engine for lid in self.team})
         self.has_infra = INFRA in cfg.lanes
+        self.infra_keys = cfg.infra_sessions()
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
         self.hub_opens: dict[str, list[float]] = {}
@@ -311,9 +420,19 @@ class Engine:
             self.store.update_task(task["id"], model=model, effort=effort, **engines_mod.line_fields(task["brief"], processes.lane_full(self.cfg, task["lane"])))
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
+    def _lock_line(self, task: dict[str, Any]) -> str:
+        if self.cfg.instance_cap(base_lane(str(task["lane"]))) < 2:
+            return ""
+        hint = task_paths(task)
+        return (f"\n\nPaths (a file lock): other sessions of this lane may work beside you. This task's paths now: "
+                f"{', '.join(hint) if hint else 'none yet'}. Before you change any file, declare the files and folders "
+                f"you will change: `dah paths A B ...` (the brief's `paths:` is the hub's hint). If they overlap "
+                f"another session's, the tower puts the task back in the queue and closes this session: change nothing "
+                f"and end your turn; it restarts once the other one finishes.")
+
     def start_prompt(self, task: dict[str, Any]) -> str:
         return (f"[tower] {task['lane']} lane · task #{task['id']} \"{task['title']}\"\n\n{self._read_first(task['lane'])}"
-                f"\n\n{task['brief']}\n\n{RULES}")
+                f"\n\n{task['brief']}{self._lock_line(task)}\n\n{RULES}")
 
     def resume_prompt(self, task: dict[str, Any], why: str) -> str:
         done = "\n".join(f"- {r['kind']}: {clip(r['text'], 300)}" for r in self.store.reports(task["id"])[-6:]) or "- none"
@@ -349,9 +468,24 @@ class Engine:
         model, effort = stagemodel.resolve(None, str(msg.get("text") or ""))
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
 
-    def inbox_prompt(self, msg: dict[str, Any]) -> str:
+    def inbox_prompt(self, msg: dict[str, Any], lane: str = INFRA) -> str:
         body = (f"Memo #{msg['id']} from {msg['sender']}:\n{msg['text']}" if msg["kind"] == "memo" else msg["text"])
-        return f"[tower] You are the infra lane.\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
+        who = "You are the infra lane." if lane == INFRA else (
+            f"You are the infra lane, parallel session {lane}: other infra sessions work in the same checkout at the "
+            f"same time, so stay inside this memo's paths and stage only your own files.")
+        lock = self._memo_lock_line(msg) if len(self.infra_keys) > 1 else ""
+        return f"[tower] {who}\n\n{self._read_first(INFRA)}\n\n{body}{lock}\n\n{WRAP_RULE}"
+
+    @staticmethod
+    def _memo_lock_line(msg: dict[str, Any]) -> str:
+        hint = message_paths(msg)
+        has = ("none yet" if hint is None else "alone" if hint == [ALONE] else
+               ", ".join(hint) if hint else "nothing (check only)")
+        return (f"\n\nPaths (a file lock): this message's paths now: {has}. Before you change any file, declare the "
+                f"files and folders you will change: `dah memo paths {msg['id']} A B ...` (what the hub wrote is a "
+                f"hint), or `dah memo paths {msg['id']} --alone` for work that must run with no other infra session "
+                f"(a reinstall, a restart). If they overlap another session's, the tower gives the message back to the "
+                f"queue and closes this session: end your turn then; it restarts once the other one finishes.")
 
     # ---------- helpers ----------
 
@@ -421,7 +555,7 @@ class Engine:
         return "heavy" if any(p == r or p.startswith(r + "/") for p in paths for r in roots) else "light"
 
     def lanes(self) -> list[str]:
-        return [*self.cfg.hubs(), *([INFRA] if self.has_infra else []), *self.team]
+        return [*self.cfg.hubs(), *self.infra_keys, *self.team]
 
     def tick(self) -> None:
         statuses: dict[str, str] = {}
@@ -455,11 +589,8 @@ class Engine:
                 self._hub(statuses[name], name)
             except Exception as e:
                 self.log(f"{name}: {e}")
-        if INFRA in statuses:
-            try:
-                self._infra(statuses[INFRA])
-            except Exception as e:
-                self.log(f"{INFRA}: {e}")
+        if self.infra_keys:
+            self._infra_all(statuses)
         try:
             self._leftovers()
         except Exception as e:
@@ -553,7 +684,7 @@ class Engine:
                 self.notify([{"id": lane, "lane": lane, "alert": True,
                               "title": f"{lane} waits for an answer in its {self.cfg.all_lanes[lane].terminal} window"}])
                 self.log(f"{lane}: waiting for an answer in its window")
-            if lane == INFRA or self.cfg.is_hub(lane):
+            if is_infra(lane) or self.cfg.is_hub(lane):
                 self._ask_board(lane, st)
             elif st == "asking":
                 for q in self.rt.questions(lane) or []:
@@ -606,14 +737,30 @@ class Engine:
     def route_decisions(self) -> None:
         for it in self.store.undelivered_decisions():
             push, follow = self._route(it)
-            self.store.route_decision(it["id"], push, follow)
+            self.store.route_decision(it["id"], push, follow, self._decision_paths(it) if push and push[0] == INFRA else None)
+
+    def _decision_paths(self, it: dict[str, Any]) -> str | None:
+        mids = [it.get("message_id")] + [int(x) for x in MEMO_REF.findall(f"{it.get('title') or ''}\n{it.get('body') or ''}")]
+        with self.store.conn() as con:
+            for mid in mids:
+                if not mid:
+                    continue
+                row = con.execute("SELECT * FROM messages WHERE id=? AND target=?", (int(mid), INFRA)).fetchone()
+                if row is not None:
+                    ps = message_paths(dict(row))
+                    if ps is not None and ps != [ALONE]:
+                        return ", ".join(ps) if ps else NOTHING
+                    break
+        if it.get("kind") == "review" and not str(it.get("note") or "").strip():
+            return NOTHING
+        return None
 
     def _route(self, it: dict[str, Any]) -> tuple[tuple[str, str] | None, dict[str, Any] | None]:
         line = decision_line(it)
         lane = it["lane"]
         if it.get("memo_id") and it["verdict"] == "ok" and not (it.get("note") or "").strip():
             return None, None
-        if lane == INFRA and self.has_infra:
+        if is_infra(lane) and self.has_infra:
             return (INFRA, line + f"\n(`dah show {it['id']}` for the full item.)"), None
         try:
             src = self.store.task(it["task_id"]) if it["task_id"] else None
@@ -671,8 +818,9 @@ class Engine:
                 self.store.add_report(tid, lane, "done", info["text"], atts)
                 self.store.signal(tid)
                 att = f" (files: {', '.join(atts)})" if atts else ""
+                br = f" on branch {self.cfg.branch_of(lane)}" if self.cfg.branch_of(lane) else ""
                 self.store.push(self.store.hub_for_task(tid), lane, "done", f"Done: {lane} task #{tid} \"{task['title']}\" (done gate passed "
-                                f"at {str(info.get('sha'))[:8]}): {clip(info['text'], 700)}{att}", tid)
+                                f"at {str(info.get('sha'))[:8]}{br}): {clip(info['text'], 700)}{att}", tid)
                 self.store.push(lane, TOWER, "tell", "The done gate passed; your done went to the hub. Review comes "
                                 "back to this session.", tid)
             else:
@@ -982,9 +1130,7 @@ class Engine:
             self.log(f"leftover: stopped {len(lines)} process tree(s)")
 
     def _tree_in_use(self, lane: str, busy: set[str], statuses: dict[str, str]) -> bool:
-        base = base_lane(lane)
-        return any(base_lane(k) == base and (k in busy or statuses.get(k, "closed") not in ("closed", "idle"))
-                   for k in self.team)
+        return lane in busy or statuses.get(lane, "closed") not in ("closed", "idle")
 
     def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str], busy: set[str],
                      statuses: dict[str, str]) -> bool:
@@ -992,8 +1138,7 @@ class Engine:
         ln = self.cfg.all_lanes.get(lane)
         if not (self.cfg.branch_sync and ln and ln.worktree) or not hasattr(self.rt, "sync"):
             return True
-        base = base_lane(lane)
-        if self.clock() < self.sync_retry.get(base, 0.0) or self._tree_in_use(lane, busy, statuses):
+        if self.clock() < self.sync_retry.get(lane, 0.0) or self._tree_in_use(lane, busy, statuses):
             return True
         try:
             what = self.rt.sync(lane)
@@ -1011,7 +1156,7 @@ class Engine:
             self.log(f"{lane}: task #{task['id']} waits: {why}")
             return False
         except Exception as e:
-            self.sync_retry[base] = self.clock() + SYNC_RETRY_SECONDS
+            self.sync_retry[lane] = self.clock() + SYNC_RETRY_SECONDS
             self.log(f"{lane}: branch sync before task #{task['id']} failed: {e}")
             return True
         self.sync_told.pop(task["id"], None)
@@ -1027,33 +1172,30 @@ class Engine:
             return
         self.catch_up_at = now
         busy = self.store.busy_lanes()
-        trees: set[str] = set()
         for lane in self.team:
             ln = self.cfg.all_lanes.get(lane)
-            base = base_lane(lane)
-            if not (ln and ln.worktree) or base in trees:
+            if not (ln and ln.worktree):
                 continue
-            trees.add(base)
-            if now < self.sync_retry.get(base, 0.0) or self._tree_in_use(base, busy, statuses):
+            if now < self.sync_retry.get(lane, 0.0) or self._tree_in_use(lane, busy, statuses):
                 continue
             try:
                 what = catch_up(self.cfg, ln)
             except WorktreeConflict as e:
                 why = str(e)
-                if self.catch_up_told.get(base) != why:
-                    self.catch_up_told[base] = why
-                    self.store.push(HUB, TOWER, "stalled", f"{base}: the tower could not merge main into its idle "
-                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(base)} "
+                if self.catch_up_told.get(lane) != why:
+                    self.catch_up_told[lane] = why
+                    self.store.push(HUB, TOWER, "stalled", f"{lane}: the tower could not merge main into its idle "
+                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(lane)} "
                                     "(merge main, commit) or merge the branch yourself.")
-                self.log(f"{base}: branch sync: {why}")
+                self.log(f"{lane}: branch sync: {why}")
                 continue
             except Exception as e:
-                self.sync_retry[base] = now + SYNC_RETRY_SECONDS
-                self.log(f"{base}: branch sync failed: {e}")
+                self.sync_retry[lane] = now + SYNC_RETRY_SECONDS
+                self.log(f"{lane}: branch sync failed: {e}")
                 continue
-            self.catch_up_told.pop(base, None)
+            self.catch_up_told.pop(lane, None)
             if what:
-                self.log(f"{base}: {what}")
+                self.log(f"{lane}: {what}")
 
     def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
         """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)
@@ -1061,17 +1203,17 @@ class Engine:
         (overlapping or undeclared `paths:`, an unfinished `after:`) stay queued and the next one is tried."""
         for task in self.store.tasks(("queued",), limit=500):  # max_instances was lowered: back to the base lane
             n = task["lane"].partition("#")[2]
-            if n and (not n.isdigit() or int(n) > self.max_instances):
+            if n and (not n.isdigit() or int(n) > self.cfg.instance_cap(task["lane"])):
                 self.store.update_task(task["id"], lane=base_lane(task["lane"]))
         out: list[dict[str, Any]] = []
-        if self.max_instances < 2 or room <= 0:
+        if room <= 0:
             return out
         moved: list[dict[str, Any]] = []
         order = self.task_turns()
         for base in self._team:
-            if base not in busy:
+            if base not in busy or self.cfg.instance_cap(base) < 2:
                 continue
-            keys = [instance_lane(base, n) for n in range(2, self.max_instances + 1)]
+            keys = [instance_lane(base, n) for n in range(2, self.cfg.instance_cap(base) + 1)]
             key = next((k for k in keys if k not in busy and not self.store.lane(k).get("closing")
                         and not self.store.queued_for(k) and self.rt.status(k) == "closed"), None)
             if key is None:
@@ -1233,25 +1375,43 @@ class Engine:
 
     # ---------- infra ----------
 
-    def _infra(self, st: str) -> None:
-        self._idle_for(INFRA, st)
-        info = self.store.lane(INFRA)
+    def _infra_all(self, statuses: dict[str, str]) -> None:
+        for key in self.infra_keys:
+            try:
+                self._infra(statuses.get(key, "unknown"), key)
+            except Exception as e:
+                self.log(f"{key}: {e}")
+
+    def _infra(self, st: str, lane: str = INFRA) -> None:
+        self._idle_for(lane, st)
+        info = self.store.lane(lane)
         if info.get("closing"):
             if st not in ("idle", "closed"):
                 return
-            if st == "idle" and self.rt.owned(INFRA):
-                self.rt.close(INFRA)
-                self.log("infra: wrapped, closed")
-            self.store.finish_inbox(INFRA)
+            if st == "idle" and self.rt.owned(lane):
+                self.rt.close(lane)
+                self.log(f"{lane}: wrapped, closed")
+            self.store.finish_inbox(lane)
             if st == "idle":
                 return
         if st != "closed":  # never inject a second item into a live session
             return
-        msg = self.store.claim_inbox(INFRA)
+        live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
+        now, barrier = self.clock(), []
+
+        def allow(m: dict[str, Any]) -> bool:
+            if barrier:
+                return False
+            if message_block(m, live, now) is None:
+                return True
+            if message_paths(m) == [ALONE]:
+                barrier.append(m)
+            return False
+        msg = self.store.claim_inbox(lane, INFRA, allow, self.cfg.fair_turns)
         if msg is None:
             return
         if msg["delivered"] is not None:  # its session closed without wrapping
-            n = self.store.retry_inbox(INFRA)
+            n = self.store.retry_inbox(lane)
             if n > RESPAWN_LIMIT:
                 if n == RESPAWN_LIMIT + 1:
                     self.notify([{"id": msg["id"], "lane": INFRA, "title": f"infra closed {RESPAWN_LIMIT} times on "
@@ -1259,14 +1419,14 @@ class Engine:
                     self.store.push(msg["sender"] if self.cfg.is_hub(str(msg["sender"])) else HUB, TOWER, "stalled",
                                     f"infra gave up on message #{msg['id']} after "
                                     f"{RESPAWN_LIMIT} closed sessions.")
-                self.store.finish_inbox(INFRA)
+                self.store.finish_inbox(lane)
                 return
         try:
-            self.rt.open(INFRA, self.inbox_prompt(msg), **self._memo_opts(msg))
+            self.rt.open(lane, self.inbox_prompt(msg, lane), **self._memo_opts(msg))
         except Exception as e:
-            self.log(f"infra: message #{msg['id']} failed to open: {e}")
+            self.log(f"{lane}: message #{msg['id']} failed to open: {e}")
             self.store.mark_delivered([msg["id"]])
             return
         self.store.mark_delivered([msg["id"]])
-        self.idle_since.pop(INFRA, None)
-        self.log(f"infra: opened for message #{msg['id']}")
+        self.idle_since.pop(lane, None)
+        self.log(f"{lane}: opened for message #{msg['id']}")

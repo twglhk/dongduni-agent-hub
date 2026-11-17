@@ -4,7 +4,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /                          board: the React app (board_next/, built from board-app/), or the workspace's
                                   .tower/board/index.html; /?builtin always opens the built-in one; /assets/<file>
   GET  /old/                      the single-file board (board/index.html) that came before the React app
-  GET  /api/state                 lanes · open items · tasks · reports · memos · counts
+  GET  /api/state                 lanes · each lane's queue (`queues`) · open items · tasks · reports · memos · counts
                                   (a member gets only the cards, memos and files visibility.py allows)
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
@@ -32,9 +32,11 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/uploads/view?key=K    {url, type, thumb?} for an attachment path a request names (members: only their own)
   GET  /api/uploads/file?key=K    an attachment streamed through the board (drive, s3; Range supported)
   *    /api/goals...              410 Gone (goals were removed in 0.8.0)
-  POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
+  POST /api/settings              {max_lanes: 1..10} or {lane, sessions: 1..5} (a team lane's or infra's max_instances;
+                                   hubs stay at one session each) · written to tower.json, the tower picks it up
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
   GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
+  GET  /api/sessions/<key>        what a lane session (`docs`, `docs#2`, `infra#2`) holds or last held, and its newest report
   GET|POST /api/x/<name>          routes from the workspace's .tower/ext/*.py (see ext.py)
 
 Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
@@ -69,6 +71,9 @@ from . import processes as processes_mod
 from . import prefs as prefs_mod
 from . import rating, sessinfo, uploadroutes
 from . import visibility as vis
+from .machine import read_waits
+from .queues import queues_view
+from .session_view import session_view
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -89,6 +94,7 @@ PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
+MAX_SESSIONS_LIMIT = 5
 XML_TYPES = ("image/svg+xml", "application/xhtml+xml", "application/xml", "text/xml")
 PAGE_CSP_TEMPLATE = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
             "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'{connect}; object-src 'none'; base-uri 'self'; "
@@ -323,21 +329,63 @@ def process_doc(cfg: Config, path: str) -> dict[str, Any] | None:
         return None
 
 
+def memo_title(text: str) -> str:
+    lines = [x.strip() for x in str(text or "").splitlines() if x.strip()]
+    return clip(lines[0] if lines else "", 80)
+
+
+def shown_lanes(cfg: Config, s: Store) -> list[str]:
+    out: list[str] = []
+    for lid in [*cfg.lanes, *cfg.person_hubs]:
+        out.append(lid)
+        for key, ln in cfg.instances.items():
+            if ln.base != lid:
+                continue
+            row = s.lane(key)
+            if row.get("status") not in (None, "closed") or row.get("active_message") is not None or s.live_task(key):
+                out.append(key)
+    return out
+
+
+WAIT_HEAD = {"en": "{n} waiting · #{id}: {why}", "ko": "대기 {n}개 · #{id}: {why}", "ja": "待機 {n} 件 · #{id}: {why}",
+             "zh": "等待 {n} 条 · #{id}：{why}", "es": "{n} en espera · #{id}: {why}"}
+
+
+def infra_wait_line(cfg: Config, s: Store) -> str | None:
+    from .engine import block_text, infra_waits
+    sessions = cfg.infra_sessions()
+    if len(sessions) < 2:
+        return None
+    waits = infra_waits(s, sessions, time.time(), cfg.fair_turns)
+    stuck = next(((m, b) for m, b in waits if b), None)
+    if not stuck:
+        return None
+    m, b = stuck
+    lang = cfg.lang if cfg.lang in WAIT_HEAD else "en"
+    return WAIT_HEAD[lang].format(n=len(waits), id=m["id"], why=block_text(b[0], b[1], lang, len(sessions)))
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     blamed = set(s.blames())
     libs: dict[str, list[dict[str, Any]]] = {}
-    for lid, ln in {**cfg.lanes, **cfg.person_hubs}.items():
+    for lid in shown_lanes(cfg, s):
+        ln = cfg.all_lanes[lid]
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
         doing = None
-        live = row.get("status") not in (None, "closed")
+        memo = None
+        status = row.get("status") or "closed"
+        live = status != "closed"
         if ln.kind == HUB and live and row.get("doing") and (row.get("doing_at") or 0) >= (row.get("opened") or 0):
             doing = clip(row["doing"], 80)
-        elif lid == INFRA and live and row.get("active_message") is not None:
+        elif ln.kind == INFRA and live and row.get("active_message") is not None:
             try:
                 m = s.message(int(row["active_message"]))
                 doing = clip(f"#{m['id']} {m['text']}", 80)
+                memo = {"id": m["id"], "kind": m["kind"], "title": memo_title(m["text"])}
+                if status == "idle":
+                    status = "busy"
             except StoreError:
                 pass
         proc = None
@@ -346,7 +394,10 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
             hit = next((r for r in rows if r["n"] == task["line_row"]), None)
             proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
-                    "owner": ln.owner or None, "status": row.get("status") or "closed", "doing": doing,
+                    "owner": ln.owner or None, "status": status, "doing": doing, "memo": memo,
+                    "wait": infra_wait_line(cfg, s) if lid == INFRA and ln.kind == INFRA else None,
+                    "base": ln.base or None, "branch": cfg.branch_of(lid) or None,
+                    "sessions": None if ln.base or ln.kind == HUB else cfg.instance_cap(lid),
                     "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
                     "requester": task["requester"] if task else None,
@@ -445,11 +496,12 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "paused": (cfg.state_dir / "paused").exists(),
         "extensions": board_extras(cfg.home),
         "lane_cap": {"used": len({t["lane"] for t in tasks if t["state"] in ("running", "wrapping")}),
-                     "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT},
+                     "cap": cfg.max_lanes, "max": MAX_LANES_LIMIT, "sessions_max": MAX_SESSIONS_LIMIT},
         "runtimes": list(RUNTIMES),
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
         "lanes": lanes_view(cfg, s, used),
+        "queues": queues_view(cfg, s, tasks, g, read_waits(cfg.state_dir)),
         "items": with_hubs(s, vis.mine(g, s.items(state="open", limit=500)) + vis.decided(g, 0, PREVIEW)),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
@@ -481,7 +533,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
     siblings: dict[str, Site] = {}
     from .claudeusage import ClaudeUsage
-    from .machine import Machine, read_waits
+    from .machine import Machine
     mach, cusage = Machine(), ClaudeUsage()  # one machine and one Claude login for every workspace served here
     sweepers: dict[str, uploadroutes.Sweeper] = {}
 
@@ -803,6 +855,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if lid not in c.lanes and lid not in c.person_hubs:
                     return self._json(404, {"error": f"no lane {lid}"})
                 return self._json(200, lane_view(c, st, lid))
+            m = re.fullmatch(r"/api/sessions/([^/]+)", path)
+            if m:
+                got = session_view(c, st, unquote(m.group(1)), vis.Gate.of(c, st, me))
+                return self._json(200, got) if got else self._json(404, {"error": "no such session"})
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:
@@ -980,6 +1036,27 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, {"ok": True, "id": mid})
                 if path.startswith("/api/uploads/"):
                     return uploadroutes.steps(self, c, st, who, path[13:], body, log)
+                if path == "/api/settings" and "lane" in body:
+                    if me.get("role") != "owner":
+                        return self._json(403, {"error": "only an owner changes settings"})
+                    lid, raw = str(body.get("lane") or ""), body.get("sessions")
+                    ln = c.lanes.get(lid)
+                    if ln is None or ln.kind == HUB:
+                        raise StoreError("sessions are set for a team lane or infra; each hub runs one session per person")
+                    if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_SESSIONS_LIMIT:
+                        raise StoreError(f"sessions must be a whole number from 1 to {MAX_SESSIONS_LIMIT}")
+                    old = c.instance_cap(lid)
+                    held = [k for k, x in c.instances.items() if x.base == lid and int(k.rpartition("#")[2]) > raw
+                            and (st.lane(k).get("active_message") is not None or st.live_task(k))]
+                    if held and ln.kind != "team":
+                        raise StoreError(f"{', '.join(held)} is still working: lower it once that session wraps")
+                    edit_config(c.home, lambda d: d["lanes"][lid].__setitem__("max_instances", raw))
+                    self.site.mtime = -1.0
+                    if raw != old:
+                        st.push(HUB, who, "settings", f"{who} set {lid} sessions {old} → {raw}: {lid} may run up to "
+                                f"{raw} sessions at once.")
+                        log(f"{who} {lid} sessions {old} → {raw}")
+                    return self._json(200, {"ok": True, "lane": lid, "sessions": raw})
                 if path == "/api/settings":
                     if me.get("role") != "owner":
                         return self._json(403, {"error": "only an owner changes settings"})

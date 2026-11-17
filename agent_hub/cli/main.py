@@ -7,7 +7,7 @@ from ..store import StoreError
 from .common import TowerError
 from .hub import (cmd_cancel, cmd_decide, cmd_doing, cmd_escalate, cmd_infra, cmd_memo, cmd_scratch, cmd_stage,
                   cmd_task, cmd_task_bump, cmd_tell, cmd_wrap)
-from .lanes import cmd_item_add, cmd_item_merge, cmd_item_update, cmd_mine, cmd_report
+from .lanes import cmd_item_add, cmd_item_merge, cmd_item_update, cmd_mine, cmd_paths, cmd_report
 from .manage import cmd_engine, cmd_lane, cmd_member
 from .parser import build_parser
 from .prefs import cmd_prefs
@@ -18,7 +18,7 @@ from .setup import cmd_discover, cmd_guide, cmd_init, cmd_install, cmd_skill, cm
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "task-bump": cmd_task_bump, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "task-bump": cmd_task_bump, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "paths": cmd_paths, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "restart": cmd_restart, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,

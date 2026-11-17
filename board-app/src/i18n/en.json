@@ -185,7 +185,8 @@
     "engine": "Engine",
     "missing": "folder not found",
     "none": "Nothing yet",
-    "by": "for {who}"
+    "by": "for {who}",
+    "branch": "Branch"
   },
   "eg": {
     "engines": "Engines",
@@ -386,5 +387,29 @@
     "hint": "Your hub proposes the lane (id, role, runtime) as a card for you to confirm; only then does infra create it. You can leave this empty and the hub will ask.",
     "send": "Ask the hub",
     "sent": "Sent to the hub. A card with its proposal will arrive on the Hub tab shortly."
+  },
+  "ln": {
+    "sessions": "Sessions",
+    "sessionsOf": "Sessions of {lane}:",
+    "memo": "Memo #{n}",
+    "now": "Now",
+    "waitingN": "Waiting {n}",
+    "more": "+{n}",
+    "sessionN": "session {n}",
+    "laneOpen": "Open lane {lane}",
+    "kinds": {
+      "memo": "Memo #{n}",
+      "decision": "Decision #{n}",
+      "task": "Task #{n}"
+    },
+    "by": "for {who}",
+    "requestN": "request #{n}",
+    "startedAt": "started {t}",
+    "endedAt": "ended {t}",
+    "last": "Last",
+    "fullText": "Full text",
+    "newestReport": "Newest report",
+    "noWork": "This session has not held any work yet.",
+    "hidden": "The last work of this session belongs to someone else."
   }
 }

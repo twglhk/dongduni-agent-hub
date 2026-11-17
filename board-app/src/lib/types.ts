@@ -34,9 +34,14 @@ export interface Lane {
   usage?: Usage | null;
   requester?: string | null;
   owner?: string | null;
+  base?: string | null;
+  branch?: string | null;
+  sessions?: number | null;
+  wait?: string | null;
+  memo?: { id: number; kind: string; title: string } | null;
 }
 
-export interface LaneCap { used: number; cap: number; max: number }
+export interface LaneCap { used: number; cap: number; max: number; sessions_max?: number }
 
 export interface Reply { text: string; created?: number }
 export interface Memo { id: number; text: string; sender?: string; created?: number; delivered?: number | null; replies?: Reply[] }
@@ -63,6 +68,8 @@ export interface MyHubState {
 export interface Me { name: string; role?: string }
 
 export interface UploadsInfo { provider: 'local' | 'drive' | 's3'; max_mb: number; max_files: number; chunk: number; accept: string[] }
+export interface QueueItem { id: number; title: string; kind: string; session?: number | null; who?: string | null; why?: string | null; hidden?: boolean }
+export interface LaneQueue { now: QueueItem[]; wait: QueueItem[]; waiting: number; by_person: { who: string | null; n: number }[] }
 
 export interface BoardState {
   title: string;
@@ -70,6 +77,7 @@ export interface BoardState {
   auth_mode: string;
   me: Me | null;
   my_hub?: string;
+  queues?: Record<string, LaneQueue>;
   my_hub_state?: MyHubState;
   requester?: boolean;
   uploads?: UploadsInfo | null;
