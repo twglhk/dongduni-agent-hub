@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
 from . import worklog
 from .config import INFRA, Config
+from .fair import task_who
 from .requester import visible_to_requester
-from .store import HOLD, HUMAN, Store, item_view
+from .store import HOLD, HUMAN, Store, StoreError, item_view
 from .uploads import TAIL
 
 Viewer = dict[str, Any] | None
@@ -16,6 +19,8 @@ ItemRule = Callable[["Gate", dict[str, Any]], bool]
 MemoRule = Callable[["Gate", str, dict[str, Any]], bool]
 
 BOARD_DIR = "docs/board/"
+UPLOADS = "uploads/"
+TAIL_ANY = re.compile(TAIL.pattern, re.I)
 MEMO_SCAN = 1000
 
 
@@ -24,13 +29,23 @@ def sees_all(me: Viewer) -> bool:
 
 
 class Gate:
-    def __init__(self, s: Store, me: Viewer, requester: bool = False, person_hubs: Mapping[str, str] | None = None):
+    def __init__(self, s: Store, me: Viewer, requester: bool = False, person_hubs: Mapping[str, str] | None = None,
+                 lane_owners: Mapping[str, str] | None = None):
         self.s, self.me, self.requester = s, me, requester
         self.person_hubs = dict(person_hubs or {})
+        self.lane_owners = dict(lane_owners or {})
 
     @classmethod
     def of(cls, cfg: Config, s: Store, me: Viewer) -> Gate:
-        return cls(s, me, cfg.requester, {lid: ln.owner for lid, ln in cfg.person_hubs.items() if ln.owner})
+        return cls(s, me, cfg.requester, {lid: ln.owner for lid, ln in cfg.person_hubs.items() if ln.owner},
+                   {lid: ln.owner or "" for lid, ln in cfg.all_lanes.items()})
+
+    def who_of(self, key: str) -> str | None:
+        if not key:
+            return None
+        if key in self.lane_owners:
+            return self.lane_owners[key] or None
+        return self.person_hubs.get(key, key)
 
     @property
     def name(self) -> str:
@@ -86,6 +101,58 @@ def sees_scoped(g: Gate, who: str | None) -> bool:
     if not (g.person_hubs or g.requester) or not who:
         return True
     return who == g.name
+
+
+def task_visible(g: Gate, t: dict[str, Any]) -> bool:
+    return sees_scoped(g, g.who_of(task_who(t)))
+
+
+def _masked(row: dict[str, Any], *keep: str) -> dict[str, Any]:
+    return {"id": row["id"], "hidden": True, **{k: row.get(k) for k in keep}}
+
+
+def task_row(g: Gate, t: dict[str, Any]) -> dict[str, Any]:
+    if task_visible(g, t):
+        return t
+    return _masked(t, "lane", "state", "created", "started", "closed")
+
+
+def memo_visible(g: Gate, memo: dict[str, Any]) -> bool:
+    if g.owner:
+        return True
+    if not g.me:
+        return False
+    if not (g.person_hubs or g.requester):
+        return True
+    return can_see_memo(g, INFRA, memo)
+
+
+def report_visible(g: Gate, r: dict[str, Any]) -> bool:
+    if g.owner:
+        return True
+    if not g.me:
+        return False
+    if not (g.person_hubs or g.requester):
+        return True
+    if r.get("task_id") is not None:
+        try:
+            return task_visible(g, g.s.task(int(r["task_id"])))
+        except StoreError:
+            return False
+    if r.get("message_id") is not None:
+        try:
+            m = g.s.message(int(r["message_id"]))
+        except StoreError:
+            return False
+        return can_see_memo(g, str(m.get("target") or INFRA), m)
+    owner = g.person_hubs.get(str(r.get("lane") or ""))
+    return bool(owner) and owner == g.name
+
+
+def report_row(g: Gate, r: dict[str, Any]) -> dict[str, Any]:
+    if report_visible(g, r):
+        return r
+    return _masked(r, "lane", "kind", "created")
 
 
 def can_see(g: Gate, it: dict[str, Any]) -> bool:
@@ -203,42 +270,77 @@ def _like(text: str) -> str:
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
-def upload_allowed(g: Gate, rel: str) -> bool:
+def _request_visible(g: Gate, rid: int) -> bool:
+    try:
+        m = g.s.message(rid)
+    except StoreError:
+        return False
+    target = str(m["target"])
+    return m["kind"] == "memo" and not target.startswith(HOLD) and can_see_memo(g, target, m)
+
+
+def _upload_rid(rel: str) -> int | None:
+    parts = rel.split("/")
+    return int(parts[2]) if len(parts) > 3 and parts[2].isdigit() else None
+
+
+def _same_file(root: Path, full: Path, rel: str) -> bool:
+    try:
+        return os.path.samefile(root / rel, full)
+    except (OSError, ValueError):
+        return False
+
+
+def _same_folder(root: Path, full: Path, rel: str) -> bool:
+    try:
+        return os.path.samefile((root / rel).parent, full.parent)
+    except (OSError, ValueError):
+        return False
+
+
+def _attached(g: Gate, rel: str, root: Path | None = None, full: Path | None = None) -> bool:
+    folded = rel.casefold()
+    folder = rel.rpartition("/")[0] if root and folded.startswith(BOARD_DIR) else ""
+
+    def hit(paths: set[str]) -> bool:
+        if root is None or full is None:
+            return rel in paths
+        for p in paths:
+            if p.casefold() == folded and _same_file(root, full, p):
+                return True
+            if folder and p.casefold().startswith(BOARD_DIR) and p.rpartition("/")[0].casefold() == folder.casefold() \
+                    and _same_folder(root, full, p):
+                return True
+        return False
+    pat = _like((folder + "/") if folder else rel)
+    with g.s.conn() as con:
+        cards = [dict(r) for r in con.execute("SELECT * FROM items WHERE attachments LIKE ? ESCAPE '\\'", (pat,))]
+        reps = [dict(r) for r in con.execute("SELECT * FROM reports WHERE attachments LIKE ? ESCAPE '\\'", (pat,))]
+    return (any(hit(_paths(it["attachments"])) and can_see(g, it) for it in cards)
+            or any(hit(_paths(r["attachments"])) and report_visible(g, r) for r in reps))
+
+
+def upload_allowed(g: Gate, rel: str, root: Path | None = None, full: Path | None = None) -> bool:
     if not g.me:
         return False
     if g.owner:
         return True
-    pat = _like(rel)
-    with g.s.conn() as con:
-        memos = [dict(r) for r in con.execute(
-            "SELECT id, target, sender, text FROM messages WHERE kind='memo' AND text LIKE ? ESCAPE '\\'", (pat,))]
-        cards = [dict(r) for r in con.execute(
-            "SELECT * FROM items WHERE body LIKE ? ESCAPE '\\' OR attachments LIKE ? ESCAPE '\\'", (pat, pat))]
-    return (any(not str(m["target"]).startswith(HOLD) and can_see_memo(g, str(m["target"]), m) for m in memos)
-            or any(can_see(g, it) for it in cards))
+    rid = _upload_rid(rel)
+    return (rid is not None and _request_visible(g, rid)) or _attached(g, rel, root, full)
 
 
-def file_allowed(g: Gate, rel: str) -> bool:
-    s = g.s
-    rel = "/".join(Path(rel.lstrip("/")).parts)
-    if TAIL.fullmatch(rel):
-        return upload_allowed(g, rel)
-    if g.owner:
+def file_allowed(g: Gate, root: Path, full: Path) -> bool:
+    if not g.me:
+        return False
+    if g.owner or not g.s.members():
         return True
-    folder = rel.rpartition("/")[0] if rel.startswith(BOARD_DIR) else ""
-    key = folder + "/" if folder else rel
-
-    def hit(paths: set[str]) -> bool:
-        return rel in paths or bool(folder) and any(p.rpartition("/")[0] == folder for p in paths)
-
-    pat = "%" + key.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    with s.conn() as con:
-        cards = con.execute("SELECT * FROM items WHERE attachments LIKE ? ESCAPE '\\'", (pat,)).fetchall()
-        holders = [dict(r) for r in cards if hit(_paths(r["attachments"]))]
-        if not holders or any(can_see(g, h) for h in holders):
-            return True
-        reps = con.execute("SELECT attachments FROM reports WHERE attachments LIKE ? ESCAPE '\\'", (pat,)).fetchall()
-    return any(hit(_paths(r["attachments"])) for r in reps)
+    try:
+        rel = "/".join(full.relative_to(root.resolve()).parts)
+    except ValueError:
+        return False
+    if rel.casefold().startswith(UPLOADS):
+        return bool(TAIL_ANY.fullmatch(rel)) and upload_allowed(g, rel, root.resolve(), full)
+    return _attached(g, rel, root.resolve(), full)
 
 
 def _paths(raw: str | None) -> set[str]:

@@ -16,7 +16,7 @@ export function ReportCard({ r, onImage }: { r: Report; onImage: (imgs: string[]
         {r.task_id ? <span>#{r.task_id}</span> : null}<When at={r.created} className="ml-auto" /></Meta>
       <div role="button" tabIndex={0} aria-expanded={open} onClick={() => setOpen(!open)}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
-        className={`mt-2 cursor-pointer whitespace-pre-wrap [overflow-wrap:anywhere] text-t5 leading-[1.55] ${open ? '' : 'line-clamp-3'}`}>{r.text}</div>
+        className={`mt-2 cursor-pointer whitespace-pre-wrap [overflow-wrap:anywhere] text-t5 leading-[1.55] ${open ? '' : 'line-clamp-3'}`}>{r.hidden ? L.label.otherWork : r.text}</div>
       {atts.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{atts.map(p => IMG.test(p)
         ? <button key={p} type="button" aria-label={fname(p)} onClick={() => onImage(imgs, imgs.indexOf(p))}>
             <img src={fileUrl(p)} alt={fname(p)} loading="lazy" className="h-[72px] w-auto max-w-32 rounded-tile bg-media object-cover" /></button>

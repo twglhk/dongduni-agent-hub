@@ -140,7 +140,8 @@ class CardVisibilityTest(unittest.TestCase):
         self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "ana@x.com")[0], 200)
         self.assertEqual(self.get("/f/docs/board/d/bo/shot.png", "bo@x.com")[0], 200)
         self.assertEqual(self.get("/f/docs/board/d/all/card.md", "cy@x.com")[0], 200)
-        self.assertEqual(self.get("/f/docs/plain.md", "bo@x.com")[0], 200)
+        self.assertEqual(self.get("/f/docs/plain.md", "bo@x.com")[0], 404)
+        self.assertEqual(self.get("/f/docs/plain.md", "ana@x.com")[0], 200)
 
     def test_report_attachment_stays_public(self) -> None:
         self.b.s.add_report(None, INFRA, "done", "shipped", ["docs/board/d/cy/shot.png"])
@@ -441,6 +442,228 @@ class WorkFeedFlagsOffTest(ScopeCase):
 
     def test_without_scoping_a_member_sees_the_feed(self) -> None:
         self.assertEqual(len(self.get("/api/history?kind=work", "bo")[1]["rows"]), 5)
+
+
+class OthersWorkHiddenTest(unittest.TestCase):
+    FLAGS = ((True, True), (True, False), (False, True))
+
+    def build(self, requester: bool, person_hubs: bool) -> None:
+        self.b = scoped_board(requester, person_hubs)
+        s = self.b.s
+        self.t = {}
+        for w in ("bo", "cy"):
+            tid = s.add_task("docs", f"{w} title", f"{w} brief", requester=w, hub=f"hub-{w}" if person_hubs else "hub")
+            s.update_task(tid, state="closed", closed=5.0, paths=f"{w}/path", handoff=f"{w} handoff")
+            self.t[w] = tid
+            s.add_report(tid, "docs", "done", f"{w} report text", [])
+        self.live = s.add_task("docs", "cy live title", "cy live brief", requester="cy",
+                               hub="hub-cy" if person_hubs else "hub")
+        s.claim_task(self.live)
+        s.set_lane("docs", status="busy", session="s1")
+        s.set_lane("hub-cy", status="busy", session="s2", doing="cy private doing", doing_at=9e9, opened=1)
+        self.mid = s.push(INFRA, "hub-cy" if person_hubs else HUB, "memo", "cy infra secret memo")
+        s.claim_inbox("infra")
+        s.set_lane("infra", status="busy", session="s3")
+        s.add_report(None, "infra", "wrapped", "cy orphan wrapped", [])
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def get(self, path: str, who: str):
+        return self.b.req("GET", path, headers={H: f"{who}@x.com"})
+
+    def test_a_member_never_gets_anothers_text_on_any_route(self) -> None:
+        secrets = ("cy title", "cy brief", "cy report text", "cy live", "cy private doing", "cy infra secret",
+                   "cy handoff", "cy/path", "cy orphan")
+        for flags in self.FLAGS:
+            self.build(*flags)
+            try:
+                paths = ["/api/state", "/api/history?kind=closed", "/api/history?kind=reports",
+                         "/api/history?kind=work", "/api/lanes/docs", "/api/sessions/docs", "/api/sessions/infra"]
+                for path in paths:
+                    code, body, _ = self.get(path, "bo")
+                    for text in secrets:
+                        self.assertNotIn(text, json.dumps(body, ensure_ascii=False), (flags, path, text))
+            finally:
+                self.b.srv.shutdown()
+
+    def test_hidden_rows_keep_count_and_layout(self) -> None:
+        self.build(True, True)
+        _, st, _ = self.get("/api/state", "bo")
+        mine = next(t for t in st["tasks"] if t["id"] == self.t["bo"])
+        other = next(t for t in st["tasks"] if t["id"] == self.t["cy"])
+        self.assertEqual(mine["title"], "bo title")
+        self.assertEqual((other["hidden"], other["lane"]), (True, "docs"))
+        self.assertNotIn("title", other)
+        self.assertEqual(len(st["tasks"]), len(self.b.s.tasks(("queued", "running", "wrapping"), 200)) + 2)
+        rep = [r for r in st["reports"] if r.get("hidden")]
+        self.assertTrue(rep)
+        lane = next(x for x in st["lanes"] if x["lane"] == "docs")
+        self.assertEqual((lane["hidden"], lane["task_id"], lane["task_title"], lane["requester"]),
+                         (True, self.live, None, None))
+        hub = next(x for x in st["lanes"] if x["lane"] == "hub-cy")
+        self.assertEqual((hub["hidden"], hub["doing"]), (True, None))
+        infra = next(x for x in st["lanes"] if x["lane"] == "infra")
+        self.assertEqual((infra["hidden"], infra["doing"], infra["memo"]), (True, None, None))
+
+    def test_the_owner_and_the_owner_of_the_work_see_everything(self) -> None:
+        for flags in self.FLAGS:
+            self.build(*flags)
+            try:
+                _, st, _ = self.get("/api/state", "ana")
+                self.assertIn("cy title", json.dumps(st))
+                self.assertIn("cy private doing" if flags[1] else "cy infra secret", json.dumps(st))
+                _, st, _ = self.get("/api/state", "cy")
+                self.assertIn("cy title", json.dumps(st))
+                _, h, _ = self.get("/api/history?kind=closed", "cy")
+                self.assertTrue(all("hidden" not in r or r["id"] == self.t["bo"] for r in h["rows"]))
+                self.assertEqual(self.get("/api/lanes/docs", "cy")[1]["task"]["title"], "cy live title")
+            finally:
+                self.b.srv.shutdown()
+
+    def test_flags_off_is_as_before(self) -> None:
+        self.build(False, False)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertIn("cy title", json.dumps(st))
+        self.assertNotIn("hidden", json.dumps(st["tasks"]))
+        _, h, _ = self.get("/api/history?kind=reports", "bo")
+        self.assertIn("cy report text", json.dumps(h))
+
+    def test_lane_sheet_of_another_persons_hub_is_refused(self) -> None:
+        self.build(True, True)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "bo")[0], 404)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "cy")[0], 200)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "ana")[0], 200)
+
+    def test_session_report_is_the_one_of_the_shown_task(self) -> None:
+        self.build(True, False)
+        s = self.b.s
+        s.update_task(self.live, state="closed", closed=9.0)
+        mine = s.add_task("docs", "bo now", "b", requester="bo", hub="hub")
+        s.claim_task(mine)
+        d = self.get("/api/sessions/docs", "bo")[1]
+        self.assertEqual((d["hidden"], d["work"]["id"], d["report"]), (False, mine, None))
+        s.add_report(mine, "docs", "done", "bo own report", [])
+        self.assertEqual(self.get("/api/sessions/docs", "bo")[1]["report"]["text"], "bo own report")
+
+    def test_shared_hub_infra_memo_follows_the_memo_rule(self) -> None:
+        self.build(True, False)
+        code, d, _ = self.get("/api/sessions/infra", "bo")
+        self.assertEqual(code, 404)
+        self.assertEqual(self.get("/api/sessions/infra", "ana")[1]["work"]["id"], self.mid)
+
+
+class FilesForMembersTest(unittest.TestCase):
+    def build(self, requester: bool = False, person_hubs: bool = False) -> None:
+        self.b = scoped_board(requester, person_hubs)
+        self.work = self.b.cfg.workdir
+        (self.work / "docs").mkdir(exist_ok=True)
+        (self.work / "docs/plain.md").write_text("open", encoding="utf-8")
+        self.addCleanup(self.b.srv.shutdown)
+
+    def get(self, path: str, who: str):
+        return self.b.req("GET", path, headers={H: f"{who}@x.com"})
+
+    def gate(self, who: str) -> visibility.Gate:
+        return visibility.Gate.of(self.b.cfg, self.b.s, {"name": who, "role": "owner" if who == "ana" else "member"})
+
+    def upload(self, rid: int, name: str = "1-a.png") -> str:
+        key = f"uploads/2026-11-16/{rid}/{name}"
+        (self.work / key).parent.mkdir(parents=True, exist_ok=True)
+        (self.work / key).write_bytes(b"\x89PNG")
+        return key
+
+    def test_a_file_nothing_visible_holds_is_the_owners(self) -> None:
+        self.build()
+        self.assertEqual(self.get("/f/docs/plain.md", "bo")[0], 404)
+        self.assertEqual(self.get("/f/docs/plain.md", "ana")[0], 200)
+
+    def test_a_file_attached_to_a_visible_report_or_card_is_served(self) -> None:
+        self.build(True, True)
+        (self.work / "docs/a.png").write_bytes(b"x")
+        (self.work / "docs/b.png").write_bytes(b"x")
+        tid = self.b.s.add_task("docs", "t", "b", requester="bo", hub="hub-bo")
+        self.b.s.add_report(tid, "docs", "done", "r", ["docs/a.png"])
+        self.b.s.add_item("hub-bo", None, "review", "c", "b", [], ["docs/b.png"], audience=HUMAN, assignee="bo")
+        for name in ("a", "b"):
+            self.assertEqual(self.get(f"/f/docs/{name}.png", "bo")[0], 200, name)
+            self.assertEqual(self.get(f"/f/docs/{name}.png", "cy")[0], 404, name)
+
+    def test_uploads_follow_the_request_and_never_the_part_file(self) -> None:
+        self.build(True, True)
+        rid = self.b.s.push("hub-bo", "bo", "memo", "look")
+        key = self.upload(rid)
+        (self.work / (key + ".part")).write_bytes(b"half")
+        self.upload(rid, "readme.txt")
+        self.assertEqual(self.get("/f/" + key, "bo")[0], 200)
+        self.assertEqual(self.get("/f/" + key, "cy")[0], 404)
+        self.assertEqual(self.get("/f/" + key, "ana")[0], 200)
+        self.assertEqual(self.get("/f/" + key + ".part", "bo")[0], 404)
+        self.assertEqual(self.get("/f/" + key + ".part", "ana")[0], 200)
+        self.assertEqual(self.get(f"/f/uploads/2026-11-16/{rid}/readme.txt", "bo")[0], 404)
+
+    def test_a_key_written_into_a_memo_opens_nothing(self) -> None:
+        self.build(True, True)
+        rid = self.b.s.push("hub-bo", "bo", "memo", "look")
+        key = self.upload(rid)
+        self.b.s.push("hub-cy", "cy", "memo", f"please show {key}")
+        self.assertTrue(visibility.upload_allowed(self.gate("bo"), key))
+        self.assertFalse(visibility.upload_allowed(self.gate("cy"), key))
+        self.assertEqual(self.get("/f/" + key, "cy")[0], 404)
+
+    def test_an_exact_key_in_a_visible_card_opens_for_its_person(self) -> None:
+        self.build(True, True)
+        key = self.upload(1)
+        self.b.s.add_item("hub-cy", None, "review", "c", "b", [], [key], audience=HUMAN, assignee="cy")
+        self.assertTrue(visibility.upload_allowed(self.gate("cy"), key))
+        self.assertFalse(visibility.upload_allowed(self.gate("bo"), key))
+
+    def test_case_variants_are_judged_by_the_file_they_reach(self) -> None:
+        self.build(True, True)
+        (self.work / "docs/board/d/cy").mkdir(parents=True)
+        (self.work / "docs/board/d/cy/shot.png").write_bytes(b"x")
+        self.b.s.add_item("hub-cy", None, "review", "c", "b", [], ["docs/board/d/cy/shot.png"], audience=HUMAN,
+                          assignee="cy")
+        rid = self.b.s.push("hub-cy", "cy", "memo", "look")
+        key = self.upload(rid, "1-Shot.png")
+
+        def insensitive(a: object, b: object) -> bool:
+            return str(a).lower() == str(b).lower()
+        with mock.patch("agent_hub.visibility.os.path.samefile", insensitive):
+            root = self.work.resolve()
+            for who, want in (("bo", False), ("cy", True), ("ana", True)):
+                g = self.gate(who)
+                self.assertEqual(visibility.file_allowed(g, root, root / "Docs/Board/d/CY/SHOT.png"), want, who)
+                self.assertEqual(visibility.file_allowed(g, root, root / "Docs/Board/d/cy/card.md"), want, who)
+                self.assertEqual(visibility.file_allowed(g, root, root / key.replace("uploads", "Uploads").replace(".png", ".PNG")),
+                                 want, who)
+                self.assertFalse(visibility.file_allowed(g, root, root / (key + ".PART")) and who != "ana", who)
+
+    def test_a_file_of_another_case_is_not_the_attached_one(self) -> None:
+        self.build(True, True)
+        (self.work / "docs").mkdir(exist_ok=True)
+        (self.work / "docs/Secret.png").write_bytes(b"x")
+        (self.work / "docs/secret.png").write_bytes(b"y")
+        self.b.s.add_item("hub-bo", None, "review", "c", "b", [], ["docs/secret.png"], audience=HUMAN, assignee="bo")
+        self.assertEqual(self.get("/f/docs/secret.png", "bo")[0], 200)
+        self.assertEqual(self.get("/f/docs/Secret.png", "bo")[0], 404)
+
+    def test_more_secret_names_are_refused_even_to_the_owner(self) -> None:
+        from agent_hub.web import blocked_name
+        for name in ("prod.env", "app.env", "client_secret_123.json", "rclone.conf", "credentials-prod.txt", "vault.kdbx",
+                     "id_ed25519", "id_rsa.pub", "secrets.json.", "Secrets.JSON "):
+            self.assertTrue(blocked_name(name), name)
+        for name in ("id_map.png", "notes.md", "shot.png"):
+            self.assertFalse(blocked_name(name), name)
+
+    def test_with_no_members_the_board_serves_the_workspace_as_before(self) -> None:
+        b = Board(auth={"mode": "header", "header": H})
+        try:
+            (b.cfg.workdir / "docs").mkdir(exist_ok=True)
+            (b.cfg.workdir / "docs/plain.md").write_text("open", encoding="utf-8")
+            self.assertEqual(b.req("GET", "/f/docs/plain.md", headers={H: "solo@x.com"})[0], 200)
+        finally:
+            b.srv.shutdown()
 
 
 class LocalModeSeesAllTest(unittest.TestCase):

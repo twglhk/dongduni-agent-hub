@@ -19,7 +19,7 @@
 | `GET /api/processes/doc?path=P` | `{path, text}` of a document the library names |
 | `GET /api/workspaces` | every workspace registered on this machine, for the board's switcher |
 | `GET /api/machine` | load, CPU, memory, swap graded g/a/r (`machine.py`), why queued tasks wait, Claude usage percent when `usage_percent` is set |
-| `GET /f/<path>` | an attachment under the project (dot paths and secrets are refused; Range supported) |
+| `GET /f/<path>` | a file under the project (dot paths and secrets are refused; Range supported). A member gets only a file attached to a card, report or request they can see; the owner gets any |
 | `POST /api/items/<id>/decide` | `{verdict, choice \| choices[], note}` |
 | `GET\|POST /api/me/prefs` | the signed-in member's own board settings (`prefs.py`); POST `{prefs: {...}}` saves, `{reset: true}` clears |
 | `GET /api/me/claude` | the viewer's Claude account `{state: none\|pending\|connected\|expired, url?, email?, plan?, expires?, ended?}`; 404 unless `claude_accounts` is set (`accountroutes.py`) |
@@ -42,7 +42,7 @@ Other registered workspaces are served under `/w/<slug>/` with the same routes, 
 
 ## Request checks
 
-- Every request must carry a `Host` the board knows (loopback with its port, the `public_url` host, or the bind address); anything else gets 421 (DNS rebinding).
+- Every request must carry a `Host` the board knows (`localhost` or an IP address on any port, the `public_url` host, the bind name, or a `web.allowed_hosts` name); anything else gets 421 (DNS rebinding).
 - Every POST must carry `x-tower: 1` and, when the browser says where it came from (`Origin`, `Sec-Fetch-Site`), come from the board's own origin.
 - With `auth.mode = header`, identity headers are trusted only from the local proxy. If the member list is non-empty, a person on it is the only one let in.
 - `MAX_BODY` caps the request body; board posts are text only.

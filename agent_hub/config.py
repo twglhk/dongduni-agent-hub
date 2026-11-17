@@ -183,6 +183,7 @@ class Config:
     web_host: str = "127.0.0.1"
     web_port: int = 8787
     public_url: str = ""
+    allowed_hosts: tuple[str, ...] = ()
     auth_mode: str = "local"
     auth_header: str = ""
     max_lanes: int = 2
@@ -312,6 +313,23 @@ def find_home(start: Path | None = None) -> Path:
 def ext_names(home: Path, table: str) -> list[str]:
     from .ext import registry
     return sorted(registry(home).table(table))
+
+
+HOST_NAME = re.compile(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*")
+
+
+def _allowed_hosts(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError('web.allowed_hosts must be a list of host names like ["box.local", "box.tail1234.ts.net"]')
+    out = []
+    for h in raw:
+        name = h.strip().lower() if isinstance(h, str) else ""
+        if not HOST_NAME.fullmatch(name):
+            raise ConfigError(f"web.allowed_hosts takes bare host names (no scheme, port or path), got {h!r}")
+        out.append(name)
+    return tuple(dict.fromkeys(out))
 
 
 def _int(raw: dict[str, Any], key: str, default: int, minimum: int | None = None, where: str = "tower.json") -> int:
@@ -498,7 +516,7 @@ def from_raw(home: Path, raw: Any) -> Config:
         home=home, name=str(raw.get("name") or "Agent Hub"), lang=str(raw.get("lang") or "en"),
         project=(home / project).resolve() if project else None,
         web_host=str(web.get("host") or "127.0.0.1"), web_port=_int(web, "port", 8787, 1, "web"),
-        public_url=str(web.get("public_url") or ""),
+        public_url=str(web.get("public_url") or ""), allowed_hosts=_allowed_hosts(web.get("allowed_hosts")),
         auth_mode=mode, auth_header=str(auth.get("header") or ""),
         claude_accounts=claude_accounts,
         max_lanes=_int(raw, "max_lanes", 2, 1),

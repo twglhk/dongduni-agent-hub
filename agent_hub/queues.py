@@ -7,7 +7,7 @@ from .config import INFRA, Config
 from .engine import block_text, infra_waits, team_turns
 from .fair import message_who, task_who, waiting_by_person
 from .store import Store
-from .visibility import Gate, sees_scoped
+from .visibility import Gate, memo_visible, sees_scoped
 
 SHOWN = 30
 
@@ -32,8 +32,8 @@ def person(cfg: Config, key: str) -> str | None:
     return key
 
 
-def _entry(g: Gate | None, who: str | None, **fields: Any) -> dict[str, Any]:
-    if g is None or sees_scoped(g, who):
+def _entry(g: Gate | None, who: str | None, shown: bool | None = None, **fields: Any) -> dict[str, Any]:
+    if shown if shown is not None else g is None or sees_scoped(g, who):
         return {**fields, "who": who}
     return {"id": fields["id"], "kind": fields["kind"], "session": fields.get("session"), "title": "", "who": None,
             "hidden": True}
@@ -65,12 +65,15 @@ def infra_queue(cfg: Config, s: Store, g: Gate | None = None) -> dict[str, Any]:
 
     def who(m: dict[str, Any]) -> str | None:
         return person(cfg, message_who(m))
-    now = [_entry(g, who(m), id=m["id"], title=_title(m["text"]), kind=m["kind"], session=_session(k) or 1)
+
+    def shown(m: dict[str, Any]) -> bool:
+        return g is None or memo_visible(g, m)
+    now = [_entry(g, who(m), shown(m), id=m["id"], title=_title(m["text"]), kind=m["kind"], session=_session(k) or 1)
            for k, m in sorted(held.items(), key=lambda kv: _session(kv[0]) or 1)]
     lang = cfg.lang if cfg.lang in ("en", "ko", "ja", "zh", "es") else "en"
     queue = s.inbox_queue(INFRA, cfg.fair_turns)
     parallel = len(sessions) > 1
-    wait = [_entry(g, who(m), id=m["id"], title=_title(m["text"]), kind=m["kind"],
+    wait = [_entry(g, who(m), shown(m), id=m["id"], title=_title(m["text"]), kind=m["kind"],
                    why=block_text(b[0], b[1], lang, len(sessions)) if b and parallel else None)
             for m, b in infra_waits(s, sessions, time.time(), cfg.fair_turns, limit=SHOWN)]
     return {"now": now, "wait": wait, "waiting": len(queue),

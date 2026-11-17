@@ -16,7 +16,7 @@ REMOTE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
 ROOT = re.compile(r"[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*")
 KEYS = {
     "local": {"provider", "max_mb", "max_files", "max_total_mb"},
-    "drive": {"provider", "max_mb", "max_files", "remote", "root"},
+    "drive": {"provider", "max_mb", "max_files", "max_total_mb", "remote", "root"},
     "s3": {"provider", "max_mb", "max_files", "bucket", "region", "prefix"},
     "off": {"provider"},
 }
@@ -58,15 +58,15 @@ def parse(raw: Any) -> dict[str, Any]:
     out: dict[str, Any] = {"provider": provider,
                            "max_mb": _whole(raw, "max_mb", DEFAULT_MAX_MB, 1, MAX_MB_LIMIT),
                            "max_files": _whole(raw, "max_files", DEFAULT_MAX_FILES, 1, MAX_FILES_LIMIT)}
-    if provider == "local":
+    if provider in ("local", "drive"):
         out["max_total_mb"] = _whole(raw, "max_total_mb", DEFAULT_TOTAL_MB, 0, 10 ** 7)
-    elif provider == "drive":
+    if provider == "drive":
         out["remote"] = _text(raw, "remote", REMOTE, "an rclone remote name without the colon")
         root = _text(raw, "root", ROOT, "a folder path of letters, digits, . _ - and /", required=False)
         if ".." in root.split("/") or "." in root.split("/"):
             raise ValueError(f'uploads.root must not contain . or .. parts, got {root!r}')
         out["root"] = root
-    else:
+    elif provider == "s3":
         out["bucket"] = _text(raw, "bucket", BUCKET, "an S3 bucket name")
         out["region"] = _text(raw, "region", REGION, "an AWS region such as eu-west-1")
         prefix = _text(raw, "prefix", PREFIX, "a folder prefix ending in /, such as agent-hub/", required=False)

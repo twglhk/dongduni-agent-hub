@@ -9,7 +9,7 @@ from .config import HUB, INFRA, Config
 from .fair import message_who, task_who
 from .queues import person
 from .store import Store
-from .visibility import Gate, sees_scoped
+from .visibility import Gate, memo_visible, report_visible, sees_scoped, task_visible
 
 REQUEST = re.compile(r"(?:request|요청)\s*#(\d+)", re.I)
 REPORT_CHARS = 280
@@ -47,22 +47,35 @@ def _task(cfg: Config, t: dict[str, Any]) -> dict[str, Any]:
             "started": t["started"], "ended": t["closed"], "live": t["state"] != "closed"}
 
 
-def _work(cfg: Config, s: Store, key: str, kind: str, row: dict[str, Any], live: bool) -> dict[str, Any] | None:
+def _raw(s: Store, key: str, kind: str, row: dict[str, Any], live: bool) -> tuple[str, dict[str, Any]] | None:
     with s.conn() as con:
         if kind == INFRA:
             mid = row.get("active_message") if live else row.get("last_message")
-            return _memo(cfg, con, key, int(mid), live) if mid is not None else None
+            m = con.execute("SELECT * FROM messages WHERE id=?", (int(mid),)).fetchone() if mid is not None else None
+            return ("memo", dict(m)) if m else None
         t = con.execute("SELECT * FROM tasks WHERE lane=? AND state IN ('running','wrapping') ORDER BY id DESC LIMIT 1",
                         (key,)).fetchone()
         t = t or con.execute("SELECT * FROM tasks WHERE lane=? AND state='closed' ORDER BY COALESCE(closed, id) DESC "
                              "LIMIT 1", (key,)).fetchone()
-        return _task(cfg, dict(t)) if t else None
+        return ("task", dict(t)) if t else None
 
 
-def _report(s: Store, key: str) -> dict[str, Any] | None:
+def _shown(g: Gate | None, raw: tuple[str, dict[str, Any]]) -> bool:
+    kind, row = raw
+    if g is None:
+        return True
+    return memo_visible(g, row) if kind == "memo" else task_visible(g, row)
+
+
+def _report(s: Store, key: str, g: Gate | None, raw: tuple[str, dict[str, Any]] | None) -> dict[str, Any] | None:
+    scoped = g is not None and not g.owner and bool(g.person_hubs or g.requester)
+    where, args = "lane=?", [key]
+    if scoped and raw:
+        where += " AND task_id=?" if raw[0] == "task" else " AND message_id=?"
+        args.append(raw[1]["id"])
     with s.conn() as con:
-        rep = con.execute("SELECT kind, text, created FROM reports WHERE lane=? ORDER BY id DESC LIMIT 1", (key,)).fetchone()
-    if not rep:
+        rep = con.execute(f"SELECT * FROM reports WHERE {where} ORDER BY id DESC LIMIT 1", args).fetchone()
+    if not rep or (g is not None and not report_visible(g, dict(rep))):
         return None
     text = " ".join(str(rep["text"] or "").split("||")[0].split())
     return {"kind": rep["kind"], "text": text[:REPORT_CHARS - 1] + "…" if len(text) > REPORT_CHARS else text,
@@ -77,13 +90,15 @@ def session_view(cfg: Config, s: Store, key: str, g: Gate | None = None) -> dict
         return None
     row = s.lane(key)
     live = (row.get("status") or "closed") != "closed"
-    work = _work(cfg, s, key, ln.kind, row, live) if ln.kind in ("team", INFRA) else None
-    hidden = bool(g is not None and work and not sees_scoped(g, work["from"]))
+    raw = _raw(s, key, ln.kind, row, live) if ln.kind in ("team", INFRA) else None
+    hidden = bool(raw and not _shown(g, raw))
     if hidden and live:
         return None
-    if hidden:
-        work = None
-    out = {"key": key, "live": live, "work": work, "report": None if hidden else _report(s, key), "hidden": hidden}
+    work = None
+    if raw and not hidden:
+        with s.conn() as con:
+            work = _memo(cfg, con, key, raw[1]["id"], live) if raw[0] == "memo" else _task(cfg, raw[1])
+    out = {"key": key, "live": live, "work": work, "report": None if hidden else _report(s, key, g, raw), "hidden": hidden}
     if cfg.claude_accounts:
         only = None if g is None or g.owner else g.name
         owner = s.session_account(key, row.get("session")) if live else None

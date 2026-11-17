@@ -297,11 +297,38 @@ class HostAndOriginTest(unittest.TestCase):
         self.b.srv.shutdown()
 
     def test_unknown_host_is_refused(self) -> None:
-        for host in ("evil.example", f"evil.example:{self.port}", "127.0.0.1:1", "localhost.evil.example"):
+        for host in ("evil.example", f"evil.example:{self.port}", "localhost.evil.example"):
             self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 421, host)
             self.assertEqual(self.b.req("POST", "/api/memo", {"text": "x"}, {**POST, "Host": host})[0], 421, host)
         for host in (f"127.0.0.1:{self.port}", f"localhost:{self.port}", f"[::1]:{self.port}"):
             self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+
+    def test_loopback_and_ip_hosts_pass_on_any_port(self) -> None:
+        for host in ("localhost:9000", "127.0.0.1:9000", "[::1]:9000", "192.168.1.5:9000", "localhost"):
+            self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+
+    def test_allowed_hosts_names_are_accepted_and_others_not(self) -> None:
+        b = Board(web={"allowed_hosts": ["Box.local", "box.tail1234.ts.net"]})
+        try:
+            for host in ("box.local", "box.tail1234.ts.net:8787"):
+                self.assertEqual(b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+            self.assertEqual(b.req("GET", "/api/state", headers={"Host": "evil.example"})[0], 421)
+            self.assertEqual(b.req("POST", "/api/memo", {"text": "x"},
+                                   {**POST, "Host": "box.local", "Origin": "http://box.local"})[0], 200)
+            self.assertEqual(b.req("POST", "/api/memo", {"text": "x"},
+                                   {**POST, "Host": "box.local", "Origin": "http://evil.example"})[0], 403)
+        finally:
+            b.srv.shutdown()
+
+    def test_origin_of_public_url_is_accepted_behind_a_proxy_that_rewrites_host(self) -> None:
+        b = Board(web={"public_url": "https://board.example.com"}, auth={"mode": "token", "allow_exposed": True})
+        try:
+            auth = {"authorization": "Bearer " + str(b.s.add_member("ana", "owner", with_token=True))}
+            for origin, want in (("https://board.example.com", 200), ("https://evil.example", 403)):
+                got = b.req("POST", "/api/memo", {"text": "x"}, {**POST, **auth, "Origin": origin})[0]
+                self.assertEqual(got, want, origin)
+        finally:
+            b.srv.shutdown()
 
     def test_public_url_host_and_exposed_bind_are_allowed(self) -> None:
         b = Board(web={"host": "0.0.0.0", "public_url": "https://board.example.com"}, auth={"mode": "token", "allow_exposed": True})
@@ -331,6 +358,36 @@ class HostAndOriginTest(unittest.TestCase):
         self.assertNotIn("Python", resp.getheader("server"))
         self.assertNotIn("BaseHTTP", resp.getheader("server"))
         self.assertEqual(self.b.srv.RequestHandlerClass.timeout, 30)
+
+
+class HostileInputTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.b = Board()
+        self.host = f"127.0.0.1:{self.b.srv.server_address[1]}"
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def test_a_deeply_nested_body_is_a_400_before_sign_in(self) -> None:
+        deep = b"[" * 200000
+        code, _, _ = raw(self.b, "POST", "/api/memo", {"host": self.host, "x-tower": "1",
+                                                       "content-length": str(len(deep))}, deep)
+        self.assertEqual(code, 400)
+        self.assertEqual(self.b.req("GET", "/api/state")[0], 200)
+
+    def test_out_of_range_numbers_are_a_400_not_a_traceback(self) -> None:
+        big = "9" * 30
+        for path in (f"/api/history?kind=closed&offset={big}", f"/api/items/{big}", "/api/history?kind=closed&offset=" + "9" * 5000):
+            self.assertEqual(self.b.req("GET", path)[0], 400, path[:40])
+        self.assertEqual(self.b.req("POST", f"/api/items/{big}/decide", {"verdict": "ok"}, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", f"/api/uploads/chunk?id={big}&n=1&offset=0", None, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", f"/api/uploads/chunk?id=1&n=1&offset={big}", None, POST)[0], 400)
+        self.assertEqual(self.b.req("POST", "/api/uploads/finish", {"id": 10 ** 30}, POST)[0], 409)
+
+    def test_a_huge_range_is_ignored_not_a_crash(self) -> None:
+        (self.b.cfg.workdir / "a.txt").write_text("hello", encoding="utf-8")
+        code, _, _ = raw(self.b, "GET", "/f/a.txt", {"host": self.host, "range": "bytes=" + "9" * 5000 + "-"})
+        self.assertEqual(code, 200)
 
 
 class SiblingAuthTest(unittest.TestCase):

@@ -81,6 +81,18 @@ class BoardExtensionsTest(unittest.TestCase):
         write(self.tower / "ext/stats.py", ROUTES.replace('"lanes": sorted', '"n": len'))
         self.assertEqual(self.b.req("GET", "/api/x/stats")[1]["n"], 3)
 
+    def test_a_route_gets_a_gate_for_the_viewer(self) -> None:
+        write(self.tower / "ext/gated.py", """
+from agent_hub import visibility
+def mine(ctx, body):
+    rows = ctx["store"].tasks(("queued",), 50)
+    return {"owner": ctx["gate"].owner, "ids": [t["id"] for t in rows if "hidden" not in visibility.task_row(ctx["gate"], t)]}
+routes = {("GET", "mine"): mine}
+""")
+        self.b.s.add_task("docs", "t", "b")
+        code, body, _ = self.b.req("GET", "/api/x/mine")
+        self.assertEqual((code, body["owner"], len(body["ids"])), (200, True, 1))
+
     def test_signed_in_only(self) -> None:
         b = Board(auth={"mode": "token"})
         try:

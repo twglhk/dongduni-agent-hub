@@ -37,6 +37,10 @@ elif args[0] == "copyto":
 elif args[0] == "lsjson":
     p = local(args[-1])
     print(json.dumps([{"Name": p.name, "Size": p.stat().st_size, "IsDir": False}] if p.is_file() else []))
+elif args[0] == "size":
+    root = local(args[-1])
+    files = [f for f in root.rglob("*") if f.is_file()] if root.is_dir() else []
+    print(json.dumps({"count": len(files), "bytes": sum(f.stat().st_size for f in files)}))
 elif args[0] == "cat":
     a = dict(zip(args[1:-1:2], args[2:-1:2]))
     data = local(args[-1]).read_bytes()[int(a["--offset"]):][:int(a["--count"])]
@@ -83,7 +87,16 @@ class DriveTest(unittest.TestCase):
         self.assertIn(f"- drive://mydrive/hub/files/{key} · audio/mpeg · 1 KB (original name: clip.mp3)", text)
         self.assertIn("stored on an rclone remote", text)
         self.assertEqual(list((self.cfg.home / ".tower" / "state" / "uploads" / "staging").rglob("*.part")), [])
-        self.assertTrue(all(c[0] in ("listremotes", "copyto", "lsjson") for c in self.calls()))
+        self.assertTrue(all(c[0] in ("listremotes", "copyto", "lsjson", "size") for c in self.calls()))
+
+    def test_the_folder_total_is_capped_for_the_drive_too(self) -> None:
+        cfg = make_home(uploads={"provider": "drive", "remote": "mydrive", "max_total_mb": 1})
+        s = Store(cfg.db, clock=self.clock)
+        big = [{"name": "a.mp3", "type": "audio/mpeg", "size": 700 * 1024}]
+        uploads.start(cfg, s, "ana", "hub", "x", big)
+        with self.assertRaises(uploads.UploadError) as got:
+            uploads.start(cfg, s, "ana", "hub", "x", big)
+        self.assertIn("full", str(got.exception))
 
     def test_rclone_gets_a_plain_argument_list(self) -> None:
         rid, key = self.put()

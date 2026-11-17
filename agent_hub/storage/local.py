@@ -11,6 +11,7 @@ PART = ".part"
 
 class Local(Receiver):
     name = "local"
+    live_usage = True
 
     def __init__(self, root: Path):
         super().__init__()

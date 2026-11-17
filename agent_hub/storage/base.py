@@ -87,6 +87,11 @@ class Storage(ABC):
     def open(self, key: str, rng: str) -> Opened | None:
         raise StorageError("this provider is shown by its own address")
 
+    live_usage = False
+
+    def have(self, slot: Slot) -> int:
+        return 0
+
     def used_bytes(self) -> int:
         return 0
 

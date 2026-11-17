@@ -34,14 +34,14 @@ see the picture
 | `locator(key)` | how the request text names the file |
 | `view(key)` | a board address for the stored file, or `None` |
 | `open(key, range)` | stream the file through the board (`drive`, `s3`; not `local`, which `/f/` serves) |
-| `used_bytes()` | what is already stored (`local`, for `max_total_mb`) |
+| `used_bytes()` | what is already stored, for `max_total_mb` (`local` walks the folder, `drive` asks `rclone size`); `live_usage` marks a provider whose bytes are checked again on every chunk |
 | `connect_host()` | an external host the page must be allowed to connect to (`s3`) |
 
 A `Slot` is `(rid, n, key, type, size, upload_id, part_size)`. Its `key` is always `uploads/<YYYY-MM-DD>/<request>/<n>-<name>.<ext>`: the server alone builds it, from the request number, a sanitised ASCII stem and an extension taken from the type it decided (not from the browser's name).
 
 ## Providers
 
-**local** (default). The browser POSTs chunks to the board; the file ends at `<workspace>/uploads/<date>/<request>/<n>-<name>.<ext>`, where lanes read it by path (the request text carries the workspace folder, which matters for lanes in their own worktree). The board shows it through `/f/`, so its rules apply: dot paths and secrets are refused, `Range` works, scripts cannot run (`sandbox`, `nosniff`). Not a symlink anywhere on the path, or the upload is refused. The day folder gets a `.gitignore` containing `*` so attachments never reach git; nothing in the project's own `.gitignore` changes, and a project that already has its own `uploads/` folder is not affected.
+**local** (default). The browser POSTs chunks to the board; the file ends at `<workspace>/uploads/<date>/<request>/<n>-<name>.<ext>`, where lanes read it by path (the stored request text names only the relative key; the absolute workspace folder is added only to the text a session is sent, `uploads.for_session`, which matters for lanes in their own worktree). The board shows it through `/f/`, so its rules apply: dot paths and secrets are refused, `Range` works, scripts cannot run (`sandbox`, `nosniff`). Not a symlink anywhere on the path, or the upload is refused. The day folder gets a `.gitignore` containing `*` so attachments never reach git; nothing in the project's own `.gitignore` changes, and a project that already has its own `uploads/` folder is not affected.
 
 **drive** (`remote`, `root`). rclone cannot give a browser a resumable session, so bytes go browser to board (chunks, staged under `.tower/state/uploads/staging/`) and the board runs `rclone copyto` at finish, then `rclone lsjson` to check the size. The board shows files by running `rclone cat --offset --count`, so video seeks. rclone is called with an argument list (never a shell) through `procs.command`; if it is missing, or the remote is unknown, starting an upload answers with that message and the words still reach the hub. rclone keeps its own credentials in its own config.
 

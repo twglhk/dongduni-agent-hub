@@ -73,7 +73,8 @@ class LocalFlowTest(unittest.TestCase):
         self.assertEqual((r["sent"], r["failed"]), (2, 0))
         [msg] = self.s.pending("hub")
         p1, p2 = f"uploads/2026-11-16/{rid}/1-IMG_1.png", f"uploads/2026-11-16/{rid}/2-notes.md"
-        self.assertTrue(msg["text"].startswith("사진 봐 주세요\n\n첨부 2개 (작업 폴더"), msg["text"])
+        self.assertTrue(msg["text"].startswith("사진 봐 주세요\n\n첨부 2개 (작업 폴더에 저장됨"), msg["text"])
+        self.assertNotIn(str(self.cfg.workdir), msg["text"])
         self.assertIn(f"- {p1} · image/png · 1 KB (원래 이름: 화면 IMG_1.PNG)", msg["text"])
         self.assertIn(f"- {p2} · text/markdown · 1 KB (원래 이름: notes.md)", msg["text"])
         self.assertEqual((self.cfg.workdir / p1).read_bytes(), PNG)
@@ -93,8 +94,21 @@ class LocalFlowTest(unittest.TestCase):
         uploads.chunk(cfg, s, out["id"], "ana", 1, 0, b"hello")
         uploads.finish(cfg, s, out["id"], "ana")
         text = s.pending("hub")[0]["text"]
-        self.assertTrue(text.startswith("(attachments only)\n\n1 attachment(s) (saved in the workspace under "), text)
+        self.assertTrue(text.startswith("(attachments only)\n\n1 attachment(s) (saved in the workspace folder, "), text)
+        self.assertNotIn(str(cfg.workdir), text)
+        self.assertIn(f"relative to the workspace folder {cfg.workdir}", uploads.for_session(cfg, text))
+        self.assertEqual(uploads.for_session(cfg, "plain request"), "plain request")
         self.assertIn("· text/markdown · 1 KB (original name: notes.md)", text)
+
+    def test_every_board_language_has_every_text(self) -> None:
+        for lang in ("ja", "zh", "es"):
+            self.assertEqual(set(uploads.TEXT[lang]), set(uploads.TEXT["en"]), lang)
+            cfg = make_home(lang=lang)
+            s = Store(cfg.db, clock=self.clock)
+            out = uploads.start(cfg, s, "ana", "hub", "", self.files()[1:])
+            uploads.chunk(cfg, s, out["id"], "ana", 1, 0, b"hello")
+            uploads.finish(cfg, s, out["id"], "ana")
+            self.assertTrue(s.pending("hub")[0]["text"].startswith(uploads.TEXT[lang]["only"]), lang)
 
     def test_chunks_must_arrive_in_order_and_not_overflow(self) -> None:
         rid = uploads.start(self.cfg, self.s, "ana", "hub", "x", self.files()[:1])["id"]
@@ -169,6 +183,26 @@ class LocalFlowTest(unittest.TestCase):
         uploads.chunk(cfg, s, rid, "ana", 1, 0, b"x" * 900 * 1024)
         with self.assertRaises(uploads.UploadError) as got:
             uploads.start(cfg, s, "ana", "hub", "x", [{"name": "b.png", "type": "image/png", "size": 200 * 1024}])
+        self.assertIn("full", str(got.exception))
+
+    def test_parallel_uploads_cannot_pass_the_total(self) -> None:
+        cfg = make_home(uploads={"max_total_mb": 1})
+        s = Store(cfg.db, clock=self.clock)
+        part = [{"name": "a.png", "type": "image/png", "size": 600 * 1024}]
+        uploads.start(cfg, s, "ana", "hub", "x", part)
+        with self.assertRaises(uploads.UploadError) as got:
+            uploads.start(cfg, s, "bo", "hub", "x", part)
+        self.assertIn("full", str(got.exception))
+
+    def test_every_chunk_is_checked_against_the_total(self) -> None:
+        cfg = make_home(uploads={"max_total_mb": 1})
+        s = Store(cfg.db, clock=self.clock)
+        rid = uploads.start(cfg, s, "ana", "hub", "x", [{"name": "a.png", "type": "image/png", "size": 400 * 1024}])["id"]
+        stray = cfg.workdir / "uploads" / "other.bin"
+        stray.parent.mkdir(parents=True, exist_ok=True)
+        stray.write_bytes(b"x" * 900 * 1024)
+        with self.assertRaises(uploads.UploadError) as got:
+            uploads.chunk(cfg, s, rid, "ana", 1, 0, b"x" * 200 * 1024)
         self.assertIn("full", str(got.exception))
 
     def test_the_server_picks_name_and_extension(self) -> None:

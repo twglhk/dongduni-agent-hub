@@ -63,7 +63,7 @@ function Body({ id, d, lib }: { id: string; d: LaneDetail; lib: ProcLib | null }
         <Chip>{rtName(d.runtime)}</Chip><StatusChip status={d.status} />
         {d.engine && <Chip>{L.lv.engine} {d.engine}</Chip>}
       </div>
-      {t && <div className="mt-3 text-t4 font-semibold leading-snug"><span className="mr-1 font-medium text-ink-3">#{t.id}</span>{t.title}</div>}
+      {t && <div className="mt-3 text-t4 font-semibold leading-snug"><span className="mr-1 font-medium text-ink-3">#{t.id}</span>{t.hidden ? L.label.otherWork : t.title}</div>}
       {(model || d.model || tk) && (
         <div className="mt-1">
           {(model || d.model) && <Kv k={L.lv.model} v={model || d.model} />}
@@ -104,7 +104,7 @@ function Body({ id, d, lib }: { id: string; d: LaneDetail; lib: ProcLib | null }
           {d.recent.map(r => (
             <div key={r.id} className={ROW}>
               <div className="min-w-0 flex-1">
-                <div className="text-t5 font-semibold leading-snug [overflow-wrap:anywhere]">#{r.id} {r.title}</div>
+                <div className="text-t5 font-semibold leading-snug [overflow-wrap:anywhere]">#{r.id} {r.hidden ? L.label.otherWork : r.title}</div>
                 <div className="mt-0.5 text-t6 text-ink-3">{[(L.task as Record<string, string>)[r.state] || r.state, [r.model, r.effort].filter(Boolean).join(' · '), tokens(r.tokens)].filter(Boolean).join(' · ')}</div>
               </div>
             </div>
