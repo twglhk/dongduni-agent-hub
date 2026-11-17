@@ -36,7 +36,6 @@
   }
 }
 
-/* The person's accent colour replaces the blue family; status colours stay. Swatches show each one. */
 :root {
   --sw-blue: #3182f6; --sw-green: #03a464; --sw-orange: #eb6a00; --sw-purple: #7d4cf0; --sw-pink: #de3f84;
 }
@@ -57,7 +56,6 @@
 [data-swatch="purple"] { background: var(--sw-purple); }
 [data-swatch="pink"] { background: var(--sw-pink); }
 
-/* Text size is a share of the phone's own setting; small keeps 13px text at 13px. */
 :root[data-font="s"] { font-size: 93.75%; --text-t6: max(.8125rem, 13px); }
 :root[data-font="l"] { font-size: 112.5%; }
 

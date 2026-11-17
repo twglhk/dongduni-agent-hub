@@ -269,11 +269,11 @@ class Engine:
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
-        self.hub_opens: dict[str, list[float]] = {}  # per hub: when it was opened lately (a dying session backs off)
+        self.hub_opens: dict[str, list[float]] = {}
         self.hub_backoff: set[str] = set()
-        self.overflow_seen: tuple[str, ...] = ()  # members in line for a hub already told to humans
+        self.overflow_seen: tuple[str, ...] = ()
         self.waiting: set[str] = set()  # lanes in a terminal window held by a permission menu, already announced
-        self.stuck_for: dict[str, int] = {}  # per hub: oldest waiting message we already raised a stuck alert for
+        self.stuck_for: dict[str, int] = {}
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
         self.snap_at: float = -SNAPSHOT_EVERY  # last check for the weekly engine snapshot

@@ -154,7 +154,7 @@ class Lane:
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
     context_limit_k: int | None = None
-    owner: str = ""              # person hubs (`hub-<member>`): the member whose requests this hub handles
+    owner: str = ""
 
 
 @dataclass
@@ -207,13 +207,13 @@ class Config:
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
-    person_hubs: dict[str, Lane] = field(default_factory=dict)  # `hub-<member>` copies of the hub lane, one per member
-    hub_cap: int = 0             # person_hubs on: at most this many person hubs (0 = off: the one hub serves everyone)
-    hub_overflow: list[str] = field(default_factory=list)  # members past hub_cap, in line for a hub of their own
-    hub_auto: bool = False       # a person the proxy lets in who is no member yet joins on their first visit
-    hub_domains: list[str] = field(default_factory=list)  # auto-join only these email domains ([] = any)
-    fair_turns: bool = False     # the next waiting team task goes round by requester instead of oldest first (fair.py)
-    requester: bool = False      # cards default to the member who asked for the work, and infra's answers and wraps reach the hub (requester.py)
+    person_hubs: dict[str, Lane] = field(default_factory=dict)
+    hub_cap: int = 0
+    hub_overflow: list[str] = field(default_factory=list)
+    hub_auto: bool = False
+    hub_domains: list[str] = field(default_factory=list)
+    fair_turns: bool = False
+    requester: bool = False
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property

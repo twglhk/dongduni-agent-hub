@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS reports(
 );
 CREATE TABLE IF NOT EXISTS member_prefs(
   member TEXT PRIMARY KEY,
-  data TEXT NOT NULL,               -- the member's own board settings as JSON (prefs.py)
+  data TEXT NOT NULL,
   updated REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS lanes(
@@ -203,9 +203,7 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
                 ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
-                ("requester", "TEXT"),  # the member whose request the task serves; NULL = nobody (an automatic task)
-                ("rank", "REAL"),
-                ("hub", "TEXT"))  # the person hub that queued the task; NULL = the default hub  # start order once the hub moved it (`dah task bump`); NULL = by id
+                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"))
 
 
 class StoreError(Exception):
@@ -301,7 +299,7 @@ class Store:
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             if "rank" not in _columns(con, "messages"):
-                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")  # queue order once the hub moved a memo first
+                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 

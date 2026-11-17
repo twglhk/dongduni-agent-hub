@@ -65,13 +65,13 @@ class TaskBumpTest(Base):
         self.s.add_task("art", "b1", "x", requester="bo")
         urgent = self.s.add_task("ops", "a3", "x", requester="ana")
         order = team_turns(self.s, TEAM, fair=True)
-        self.assertEqual(sorted(order, key=order.get), [3, 2, urgent])  # fair: bo's first, then ana's in id order
+        self.assertEqual(sorted(order, key=order.get), [3, 2, urgent])
         self.s.bump_task(urgent)
         self.clock.tick(10)
         self.e.tick()
         self.assertEqual(self.running(), {"docs", "ops"})
         order = team_turns(self.s, TEAM, fair=True)
-        self.assertEqual(sorted(order, key=order.get), [3, 2])  # ana has two running now: bo goes ahead of her
+        self.assertEqual(sorted(order, key=order.get), [3, 2])
 
     def test_a_bumped_task_stays_ahead_of_a_chained_one(self) -> None:
         self.build(fair_turns=True)
