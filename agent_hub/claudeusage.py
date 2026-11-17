@@ -1,7 +1,7 @@
 """Optional: Claude subscription usage percent (5-hour and weekly windows) for the board's footer strip.
 
 Off unless tower.json says `"usage_percent": "claude"`. It reads the OAuth access token Claude Code already holds
-(macOS keychain item "Claude Code-credentials", else `~/.claude/.credentials.json`), read-only: it never refreshes
+(macOS keychain item "Claude Code-credentials", else `.credentials.json` in `$CLAUDE_CONFIG_DIR` or `~/.claude`), read-only: it never refreshes
 or writes the token, so Claude Code's own login is not disturbed. It then asks
 `https://api.anthropic.com/api/oauth/usage`, an UNDOCUMENTED endpoint Claude Code itself uses; it may change or
 vanish without notice. Any failure (no token, expired token, network, a new response shape) shows as "unknown",
@@ -11,6 +11,7 @@ never as 0. The token is never logged or sent anywhere else. Results are cached 
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -32,7 +33,7 @@ PROVIDERS = ("claude",)
 def token(home: Path | None = None, platform: str = sys.platform,
           keychain: Callable[[], str] | None = None) -> str:
     """Claude Code's OAuth access token, or '' when there is none to read."""
-    home = home or Path.home() / ".claude"
+    home = home or Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     raw = ""
     if platform == "darwin":
         raw = (keychain or _keychain)()
@@ -57,6 +58,10 @@ def _keychain() -> str:
     return p.stdout if p.returncode == 0 else ""
 
 
+def _quote(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+
+
 def fetch(tok: str, timeout: float = 10) -> dict[str, Any]:
     """GET the usage JSON. urllib first; some Python builds ship without CA certificates, so curl is the fallback."""
     headers = {"Authorization": f"Bearer {tok}", "anthropic-beta": "oauth-2025-04-20"}
@@ -69,10 +74,9 @@ def fetch(tok: str, timeout: float = 10) -> dict[str, Any]:
         curl = shutil.which("curl")
         if not curl:
             raise RuntimeError(str(e))
-        args = [curl, "-fsS", "-m", str(int(timeout))]
-        for k, v in headers.items():
-            args += ["-H", f"{k}: {v}"]
-        p = subprocess.run(args + [URL], capture_output=True, text=True, timeout=timeout + 5)
+        config = "".join(f'header = "{_quote(f"{k}: {v}")}"\n' for k, v in headers.items()) + f'url = "{URL}"\n'
+        p = subprocess.run([curl, "-fsS", "-m", str(int(timeout)), "--config", "-"], input=config,
+                           capture_output=True, text=True, timeout=timeout + 5)
         if p.returncode:
             raise RuntimeError(f"curl exit {p.returncode}")
         return json.loads(p.stdout)
@@ -112,23 +116,35 @@ class ClaudeUsage:
         self.lock = threading.Lock()
         self.cached: dict[str, Any] | None = None
         self.until = 0.0
+        self.loading = False
 
     def view(self) -> dict[str, Any]:
         """{"provider": "claude", "windows": [...]} or {"provider": "claude", "unknown": why}."""
         with self.lock:
             if self.cached is not None and self.clock() < self.until:
                 return self.cached
-            try:
-                tok = self.get_token()
-                if not tok:
-                    raise RuntimeError("no Claude Code login found")
-                wins = parse(self.get(tok))
-                if not wins or all(w["percent"] is None for w in wins):
-                    raise RuntimeError("the response has no usage windows")
-                self.cached, ttl = {"provider": "claude", "windows": wins}, TTL
-            except Exception as e:  # never 0: say it is unknown and why (no token text in it)
-                why = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__ \
-                    if not isinstance(e, RuntimeError) else str(e)[:120]
-                self.cached, ttl = {"provider": "claude", "unknown": why}, FAIL_TTL
-            self.until = self.clock() + ttl
-            return self.cached
+            if self.loading:
+                return self.cached or {"provider": "claude", "unknown": "loading"}
+            self.loading = True
+        try:
+            result, ttl = self.load()
+        finally:
+            with self.lock:
+                self.loading = False
+        with self.lock:
+            self.cached, self.until = result, self.clock() + ttl
+        return result
+
+    def load(self) -> tuple[dict[str, Any], int]:
+        try:
+            tok = self.get_token()
+            if not tok:
+                raise RuntimeError("no Claude Code login found")
+            wins = parse(self.get(tok))
+            if not wins or all(w["percent"] is None for w in wins):
+                raise RuntimeError("the response has no usage windows")
+            return {"provider": "claude", "windows": wins}, TTL
+        except Exception as e:  # never 0: say it is unknown and why (no token text in it)
+            why = f"HTTP {e.code}" if isinstance(e, urllib.error.HTTPError) else type(e).__name__ \
+                if not isinstance(e, RuntimeError) else str(e)[:120]
+            return {"provider": "claude", "unknown": why}, FAIL_TTL
