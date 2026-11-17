@@ -1,10 +1,3 @@
-"""Workspace config: `<home>/.tower/tower.json`.
-
-The home is the folder whose `.tower/` holds the config. Agents run in `project` (default: the home itself),
-or a team lane with "worktree": true in its own git worktree under `.tower/state/worktrees/<lane>`.
-State (SQLite DB, logs, members) lives in `<home>/.tower/state/`, which must stay out of git.
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -23,17 +16,15 @@ from . import procs
 HUB = "hub"
 INFRA = "infra"
 RUNTIMES = ("opencode", "claude", "codex")
-TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
+TERMINALS = ("none", "tmux", "orca")
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
 DEFAULT_CONTEXT_LIMIT_K = 0
-INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
-DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
+INSTANCE_SEP = "#"
+DEFAULT_ENGINE = "default"
 FIRST_OPENCODE_PORT = 4301
 
 DEFAULT_ARGS = {
-    # Lanes run unattended, so they need to act without a human approving each tool call.
-    # `dah init --safe` writes the stricter variants instead; see SETUP.md "Permissions".
     "claude": ["--permission-mode", "bypassPermissions"],
     "codex": ["--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check"],
     "opencode": [],
@@ -51,7 +42,6 @@ class ConfigError(Exception):
 
 
 def base_lane(lane: str) -> str:
-    """`docs#2` -> `docs`: the lane an instance belongs to."""
     return lane.partition(INSTANCE_SEP)[0]
 
 
@@ -152,20 +142,20 @@ def _person_hubs(home: Path, lanes: dict[str, Lane], cap: int, next_port: int) -
 @dataclass
 class Lane:
     id: str
-    kind: str                    # hub | infra | team
-    runtime: str                 # opencode | claude | codex
+    kind: str
+    runtime: str
     label: str = ""
-    port: int | None = None      # opencode only
+    port: int | None = None
     model: str = ""
-    agent: str = ""              # the runtime's own agent (OpenCode agent, Claude --agent); empty = its default
+    agent: str = ""
     args: list[str] = field(default_factory=list)
-    instructions: str = ""       # path relative to home
+    instructions: str = ""
     env: dict[str, str] = field(default_factory=dict)
-    terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
-    worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane> (dah/<lane>-N for instance #N)
-    max_instances: int = 0       # team lanes: sessions this lane may run at once (0 = the top-level max_instances); infra: its own (0 = 1)
-    engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
-    base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
+    terminal: str = "none"
+    worktree: bool = False
+    max_instances: int = 0
+    engine: str = ""
+    base: str = ""
     context_limit_k: int | None = None
     owner: str = ""
 
@@ -174,14 +164,14 @@ class Lane:
 class Engine:
     id: str
     label: str = ""
-    dir: str = ""                # engine folder, relative to home (process cards, pattern cards)
-    lanes: list[str] = field(default_factory=list)  # team lanes in this engine (filled from lane.engine as well)
-    library: str = ""            # pattern library markdown, relative to home
-    skills: str = ""             # skills folder, relative to home
-    map: str = ""                # optional hand-written engine.json, relative to home
-    skill_names: list[str] = field(default_factory=list)  # skill folders this engine owns besides the ones its lanes name
-    cap: str = ""                # optional usage cap: "tokens-day:N" (built in) or a name an extension registers in `caps`
-    implicit: bool = False       # made up because tower.json declares no `engines`
+    dir: str = ""
+    lanes: list[str] = field(default_factory=list)
+    library: str = ""
+    skills: str = ""
+    map: str = ""
+    skill_names: list[str] = field(default_factory=list)
+    cap: str = ""
+    implicit: bool = False
 
 
 @dataclass
@@ -193,34 +183,34 @@ class Config:
     web_host: str = "127.0.0.1"
     web_port: int = 8787
     public_url: str = ""
-    auth_mode: str = "local"     # local | header | token
+    auth_mode: str = "local"
     auth_header: str = ""
     max_lanes: int = 2
     opencode_port: int = FIRST_OPENCODE_PORT
     notify: dict[str, str] = field(default_factory=dict)
-    tunnel: str = ""             # a command the tower keeps alive, e.g. `cloudflared tunnel run board`
+    tunnel: str = ""
     lanes: dict[str, Lane] = field(default_factory=dict)
-    terminal: str = "none"       # default for lanes that do not set their own
-    worktree: bool = False       # default for team lanes that do not set their own
-    stage_table: str = ""        # markdown table with a `model · effort` column (stagemodel.py), path from home
-    require_model_lines: bool = False  # `dah task` refuses a brief without `model:` and `effort:` lines
-    require_line: bool = False   # `dah task` refuses a brief whose `Line:` header is missing or names an unconfirmed method (engines.py)
-    engines: dict[str, Engine] = field(default_factory=dict)  # always has at least "default" when a team lane has no engine
-    light_lanes: int | None = None  # extra slots (beyond max_lanes) for tasks that touch none of heavy_paths; None = one pool
-    max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
-    heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
-    memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
+    terminal: str = "none"
+    worktree: bool = False
+    stage_table: str = ""
+    require_model_lines: bool = False
+    require_line: bool = False
+    engines: dict[str, Engine] = field(default_factory=dict)
+    light_lanes: int | None = None
+    max_instances: int = 1
+    heavy_paths: list[str] = field(default_factory=list)
+    memory_limit_mb: int = 0
     context_limit_k: int = DEFAULT_CONTEXT_LIMIT_K
     model_limits_k: dict[str, int] = field(default_factory=dict)
-    instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
-    done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
-    scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
-    scratch_grace: int = 600     # seconds after a task closes before its scratch is swept
+    instances: dict[str, Lane] = field(default_factory=dict)
+    done_gate: dict[str, Any] = field(default_factory=dict)
+    scratch_root: str = ""
+    scratch_grace: int = 600
     branch_sync: bool = False
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
-    schedules: list[Any] = field(default_factory=list)  # schedules.Schedule: a task or request queued on a clock (opt-in)
+    schedules: list[Any] = field(default_factory=list)
     person_hubs: dict[str, Lane] = field(default_factory=dict)
     hub_cap: int = 0
     hub_overflow: list[str] = field(default_factory=list)
@@ -228,15 +218,14 @@ class Config:
     hub_domains: list[str] = field(default_factory=list)
     fair_turns: bool = False
     requester: bool = False
-    rule_watch: dict[str, Any] = field(default_factory=dict)  # rulewatch.parse: files, delay_minutes, cards_per_day; {} = off
-    overlap_check: bool = False  # overlap.py: queued work on a shared rule file that meets another person's open work asks both first
+    rule_watch: dict[str, Any] = field(default_factory=dict)
+    overlap_check: bool = False
     claude_accounts: bool = False
-    usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
-    uploads: dict[str, Any] = field(default_factory=dict)  # chat attachments: storage.parse; {} = off (a loaded config has provider local by default)
+    usage_percent: str = ""
+    uploads: dict[str, Any] = field(default_factory=dict)
 
     @property
     def all_lanes(self) -> dict[str, Lane]:
-        """The configured lanes plus their parallel instances."""
         return {**self.lanes, **self.instances, **self.person_hubs}
 
     def hubs(self) -> list[str]:
@@ -262,13 +251,10 @@ class Config:
 
     @property
     def local_only(self) -> bool:
-        """Nothing set up to reach the board from another device (no public URL, tunnel, proxy or network bind)."""
         return (self.web_host in ("127.0.0.1", "localhost", "::1") and not self.public_url and not self.tunnel
                 and self.auth_mode == "local")
 
     def lane_dir(self, lane: str) -> Path:
-        """Where a lane's agent works: the workspace, or this session's own git worktree. Without "worktree": true a
-        lane and its instances share the workspace, which is why their `paths:` may not overlap."""
         ln = self.lanes.get(base_lane(lane))
         return self.state_dir / "worktrees" / lane_slug(lane) if ln and ln.worktree else self.workdir
 
@@ -324,8 +310,6 @@ def find_home(start: Path | None = None) -> Path:
 
 
 def ext_names(home: Path, table: str) -> list[str]:
-    """Runtimes or terminals the workspace's `.tower/ext/*.py` register. Loaded only when tower.json names one
-    that is not built in."""
     from .ext import registry
     return sorted(registry(home).table(table))
 
@@ -404,8 +388,6 @@ _ENGINE_PATHS = ("dir", "library", "skills", "map")
 
 
 def _engines(raw: Any, lanes: dict[str, Lane]) -> dict[str, Engine]:
-    """Declared engines plus the implicit "default" one for team lanes that name none. A lane's engine comes from its
-    own `engine` key or from an engine's `lanes` list; naming two different engines is an error."""
     if raw is None:
         raw = {}
     if not isinstance(raw, dict):
@@ -441,7 +423,7 @@ def _engines(raw: Any, lanes: dict[str, Lane]) -> dict[str, Engine]:
         elif ln.engine not in out:
             raise ConfigError(f"lane {ln.id}: engine {ln.engine!r} is not in `engines`")
         out[ln.engine].lanes.append(ln.id)
-    if not out:  # no team lane yet: the implicit engine still exists, so `dah engine list` is never empty
+    if not out:
         out[DEFAULT_ENGINE] = Engine(id=DEFAULT_ENGINE, label="Default", implicit=True)
     return out
 
@@ -643,8 +625,6 @@ def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web
     return data
 
 
-# ---------- the workspaces this person runs a tower in (one board can switch between them) ----------
-
 def registry_path() -> Path:
     base = os.environ.get("AGENT_HUB_HOME")
     if not base and os.name == "nt" and os.environ.get("APPDATA"):
@@ -710,7 +690,6 @@ def unregister(slug: str) -> None:
 
 
 def free_ports(home: Path) -> tuple[int, int]:
-    """A board port and an OpenCode base port no other registered workspace uses and nothing listens on."""
     used: set[int] = set()
     for h in workspaces().values():
         if h.resolve() == home.resolve():
@@ -745,7 +724,6 @@ def tower_pid(c: Config) -> int | None:
 
 
 def secret(value: str) -> str:
-    """Config values may point at the environment (`env:NAME`) so secrets stay out of tower.json."""
     if value.startswith("env:"):
         return os.environ.get(value[4:], "")
     return value

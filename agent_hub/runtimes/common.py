@@ -14,7 +14,7 @@ from ..config import Config, Lane
 
 
 BIN_DIR = Path(__file__).resolve().parents[2] / "bin"
-PACKAGE_PARENT = Path(__file__).resolve().parents[2]  # where `python -m agent_hub` finds the package
+PACKAGE_PARENT = Path(__file__).resolve().parents[2]
 
 
 class RuntimeFailure(Exception):
@@ -54,7 +54,7 @@ def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     env.update(lane.env)
     env["TOWER_HOME"] = str(cfg.home)
     env["TOWER_LANE"] = lane.id
-    for d in (BIN_DIR, Path(sys.executable).parent):  # a clone's bin/, or the venv a pip/pipx/uv install put dah in
+    for d in (BIN_DIR, Path(sys.executable).parent):
         if (d / "dah").is_file() or (d / "dah.exe").is_file():
             env["PATH"] = f"{d}{os.pathsep}{env.get('PATH', '')}"
             break

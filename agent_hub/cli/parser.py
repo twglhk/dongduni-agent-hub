@@ -148,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("retros", help="what lanes noted when they wrapped (cost, corrected, rule)")
     p.add_argument("--lane")
     p.add_argument("--since", metavar="YYYY-MM-DD")
-    p = sub.add_parser("signal")  # called by a lane's own hooks in a terminal window; not for people
+    p = sub.add_parser("signal")
     p.add_argument("payload", nargs="*")
     p = sub.add_parser("show", help="one board item")
     p.add_argument("id", type=int)

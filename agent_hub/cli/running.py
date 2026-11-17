@@ -29,8 +29,7 @@ def say(text: str) -> None:
 
 
 def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
-    """A live session belongs to the adapter that started it: when tower.json changes a lane's runtime or terminal,
-    close it the old way, or the new adapter would start a second agent beside it."""
+    # a live session belongs to the adapter that started it; a changed runtime or terminal closes it the old way first
     for lid, ln in old.all_lanes.items():
         nl = new.all_lanes.get(lid)
         if nl is None and ln.owner and rt.status(lid) != "closed":
@@ -78,7 +77,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     if not args.no_hub:
         for hub in c.hubs():
             s.set_lane(hub, enabled=1)
-    ext = Extensions(c.home, say)  # one load of .tower/ext for the board and the engine
+    ext = Extensions(c.home, say)
     httpd = server(c, s, say, ext)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     say(f"board http://{c.web_host}:{c.web_port}" + (f" · {c.public_url}" if c.public_url else ""))
@@ -96,7 +95,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     try:
         while True:
             try:
-                if cfg_path.stat().st_mtime != mtime:  # infra edited tower.json: pick it up without a restart
+                if cfg_path.stat().st_mtime != mtime:
                     mtime = cfg_path.stat().st_mtime
                     c2 = config_mod.load(c.home)
                     if (c2.web_host, c2.web_port, c2.auth_mode) != (c.web_host, c.web_port, c.auth_mode):
@@ -124,7 +123,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                     memwatch.poll()
                     engine.heavy = memwatch.heavy
                     engine.tick()
-            except Exception as e:  # the loop never dies; the next tick looks again
+            except Exception as e:
                 say(f"tick failed: {e!r}")
             time.sleep(TICK_SECONDS)
     except KeyboardInterrupt:

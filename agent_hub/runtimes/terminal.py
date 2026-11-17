@@ -38,12 +38,11 @@ CLAUDE_STATES = {"UserPromptSubmit": "busy", "PostToolUse": "busy", "Stop": "idl
 
 
 def record_signal(home: Path, lane: str, payload: dict[str, Any]) -> None:
-    """What `dah signal` does with a hook (Claude: JSON on stdin) or a notify (Codex: JSON argument)."""
     event = str(payload.get("hook_event_name") or "")
     if event:
         state = CLAUDE_STATES.get(event)
-        if event == "Notification":  # a permission menu waits for a person; the idle one also covers a turn
-            kind = str(payload.get("notification_type") or "")  # a person interrupted (no Stop hook then)
+        if event == "Notification":  # a permission menu waits for a person; the idle notification also ends a turn a person interrupted (no Stop hook then)
+            kind = str(payload.get("notification_type") or "")
             message = str(payload.get("message") or "").lower()
             if "permission" in kind or "permission" in message:
                 state = "asking"
@@ -66,8 +65,6 @@ def _write_private(path: Path, text: str, mode: int) -> None:
 
 
 class Terminal:
-    """Mixin for an adapter whose session runs in a window: the launcher, the handle, the signal file."""
-
     cfg: Config
     store: Store
     lane: Lane
@@ -99,9 +96,6 @@ class Terminal:
             return {}
 
     def _launch(self, argv: list[str], extra_env: dict[str, str] | None = None) -> None:
-        """Write a launcher script (so the window gets the lane's environment whatever the terminal app's own
-        is) and open a window running it. The lane's own `env` values go in a private file the launcher sources
-        and deletes, never in the script."""
         cwd = lane_cwd(self.cfg, self.lane)
         account = self.account_dir()
         env = {**accounts.session_env(account, lane_env(self.cfg, self.lane)), **(extra_env or {})}
@@ -132,7 +126,6 @@ class Terminal:
         (self.term_dir / f"{self.lane.id}.handle").write_text(handle, encoding="utf-8")
 
     def _note(self, text: str) -> str:
-        """Put a prompt in a file and return the one line the agent gets in its window."""
         path = self.term_dir / f"{self.lane.id}-{time.time_ns()}.md"
         path.write_text(text, encoding="utf-8")
         cwd = self.cfg.lane_dir(self.lane.id)
@@ -161,8 +154,6 @@ class Terminal:
 
 
 class TerminalSession(Terminal):
-    """Claude and Codex in a window: one interactive process per session, busy/idle from `dah signal`."""
-
     def status(self) -> str:
         if not self.store.lane(self.lane.id).get("session"):
             return "closed"

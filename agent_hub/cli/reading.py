@@ -19,7 +19,6 @@ from .common import REACH_HINT, TowerError, cfg, hhmm, need, need_team, store, v
 
 
 def lane_markers(c: Config, s: Store) -> dict[str, list[str]]:
-    """What each lane's session process carries on its command line (memwatch): its session id, or its OpenCode port."""
     out: dict[str, list[str]] = {}
     for lid, ln in c.all_lanes.items():
         sid = s.lane(lid).get("session")
@@ -38,14 +37,12 @@ def day_arg(day: str | None) -> float:
 
 
 def cmd_stats(args: argparse.Namespace) -> None:
-    """The task ledger: tokens, turns and rework per lane, engine, model, effort or week."""
     s = store(cfg())
     tasks = stats.collect(s, args.lane, day_arg(args.since))
     print(stats.render(stats.summarize(tasks, args.by), args.lane, args.since))
 
 
 def cmd_blame(args: argparse.Namespace) -> None:
-    """Lane: name the stage that should have caught this task's failure. Hub: --confirm --task N [STAGE] confirms or changes it."""
     from .. import rating
     c = cfg()
     me = who(args, c)
@@ -85,7 +82,6 @@ def cmd_blame(args: argparse.Namespace) -> None:
 
 
 def cmd_deliverable(args: argparse.Namespace) -> None:
-    """Hub or infra: record the human's result for a deliverable. With no result: its lineage of tasks, items and results."""
     c = cfg()
     s = store(c)
     try:
@@ -119,7 +115,6 @@ def cmd_deliverable(args: argparse.Namespace) -> None:
 
 
 def cmd_ratings(args: argparse.Namespace) -> None:
-    """First-pass rate per stage and per process, per engine: bars, tokens per attempt and per adopted deliverable."""
     from .. import engines as engines_mod
     from .. import rating
     c = cfg()
@@ -149,7 +144,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
     print(f"tower {'running (pid ' + str(pid) + ')' if pid else 'stopped'}"
           + (" · paused" if (c.state_dir / "paused").exists() else "") + f" · board http://{c.web_host}:{c.web_port}"
           + (f" · {c.public_url}" if c.public_url else ""))
-    if c.local_only and not os.environ.get("TOWER_LANE"):  # people, not the hub polling its status
+    if c.local_only and not os.environ.get("TOWER_LANE"):
         print(REACH_HINT)
     all_queued = s.tasks(("queued",), 500)
     order = team_turns(s, {k for k, ln in c.all_lanes.items() if ln.kind == "team"}, c.fair_turns)
@@ -158,7 +153,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
         task = s.live_task(lid)
         queued = sorted((t for t in all_queued if t["lane"] == lid), key=lambda t: order.get(t["id"], (2, 0, t["id"])))
         if ln.base and not (task or queued or row.get("session") or row.get("active_message") is not None):
-            continue  # a parallel session shows only while it is in use
+            continue
         runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}") + ("·wt" if ln.worktree else "")
         line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
@@ -177,7 +172,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
         if held:
             line += f" · {held}"
         print(line)
-        for t in queued:  # why a queued task is not starting (the engine uses the same rule)
+        for t in queued:
             why = conflict_of(s, t) if not ln.base else None
             if why or t.get("requester"):
                 print(f"  #{t['id']}" + (f" for {t['requester']}" if t.get("requester") else "")
@@ -212,8 +207,6 @@ def cmd_status(_args: argparse.Namespace) -> None:
 
 
 def cmd_signal(args: argparse.Namespace) -> None:
-    """A Claude hook (JSON on stdin) or a Codex notify (JSON as the last argument) from a lane in a terminal
-    window. It must never fail the agent's turn: problems go to .tower/state/term/signal.err."""
     from ..runtimes import record_signal
     home, lane = os.environ.get("TOWER_HOME"), os.environ.get("TOWER_LANE")
     if not home or not lane:
@@ -224,7 +217,7 @@ def cmd_signal(args: argparse.Namespace) -> None:
         if isinstance(payload, dict):
             record_signal(Path(home), lane, payload)
         chained = os.environ.get("TOWER_CODEX_NOTIFY")
-        if args.payload and chained:  # Codex: the person's own notify program still gets every notification
+        if args.payload and chained:
             subprocess.Popen([*json.loads(chained), raw], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, **procs.detached())
     except (OSError, ValueError) as e:

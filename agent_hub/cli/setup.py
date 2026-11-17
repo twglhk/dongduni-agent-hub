@@ -91,7 +91,7 @@ def cmd_update(args: argparse.Namespace) -> None:
                             f"`{subprocess.list2cmdline(how)}` and `dah update --no-upgrade" + (" --all" if args.all else "") + "`.")
                 raise TowerError("the upgrade failed; nothing in the workspace changed." + hint)
             rest = ["--no-upgrade"] + (["--all"] if args.all else []) + (["--no-restart"] if args.no_restart else [])
-            sys.exit(subprocess.run([sys.executable, "-m", "agent_hub", "update", *rest]).returncode)  # the new code
+            sys.exit(subprocess.run([sys.executable, "-m", "agent_hub", "update", *rest]).returncode)
     elif args.dry_run:
         raise TowerError("--dry-run checks an upgrade; drop --no-upgrade")
     for home in homes:
@@ -119,7 +119,7 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
         from ..install import migration_notes
         for line in migration_notes(c, report):
             print(f"  note: {line}")
-    requests: list[tuple[str, str, Path | None]] = []  # (what infra should do, request text, patch backup)
+    requests: list[tuple[str, str, Path | None]] = []
     if report["merge"]:
         files = ", ".join(f"`{f}`" for f in report["merge"])
         print(f"  edited here, new template beside it as .new: {', '.join(report['merge'])}")
@@ -168,7 +168,6 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
 
 
 def cmd_skill(args: argparse.Namespace) -> None:
-    """Global setup entry for each agent, so "set up agent-hub here" works from any workspace."""
     import difflib
     from ..install import remove_file, skill_files, skill_plan
     if args.sub == "uninstall":
@@ -206,7 +205,6 @@ def cmd_skill(args: argparse.Namespace) -> None:
 
 
 def cmd_uninstall(args: argparse.Namespace) -> None:
-    """Take agent-hub out of this workspace. Shows the plan first; --yes does it."""
     from ..install import detach, detach_plan
     c = cfg()
     plan = detach_plan(c)
@@ -233,7 +231,7 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
                 if rt.owned(lid) and rt.status(lid) != "closed":
                     rt.close(lid)
                     print(f"closed {lid}")
-            except Exception as e:  # a lane that cannot be checked is left running; say so
+            except Exception as e:
                 print(f"{lid}: not closed ({e})")
     for line in detach(c, args.purge):
         print(line)

@@ -72,7 +72,7 @@ class OpenCode(Adapter):
         if code != 200 or not isinstance(sess, dict):
             raise RuntimeFailure(f"{self.lane.id}: new session failed (http {code}): {sess}")
         sid = str(sess["id"])
-        http(self.port, "POST", "/tui/select-session", {"sessionID": sid})  # only matters when a human runs the TUI
+        http(self.port, "POST", "/tui/select-session", {"sessionID": sid})
         self.store.set_lane(self.lane.id, session=sid)
         self.send(sid, prompt)
         return sid
@@ -133,8 +133,6 @@ class OpenCode(Adapter):
 
 
 class OpenCodeTerm(Terminal, OpenCode):
-    """The OpenCode TUI in a window; its own server answers the tower's HTTP calls as in background mode."""
-
     def owned(self) -> bool:
         return bool(self._handle())
 

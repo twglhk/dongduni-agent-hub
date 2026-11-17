@@ -34,7 +34,7 @@ def cmd_item_add(args: argparse.Namespace) -> None:
     options = recommend(parse_options(args.option), args.recommend)
     kind = args.kind or ("decision" if options else "review")
     task = s.live_task(me) if me in c.team() else None
-    audience = HUB if me in c.team() else HUMAN  # hub and infra items go straight to humans
+    audience = HUB if me in c.team() else HUMAN
     try:
         to = card_audience(c, s, args.to, task, me, args.request)
         held = s.lane(me).get("active_message") if is_infra(me) else None
@@ -108,7 +108,7 @@ def cmd_report(args: argparse.Namespace) -> None:
         raise TowerError("no task to hand off")
     if args.kind == "done" and task and c.done_gate:
         from .. import donegate
-        if donegate.applies(c, task, me):  # held until the gate passes; the tower delivers the verdict
+        if donegate.applies(c, task, me):
             try:
                 print(donegate.start(c, task, me, args.text, atts))
             except (RuntimeError, ValueError) as e:

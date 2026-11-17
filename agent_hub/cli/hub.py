@@ -22,7 +22,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         if c.require_model_lines:
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
         if resolve(table_for(c, args.lane), args.brief, library_for(c)) != (None, None) and len(gap) == 2:
-            gap = []  # a `Line:` header that names a library row sets both
+            gap = []
         if gap:
             print("warning: the brief has no " + " and no ".join(g.split(":")[0] for g in gap) + " line; the lane's own default runs. "
                   "Pick one on purpose (`dah guide models`).", file=sys.stderr)
@@ -105,7 +105,6 @@ def cmd_doing(args: argparse.Namespace) -> None:
 
 
 def cmd_scratch(args: argparse.Namespace) -> None:
-    """A scratch folder (or a detached worktree of your HEAD) outside the project, removed after your task closes."""
     from .. import scratch
     c = cfg()
     me = who(args, c)
