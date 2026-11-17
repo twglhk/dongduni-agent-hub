@@ -228,6 +228,8 @@ class Config:
     hub_domains: list[str] = field(default_factory=list)
     fair_turns: bool = False
     requester: bool = False
+    rule_watch: dict[str, Any] = field(default_factory=dict)  # rulewatch.parse: files, delay_minutes, cards_per_day; {} = off
+    overlap_check: bool = False  # overlap.py: queued work on a shared rule file that meets another person's open work asks both first
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
     uploads: dict[str, Any] = field(default_factory=dict)  # chat attachments: storage.parse; {} = off (a loaded config has provider local by default)
 
@@ -593,7 +595,15 @@ def _extras(raw: dict[str, Any], home: Path, project: Any, kinds: dict[str, str]
         uploads = parse_uploads(raw.get("uploads"))
     except ValueError as e:
         raise ConfigError(str(e))
-    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules, "uploads": uploads,
+    from .rulewatch import parse as parse_rule_watch
+    try:
+        watch = parse_rule_watch(raw.get("rule_watch"))
+    except ValueError as e:
+        raise ConfigError(str(e))
+    overlap = _bool(raw, "overlap_check")
+    if overlap and not watch:
+        raise ConfigError("overlap_check needs rule_watch.files: the shared files it protects")
+    return {"rule_watch": watch, "overlap_check": overlap, "done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules, "uploads": uploads,
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
             "requester": _bool(raw, "requester"),

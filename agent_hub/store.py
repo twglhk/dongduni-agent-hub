@@ -314,6 +314,8 @@ class Store:
             for col, decl in (("rank", "REAL"), ("paths", "TEXT")):
                 if col not in _columns(con, "messages"):
                     con.execute(f"ALTER TABLE messages ADD COLUMN {col} {decl}")
+            con.execute("CREATE TABLE IF NOT EXISTS overlaps(work TEXT PRIMARY KEY, items TEXT NOT NULL DEFAULT '[]', "
+                        "others TEXT NOT NULL DEFAULT '[]', state TEXT NOT NULL, created REAL NOT NULL, decided REAL)")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
             if "message_id" not in _columns(con, "items"):
@@ -818,7 +820,7 @@ class Store:
                 "SELECT * FROM items WHERE state='decided' AND delivered IS NULL AND question IS NULL ORDER BY decided"))]
 
     def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None,
-                       paths: str | None = None) -> bool:
+                       paths: str | None = None, also: list[tuple[str, str]] = []) -> bool:
         with self.tx() as con:
             row = con.execute("SELECT delivered FROM items WHERE id=?", (item_id,)).fetchone()
             if row is None or row[0] is not None:
@@ -831,6 +833,8 @@ class Store:
                 self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
             elif push:
                 self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con, paths=paths)
+                for target, text in also:
+                    self.push(target, TOWER, "decision", text, None, item_id, con=con)
             con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
             return True
 
@@ -838,6 +842,37 @@ class Store:
     def _task_of(con: sqlite3.Connection, item_id: int) -> int | None:
         row = con.execute("SELECT task_id FROM items WHERE id=?", (item_id,)).fetchone()
         return row[0] if row else None
+
+    @staticmethod
+    def _overlap_view(row: dict[str, Any]) -> dict[str, Any]:
+        return {**row, "items": json.loads(row["items"]), "others": json.loads(row["others"])}
+
+    def overlap(self, work: str) -> dict[str, Any] | None:
+        with self.conn() as con:
+            row = _one(con.execute("SELECT * FROM overlaps WHERE work=?", (work,)))
+        return self._overlap_view(row) if row else None
+
+    def overlaps(self, states: Iterable[str]) -> list[dict[str, Any]]:
+        states = list(states)
+        with self.conn() as con:
+            rows = _rows(con.execute(f"SELECT * FROM overlaps WHERE state IN ({','.join('?' * len(states))}) "
+                                     f"ORDER BY created, work", states))
+        return [self._overlap_view(r) for r in rows]
+
+    def overlap_of_item(self, item_id: int) -> dict[str, Any] | None:
+        with self.conn() as con:
+            rows = _rows(con.execute("SELECT * FROM overlaps WHERE state != 'clear'"))
+        return next((v for v in map(self._overlap_view, rows) if item_id in v["items"]), None)
+
+    def put_overlap(self, work: str, state: str, items: list[int] | None = None, others: list[str] | None = None) -> None:
+        now = self.clock()
+        with self.conn() as con:
+            con.execute("INSERT INTO overlaps(work, items, others, state, created, decided) VALUES(?,?,?,?,?,NULL) "
+                        "ON CONFLICT(work) DO UPDATE SET state=excluded.state, decided=?, "
+                        "items=CASE WHEN ? THEN excluded.items ELSE overlaps.items END, "
+                        "others=CASE WHEN ? THEN excluded.others ELSE overlaps.others END",
+                        (work, json.dumps(items or []), json.dumps(others or []), state, now,
+                         None if state in ("clear", "wait") else now, items is not None, others is not None))
 
     def question_items(self, lane: str) -> list[dict[str, Any]]:
         with self.conn() as con:
