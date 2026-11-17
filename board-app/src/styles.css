@@ -105,6 +105,7 @@
 @utility pt-safe { padding-top: env(safe-area-inset-top); }
 
 @keyframes beat { 50% { opacity: .35; } }
+@keyframes spin-slow { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before { transition: none !important; animation: none !important; }
 }

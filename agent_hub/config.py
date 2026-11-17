@@ -8,6 +8,7 @@ State (SQLite DB, logs, members) lives in `<home>/.tower/state/`, which must sta
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import re
@@ -15,7 +16,7 @@ import shutil
 import socket
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from . import procs
 
@@ -58,6 +59,84 @@ def instance_lane(base: str, n: int) -> str:
     return f"{base}{INSTANCE_SEP}{n}"
 
 
+PERSON_HUB_PREFIX = HUB + "-"
+DEFAULT_HUB_CAP = 3
+HUB_SLUG_MAX = 32
+
+
+def _slug(member: str) -> str:
+    return re.sub(r"[^a-z0-9_-]+", "-", member.lower()).strip("-_")[:HUB_SLUG_MAX].strip("-_")
+
+
+def person_hub_id(member: str) -> str:
+    slug = _slug(member)
+    if not slug and member.strip():
+        slug = "u" + hashlib.sha1(member.encode("utf-8")).hexdigest()[:8]
+    return PERSON_HUB_PREFIX + slug if slug else ""
+
+
+def auto_member_name(ident: str, taken: Iterable[str]) -> str:
+    base = re.sub(r"[^a-z0-9._-]+", "-", ident.split("@", 1)[0].strip().lower()).strip("-_.") or "member"
+    names = {t.lower() for t in taken}
+    hubs = {person_hub_id(t) for t in taken}
+    name, n = base, 1
+    while name in names or person_hub_id(name) in hubs or person_hub_id(name) == PERSON_HUB_PREFIX + HUB:
+        n += 1
+        name = f"{base}-{n}"
+    return name
+
+
+def member_names(db: Path) -> list[str]:
+    import sqlite3
+    if not db.is_file():
+        return []
+    try:
+        con = sqlite3.connect(f"file:{db.as_posix()}?mode=ro", uri=True, timeout=5)
+        try:
+            return [str(r[0]) for r in con.execute("SELECT name FROM members ORDER BY created, name")]
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return []
+
+
+def _person_hub_options(raw: Any) -> tuple[int, bool, list[str]]:
+    if raw is True:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ConfigError("person_hubs must be false, true or an object: {\"max\": 3, \"auto\": false, \"domains\": []}")
+    unknown = set(raw) - {"max", "auto", "domains"}
+    if unknown:
+        raise ConfigError(f"person_hubs: unknown key {', '.join(sorted(unknown))} (max, auto, domains)")
+    cap = _int(raw, "max", DEFAULT_HUB_CAP, 1, "person_hubs")
+    auto = _bool(raw, "auto", False, "person_hubs")
+    domains = raw.get("domains") or []
+    if isinstance(domains, str):
+        domains = [domains]
+    if not isinstance(domains, list) or not all(isinstance(d, str) for d in domains):
+        raise ConfigError("person_hubs.domains must be a list of email domains")
+    return cap, auto, [d.strip().lower().lstrip("@") for d in domains if d.strip()]
+
+
+def _person_hubs(home: Path, lanes: dict[str, Lane], cap: int, next_port: int) -> tuple[dict[str, Lane], list[str]]:
+    hub, out, overflow = lanes[HUB], {}, []
+    for name in member_names(home / TOWER_DIR / "state" / "tower.db"):
+        lid = person_hub_id(name)
+        if not lid:
+            continue
+        if lid in lanes or lid in out:
+            lid = f"{lid}-{hashlib.sha1(name.encode('utf-8')).hexdigest()[:4]}"
+        if lid in lanes or lid in out:
+            continue
+        if len(out) >= cap:
+            overflow.append(name)
+            continue
+        out[lid] = dataclasses.replace(hub, id=lid, owner=name, label=f"{hub.label} · {name}",
+                                       port=next_port if hub.port else None, args=list(hub.args), env=dict(hub.env))
+        next_port += 1 if hub.port else 0
+    return out, overflow
+
+
 @dataclass
 class Lane:
     id: str
@@ -75,6 +154,7 @@ class Lane:
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
     context_limit_k: int | None = None
+    owner: str = ""              # person hubs (`hub-<member>`): the member whose requests this hub handles
 
 
 @dataclass
@@ -127,14 +207,28 @@ class Config:
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
-    fair_turns: bool = False     # the next waiting task or infra memo goes round by requester instead of oldest first (fair.py)
+    person_hubs: dict[str, Lane] = field(default_factory=dict)  # `hub-<member>` copies of the hub lane, one per member
+    hub_cap: int = 0             # person_hubs on: at most this many person hubs (0 = off: the one hub serves everyone)
+    hub_overflow: list[str] = field(default_factory=list)  # members past hub_cap, in line for a hub of their own
+    hub_auto: bool = False       # a person the proxy lets in who is no member yet joins on their first visit
+    hub_domains: list[str] = field(default_factory=list)  # auto-join only these email domains ([] = any)
+    fair_turns: bool = False     # the next waiting team task goes round by requester instead of oldest first (fair.py)
     requester: bool = False      # cards default to the member who asked for the work, and infra's answers and wraps reach the hub (requester.py)
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
     def all_lanes(self) -> dict[str, Lane]:
         """The configured lanes plus their parallel instances."""
-        return {**self.lanes, **self.instances}
+        return {**self.lanes, **self.instances, **self.person_hubs}
+
+    def hubs(self) -> list[str]:
+        return [HUB, *self.person_hubs]
+
+    def is_hub(self, lane: str) -> bool:
+        return lane == HUB or lane in self.person_hubs
+
+    def hub_of(self, member: str) -> str:
+        return next((lid for lid, ln in self.person_hubs.items() if ln.owner == member), HUB)
 
     @property
     def state_dir(self) -> Path:
@@ -157,7 +251,8 @@ class Config:
     def lane_dir(self, lane: str) -> Path:
         """Where a lane's agent works: the workspace, or the lane's own git worktree."""
         base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
-        return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
+        ln = self.lanes.get(base)
+        return self.state_dir / "worktrees" / base if ln and ln.worktree else self.workdir
 
     def context_limit(self, lane: str, model: str = "") -> int:
         ln = self.lanes.get(base_lane(lane))
@@ -172,7 +267,7 @@ class Config:
         return self.context_limit_k
 
     def hub_context_limit(self, lane: str) -> int:
-        ln = self.lanes.get(lane)
+        ln = self.all_lanes.get(lane)
         return (ln.context_limit_k or 0) if ln and ln.kind == HUB else 0
 
     def team(self) -> list[str]:
@@ -350,7 +445,13 @@ def from_raw(home: Path, raw: Any) -> Config:
             instances[key] = dataclasses.replace(ln, id=key, base=lid, label=f"{ln.label} #{n}",
                                                  port=next_port if ln.port else None, args=list(ln.args), env=dict(ln.env))
             next_port += 1 if ln.port else 0
-    ports = [ln.port for ln in [*lanes.values(), *instances.values()] if ln.port]
+    hub_cap, person_hubs, hub_overflow, hub_auto, hub_domains = 0, {}, [], False, []
+    if raw.get("person_hubs"):
+        hub_cap, hub_auto, hub_domains = _person_hub_options(raw["person_hubs"])
+        if reserved := [lid for lid in lanes if lid.startswith(PERSON_HUB_PREFIX)]:
+            raise ConfigError(f"lane id {reserved[0]!r}: ids starting with {PERSON_HUB_PREFIX!r} belong to person hubs")
+        person_hubs, hub_overflow = _person_hubs(home, lanes, hub_cap, next_port)
+    ports = [ln.port for ln in [*lanes.values(), *instances.values(), *person_hubs.values()] if ln.port]
     if len(ports) != len(set(ports)):
         raise ConfigError("two lanes share one port")
     web = raw.get("web") or {}
@@ -390,6 +491,11 @@ def from_raw(home: Path, raw: Any) -> Config:
         context_limit_k=_limit_k(raw),
         model_limits_k=_model_limits_k(raw),
         instances=instances,
+        person_hubs=person_hubs,
+        hub_cap=hub_cap,
+        hub_overflow=hub_overflow,
+        hub_auto=hub_auto,
+        hub_domains=hub_domains,
         **_extras(raw, home, project),
     )
 

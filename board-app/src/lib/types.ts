@@ -9,6 +9,7 @@ export interface Item {
   state: string;
   audience?: string;
   assignee?: string | null;
+  hub?: string;
   question?: string | null;
   escalation?: string | null;
   options: Option[];
@@ -32,6 +33,7 @@ export interface Lane {
   process?: string | null; stage?: string | number | null; fixing?: boolean; task_tokens?: Tokens | null; ctx_k?: number | null;
   usage?: Usage | null;
   requester?: string | null;
+  owner?: string | null;
 }
 
 export interface LaneCap { used: number; cap: number; max: number }
@@ -49,6 +51,15 @@ export interface Report {
 
 export interface RuntimeUse { runtime: string; tokens_in: number; tokens_out: number; cost?: number | null }
 
+export interface MyHubState {
+  state: 'off' | 'starting' | 'full' | 'ready';
+  hub: string;
+  step?: 'opening' | 'reading';
+  place?: number;
+  waiting?: number;
+  cap?: number;
+}
+
 export interface Me { name: string; role?: string }
 
 export interface BoardState {
@@ -56,6 +67,8 @@ export interface BoardState {
   lang: string;
   auth_mode: string;
   me: Me | null;
+  my_hub?: string;
+  my_hub_state?: MyHubState;
   requester?: boolean;
   running: boolean;
   version: string;

@@ -278,5 +278,18 @@
   "doc": {
     "loading": "Cargando…",
     "cantOpen": "No se pudo abrir el documento: {e}"
+  },
+  "hw": {
+    "title": "Preparando tu hub",
+    "sub": "Se está abriendo tu propia sesión de hub. Tarda un minuto; esta página cambia sola.",
+    "s1": "Registrado como miembro",
+    "s2": "Abriendo la sesión del hub",
+    "s3": "El hub lee sus instrucciones",
+    "s4": "Listo",
+    "keep": "Ya puedes escribir una petición: se guarda y pasa a tu hub en cuanto esté listo.",
+    "ready": "Tu hub está listo",
+    "fullTitle": "Ahora mismo no quedan hubs libres",
+    "fullSub": "Las {c} plazas de hub personal están ocupadas. Eres el número {p} en la cola y se avisó en el tablero.",
+    "fullKeep": "Puedes seguir enviando peticiones: el hub común las atiende hasta que haya una plaza."
   }
 }

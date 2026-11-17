@@ -822,6 +822,8 @@ function kindChip(it) { return it.question ? h('span', { class: 'chip ask' }, L.
 function statusChip(st) { return h('span', { class: 'chip st-' + st }, h('i', { class: 'dot ' + st }), L.status[st] || st); }
 const isOpen = it => it.state === 'open';
 const forHuman = it => isOpen(it) && it.audience === 'human';
+const myHub = () => (S.data && S.data.my_hub) || 'hub';
+const inMyHub = it => !it.hub || it.hub === 'hub' || it.hub === myHub();
 const newest = (a, b) => (b.created || 0) - (a.created || 0);
 function asksFirst(list) { return [...list.filter(x => x.question).sort(newest), ...list.filter(x => !x.question).sort(newest)]; }
 function itemById(id) { return (S.data ? S.data.items.find(x => x.id === id) : null) || S.extra[id]; }
@@ -932,7 +934,7 @@ function viewEl(view) {
   return X.wait || (X.wait = $('main').appendChild(h('section', { class: 'hidden' })));
 }
 function counts() {
-  const items = S.data ? S.data.items.filter(forHuman) : [];
+  const items = S.data ? S.data.items.filter(forHuman).filter(inMyHub) : [];
   return { hub: items.length };
 }
 function renderTop() {
@@ -1045,13 +1047,13 @@ function viewHub() {
   const v = $('#v-hub'), d = D(), K = tick();
   shell(v, () => [h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
     h('div', { id: 'hub-reach' })]);
-  const mine = d.items.filter(forHuman);
+  const mine = d.items.filter(forHuman).filter(inMyHub);
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
-  const hub = lanes().find(l => l.lane === 'hub');
+  const hub = lanes().find(l => l.lane === myHub()) || lanes().find(l => l.lane === 'hub');
   paint($('#hub-doing'), K + JSON.stringify(hub), () => hub ? doingCard(hub) : null);
   paint($('#hub-asks'), K + JSON.stringify(asks), () => asks.length ? sec(L.sec.asks, asks.length, cardList(asks)) : null);
   paint($('#hub-items'), K + JSON.stringify(rest), () => sec(L.sec.yours, rest.length, cardList(rest, L.empty.yours)));
-  const side = d.items.filter(it => isOpen(it) && it.audience === 'hub').sort(newest);
+  const side = d.items.filter(it => isOpen(it) && it.audience === 'hub' && inMyHub(it)).sort(newest);
   paint($('#hub-handling'), K + S.hubOpen + JSON.stringify(side), () => side.length ? handling(side) : null);
   paint($('#hub-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
 }

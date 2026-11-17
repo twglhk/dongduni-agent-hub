@@ -6,7 +6,7 @@ import time
 from .. import stats
 from ..config import HUB, INFRA, Config
 from ..engine import clip
-from ..requester import card_audience, infra_wrapped_text
+from ..requester import card_audience, infra_requester, infra_wrapped_text
 from ..store import HUMAN, Store, StoreError
 from .common import TowerError, body_of, cfg, check_paths, need, parse_options, store, verdict_text, who
 
@@ -45,7 +45,7 @@ def cmd_item_add(args: argparse.Namespace) -> None:
         print(f"#{iid} posted for humans (push notification)" + (f", shown to {to} only" if to else "")
               + f". Don't wait: finish your scope; the decision comes back later (`dah show {iid}`).")
         return
-    s.push(HUB, me, "item", f"Item #{iid} from {me}" + (f" task #{task['id']}" if task else "")
+    s.push(s.hub_for_task(task["id"] if task else None), me, "item", f"Item #{iid} from {me}" + (f" task #{task['id']}" if task else "")
            + f" \"{args.title}\" → `dah show {iid}`", task["id"] if task else None, iid)
     s.signal(task["id"] if task else None)
     print(f"#{iid} posted; the hub sees it first. Don't wait: finish the unblocked scope and list #{iid} in "
@@ -56,7 +56,7 @@ def cmd_item_update(args: argparse.Namespace) -> None:
     c = cfg()
     s, me = store(c), who(args, c)
     it = s.item(args.id)
-    if me not in (it["lane"], HUB):
+    if me != it["lane"] and not c.is_hub(me):
         raise TowerError(f"#{args.id} belongs to {it['lane']}")
     if it.get("question"):
         raise TowerError(f"#{args.id} is a live question")
@@ -70,16 +70,16 @@ def cmd_item_update(args: argparse.Namespace) -> None:
         raise TowerError(str(e))
     if me in c.team():
         task = s.live_task(me)
-        s.push(HUB, me, "item", f"Item #{args.id} updated by {me} → `dah show {args.id}`",
+        s.push(s.hub_for_task(task["id"] if task else None), me, "item", f"Item #{args.id} updated by {me} → `dah show {args.id}`",
                task["id"] if task else None, args.id)
     print(f"#{args.id} updated.")
 
 
 def cmd_item_merge(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
+    me = need(args, c, HUB)
     try:
-        store(c).merge_item(args.id, args.into, HUB)
+        store(c).merge_item(args.id, args.into, me)
     except StoreError as e:
         raise TowerError(str(e))
     print(f"#{args.id} merged into #{args.into}.")
@@ -88,7 +88,7 @@ def cmd_item_merge(args: argparse.Namespace) -> None:
 def cmd_report(args: argparse.Namespace) -> None:
     c = cfg()
     s, me = store(c), who(args, c)
-    if me == HUB:
+    if c.is_hub(me):
         if args.kind != "handoff":
             raise TowerError("the hub does not report; it decides, tells and wraps (only `report handoff` when the "
                              "tower asks it to hand over to a fresh hub session)")
@@ -127,12 +127,12 @@ def cmd_report(args: argparse.Namespace) -> None:
         if me == INFRA:
             infra_wrapped(c, s, text)
         else:
-            s.push(HUB, me, "wrapped", f"Wrapped: {tag}", tid)
+            s.push(s.hub_for_task(tid), me, "wrapped", f"Wrapped: {tag}", tid)
         s.set_lane(me, closing=time.time())
         print("Wrapped. End your turn; the tower closes this session.")
         return
     att = f" (files: {', '.join(atts)})" if atts else ""
-    s.push(HUB, me, args.kind, f"{args.kind.capitalize()}: {tag}: {clip(args.text, 700)}{att}", tid)
+    s.push(s.hub_for_task(tid), me, args.kind, f"{args.kind.capitalize()}: {tag}: {clip(args.text, 700)}{att}", tid)
     print(f"Sent to the hub." + (" Review comes back to this session; you may end your turn." if args.kind == "done" else ""))
 
 
@@ -146,6 +146,9 @@ def infra_wrapped(c: Config, s: Store, text: str) -> None:
         msg = s.message(int(mid))
     except StoreError:
         return
-    if msg["kind"] == "memo" and msg["sender"] == HUB and s.replied(int(mid), INFRA):
+    sender = str(msg["sender"])
+    if msg["kind"] == "memo" and c.is_hub(sender) and s.replied(int(mid), INFRA):
         return
-    s.push(HUB, INFRA, "wrapped", infra_wrapped_text(s, msg, text), None, msg.get("item_id"))
+    asker = infra_requester(c, s)
+    hub = sender if c.is_hub(sender) else c.hub_of(asker) if asker else HUB
+    s.push(hub, INFRA, "wrapped", infra_wrapped_text(s, msg, text), None, msg.get("item_id"))

@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { CardList, ItemRow } from '../components/ItemCard';
 import { Icon } from '../components/Icon';
 import { StatusDot } from '../components/lane/StatusChip';
+import { HubWait } from '../components/HubWait';
 import { ReachCard } from '../components/ReachCard';
 import { Section } from '../components/Section';
 import { XSections } from '../components/XHost';
 import { useL } from '../i18n/context';
 import { fmt } from '../lib/format';
-import { forHuman, forMe, isOpen, newest } from '../lib/items';
+import { forHuman, forMe, isOpen, myHub, newest } from '../lib/items';
 import type { BoardState, Lane } from '../lib/types';
 
 function Doing({ l }: { l: Lane }) {
@@ -45,9 +46,11 @@ export function HubView({ d }: { d: BoardState }) {
   const mine = d.items.filter(forHuman).filter(it => forMe(d, it));
   const asks = mine.filter(x => x.question).sort(newest), rest = mine.filter(x => !x.question).sort(newest);
   const side = d.items.filter(it => isOpen(it) && it.audience === 'hub' && forMe(d, it)).sort(newest);
-  const hub = d.lanes.find(l => l.lane === 'hub');
+  const hub = d.lanes.find(l => l.lane === myHub(d)) || d.lanes.find(l => l.lane === 'hub');
+  const w = d.my_hub_state;
   return (
     <>
+      {w && (w.state === 'starting' || w.state === 'full') && <HubWait w={w} />}
       {hub && <Doing l={hub} />}
       {asks.length > 0 && <Section title={L.sec.asks} n={asks.length}><CardList list={asks} empty="" /></Section>}
       <Section title={L.sec.yours} n={rest.length}><CardList list={rest} empty={L.empty.yours} /></Section>

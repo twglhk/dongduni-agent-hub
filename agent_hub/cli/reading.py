@@ -64,7 +64,7 @@ def cmd_blame(args: argparse.Namespace) -> None:
             return
         if not stage:
             raise TowerError("name the stage, e.g. `dah blame 3 --cause 'one line'`")
-        if me == HUB:
+        if c.is_hub(me):
             if not args.task:
                 raise TowerError("the hub gives --task N (to confirm use --confirm)")
             tid = args.task

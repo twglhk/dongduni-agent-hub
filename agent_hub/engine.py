@@ -30,7 +30,7 @@ from . import engines as engines_mod, leftovers, procs, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
-from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError
+from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError, is_hub_name
 
 BATCH_SECONDS = 8
 SETTLE_SECONDS = 3
@@ -71,6 +71,40 @@ STUCK_BODY = {
            "(auto-continuar, bucles de tareas).\n- Un turno muy largo.\n\n## Qué hacer\n- `dah last hub` y "
            "`.tower/state/logs/hub.err` muestran qué hace.\n- Asigna al hub un agente más ligero (`\"agent\"` en "
            "`.tower/tower.json`) u otro runtime: basta una petición a infra.\n- Aprueba este elemento cuando lo hayas visto."),
+}
+OVERFLOW_TITLE = {"en": "People waiting for a hub of their own", "ko": "전용 허브를 기다리는 사람",
+                  "ja": "専用ハブを待っている人", "zh": "正在等待专属中枢的人", "es": "Personas esperando un hub propio"}
+OVERFLOW_BODY = {
+    "en": ("## What happened\n{n} person(s) wait in line for a hub of their own: {names}. `person_hubs.max` in tower.json "
+           "is {cap} and every place is taken. Their board shows \"all hubs are taken\" with their place in line; the "
+           "default hub takes their requests meanwhile.\n\n## When a place opens\nWhen a member is removed "
+           "(`dah member remove NAME`) the first one in line gets a hub of their own.\n\n## Why there is a cap\nEach hub "
+           "is an always-on agent session that holds memory on this machine.\n\n## What to do\n- Fine as it is: approve "
+           "this item.\n- Raise the cap or free a place: change `person_hubs.max` (check the machine's memory first)."),
+    "ko": ("## 무슨 일\n전용 허브를 기다리는 사람이 {n}명 있습니다: {names}. tower.json의 `person_hubs.max`가 {cap}이고 "
+           "자리가 다 찼습니다. 이분들 보드에는 '허브 자리가 가득 찼어요'와 대기 순서가 보이고, 그동안 요청은 기본 "
+           "허브(hub)가 받습니다.\n\n## 자리가 나면\n멤버 한 명을 빼면(`dah member remove 이름`) 대기 1번 사람에게 "
+           "허브가 열립니다.\n\n## 상한이 있는 이유\n허브 하나가 항상 켜진 에이전트 세션이라 이 컴퓨터의 메모리를 "
+           "씁니다.\n\n## 할 일\n- 지금대로 괜찮으면 이 항목을 승인하세요.\n- 상한을 올리거나 자리를 비우려면 "
+           "`person_hubs.max`를 바꾸세요(컴퓨터 메모리를 먼저 확인)."),
+    "ja": ("## 何が起きたか\n専用ハブを待っている人が {n} 人います: {names}。tower.json の `person_hubs.max` は {cap} で、"
+           "枠がすべて埋まっています。その人たちのボードには「ハブの枠がいっぱい」と順番が表示され、その間のリクエストは"
+           "既定のハブが受けます。\n\n## 枠が空いたら\nメンバーを 1 人外すと(`dah member remove NAME`)、順番の先頭の人に"
+           "専用ハブが開きます。\n\n## 上限がある理由\nハブは常時動くエージェントのセッションで、このマシンのメモリを"
+           "使います。\n\n## すること\n- このままで良ければこの項目を承認。\n- 上限を上げる、または枠を空けるには "
+           "`person_hubs.max` を変更(先にマシンのメモリを確認)。"),
+    "zh": ("## 发生了什么\n有 {n} 个人在排队等待专属中枢：{names}。tower.json 中的 `person_hubs.max` 为 {cap}，名额已满。"
+           "他们的看板会显示「中枢名额已满」和排队位置，期间他们的请求由默认中枢接收。\n\n## 名额空出时\n移除一名成员"
+           "(`dah member remove NAME`)后，排在最前面的人会得到专属中枢。\n\n## 为什么有上限\n每个中枢都是常驻的代理会话，"
+           "会占用这台机器的内存。\n\n## 怎么办\n- 保持现状：批准此项。\n- 提高上限或腾出名额：修改 "
+           "`person_hubs.max`(先确认机器内存)。"),
+    "es": ("## Qué pasó\n{n} persona(s) esperan un hub propio: {names}. `person_hubs.max` en tower.json es {cap} y todos los "
+           "puestos están ocupados. Su tablero muestra \"todos los hubs están ocupados\" con su lugar en la fila; mientras "
+           "tanto el hub por defecto recibe sus peticiones.\n\n## Cuando se libera un puesto\nAl quitar a un miembro "
+           "(`dah member remove NOMBRE`) la primera persona de la fila recibe un hub propio.\n\n## Por qué hay un límite\n"
+           "Cada hub es una sesión de agente siempre activa que ocupa memoria de esta máquina.\n\n## Qué hacer\n- Si está "
+           "bien así: aprueba este elemento.\n- Para subir el límite o liberar un puesto: cambia `person_hubs.max` "
+           "(revisa antes la memoria de la máquina)."),
 }
 FOLLOW_VERDICTS = ("ok", "no", "answer")
 VERDICT_WORD = {"ok": "approved", "no": "rejected", "hold": "on hold", "answer": "answered in own words",
@@ -235,10 +269,11 @@ class Engine:
         self.has_infra = INFRA in cfg.lanes
         self.max_lanes = cfg.max_lanes
         self.idle_since: dict[str, float] = {}
-        self.hub_opens: list[float] = []
-        self.hub_backoff = False  # when the hub was opened lately: a session that keeps dying backs off
+        self.hub_opens: dict[str, list[float]] = {}  # per hub: when it was opened lately (a dying session backs off)
+        self.hub_backoff: set[str] = set()
+        self.overflow_seen: tuple[str, ...] = ()  # members in line for a hub already told to humans
         self.waiting: set[str] = set()  # lanes in a terminal window held by a permission menu, already announced
-        self.stuck_for: int | None = None  # oldest waiting hub message we already raised a stuck alert for
+        self.stuck_for: dict[str, int] = {}  # per hub: oldest waiting message we already raised a stuck alert for
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
         self.snap_at: float = -SNAPSHOT_EVERY  # last check for the weekly engine snapshot
@@ -256,6 +291,7 @@ class Engine:
 
     def inherit(self, old: Engine) -> None:
         self.compacting, self.hub_asked = old.compacting, old.hub_asked
+        self.hub_opens, self.hub_backoff, self.stuck_for = old.hub_opens, old.hub_backoff, old.stuck_for
         self.sync_told, self.catch_up_told = old.sync_told, old.catch_up_told
         self.rotate_asked, self.ctx_asked, self.rotate_why = old.rotate_asked, old.ctx_asked, old.rotate_why
 
@@ -289,11 +325,20 @@ class Engine:
                 f"session goes on with the task. Your handoff:\n{task.get('handoff') or '(none)'}\n\nRun `dah mine` "
                 f"for this task's open board items, then continue. {RULES}")
 
-    def hub_prompt(self, handoff: str = "") -> str:
+    def hub_prompt(self, handoff: str = "", lane: str = HUB) -> str:
         hand = (f"\n\nThe last hub session handed over to you (its context grew too large). Its handoff:\n{handoff}"
                 if handoff else "")
-        return (f"[tower] You are the hub lane.\n\n{self._read_first(HUB)}{hand}\n\nThen run `dah status` and handle "
-                f"what is open.")
+        owner = self.cfg.all_lanes[lane].owner if lane in self.cfg.all_lanes else ""
+        if owner:
+            who = (f"You are the hub lane `{lane}`, the hub of {owner}: you get {owner}'s board requests and the news "
+                   f"about tasks you queue. Other people have hubs of their own; the team lanes and the task queue are "
+                   f"shared, so check `dah status` before you queue work that may overlap.")
+        elif self.cfg.person_hubs:
+            who = ("You are the hub lane (the default hub: requests from people without a hub of their own, and news "
+                   "about tasks no person hub queued).")
+        else:
+            who = "You are the hub lane."
+        return f"[tower] {who}\n\n{self._read_first(lane)}{hand}\n\nThen run `dah status` and handle what is open."
 
     @staticmethod
     def _memo_opts(msg: dict[str, Any]) -> dict[str, str]:
@@ -374,7 +419,7 @@ class Engine:
         return "heavy" if any(p == r or p.startswith(r + "/") for p in paths for r in roots) else "light"
 
     def lanes(self) -> list[str]:
-        return [HUB, *([INFRA] if self.has_infra else []), *self.team]
+        return [*self.cfg.hubs(), *([INFRA] if self.has_infra else []), *self.team]
 
     def tick(self) -> None:
         statuses: dict[str, str] = {}
@@ -399,12 +444,20 @@ class Engine:
             except Exception as e:
                 self.log(f"{lane}: {e}")
         self._start_queued(statuses)
-        for name, fn in ((HUB, self._hub), (INFRA, self._infra)):
-            if name in statuses:
-                try:
-                    fn(statuses[name])
-                except Exception as e:
-                    self.log(f"{name}: {e}")
+        try:
+            self._person_hubs()
+        except Exception as e:
+            self.log(f"person hubs: {e}")
+        for name in self.cfg.hubs():
+            try:
+                self._hub(statuses[name], name)
+            except Exception as e:
+                self.log(f"{name}: {e}")
+        if INFRA in statuses:
+            try:
+                self._infra(statuses[INFRA])
+            except Exception as e:
+                self.log(f"{INFRA}: {e}")
         try:
             self._leftovers()
         except Exception as e:
@@ -498,7 +551,7 @@ class Engine:
                 self.notify([{"id": lane, "lane": lane, "alert": True,
                               "title": f"{lane} waits for an answer in its {self.cfg.all_lanes[lane].terminal} window"}])
                 self.log(f"{lane}: waiting for an answer in its window")
-            if lane in (HUB, INFRA):
+            if lane == INFRA or self.cfg.is_hub(lane):
                 self._ask_board(lane, st)
             elif st == "asking":
                 for q in self.rt.questions(lane) or []:
@@ -542,8 +595,9 @@ class Engine:
         title = clip(str(sub.get("header") or sub.get("question") or "Question"), 40) + (f" {i + 1}/{n}" if n > 1 else "")
         body = f"## Question\n{sub.get('question') or title}\n\n{ASK_HOW}"
         task = self.store.live_task(lane)
+        owner = self.cfg.all_lanes[lane].owner or None if lane in self.cfg.all_lanes else None
         return self.store.add_item(lane, task["id"] if task else None, "decision", title, body, options, [],
-                                   audience=HUMAN, multi=bool(sub.get("multiple")), question=key)
+                                   audience=HUMAN, multi=bool(sub.get("multiple")), question=key, assignee=owner)
 
     # ---------- decisions ----------
 
@@ -573,11 +627,12 @@ class Engine:
             ln = self.cfg.all_lanes.get(lane)
             return None, {"lane": base_lane(lane), "title": clip(f"#{it['id']} {it['title']}", 80), "brief": brief,
                           "engine": ln.engine if ln else None, "task_id": it["task_id"],
-                          "requester": src.get("requester"),
+                          "requester": src.get("requester"), "hub": src.get("hub"),
                           "text": lambda tid: f"{line} → follow-up task #{tid} for {lane}"}
-        if it["decided_by"] != HUB or lane != HUB:
-            return (HUB, line), None
-        return None, None
+        if is_hub_name(lane):
+            return (None, None) if it["decided_by"] == lane else ((lane, line), None)
+        hub = (src.get("hub") if src is not None else None) or HUB
+        return (hub, line), None
 
     def _notify_humans(self) -> None:
         new = self.store.unnotified()
@@ -614,7 +669,7 @@ class Engine:
                 self.store.add_report(tid, lane, "done", info["text"], atts)
                 self.store.signal(tid)
                 att = f" (files: {', '.join(atts)})" if atts else ""
-                self.store.push(HUB, lane, "done", f"Done: {lane} task #{tid} \"{task['title']}\" (done gate passed "
+                self.store.push(self.store.hub_for_task(tid), lane, "done", f"Done: {lane} task #{tid} \"{task['title']}\" (done gate passed "
                                 f"at {str(info.get('sha'))[:8]}): {clip(info['text'], 700)}{att}", tid)
                 self.store.push(lane, TOWER, "tell", "The done gate passed; your done went to the hub. Review comes "
                                 "back to this session.", tid)
@@ -688,7 +743,7 @@ class Engine:
                 self.store.push(lane, TOWER, "nudge", NUDGE, task["id"])
                 self.store.update_task(task["id"], nudges=n + 1)
             elif n == NUDGE_LIMIT:
-                self.store.push(HUB, TOWER, "stalled", f"Stalled: {lane} task #{task['id']} \"{task['title']}\" went "
+                self.store.push(self.store.hub_for_task(task["id"]), TOWER, "stalled", f"Stalled: {lane} task #{task['id']} \"{task['title']}\" went "
                                 f"quiet after {NUDGE_LIMIT} nudges. Its last words: `dah last {lane}`.", task["id"])
                 self.store.update_task(task["id"], nudges=n + 1)
 
@@ -766,7 +821,7 @@ class Engine:
         self._hub_note(task, f"Handoff: {lane} task #{tid} \"{task['title']}\" continues in a new session{why}{wanted}.")
 
     def _hub_note(self, task: dict[str, Any], text: str) -> None:
-        self.store.push(HUB, TOWER, "handoff", text, task["id"])
+        self.store.push(self.store.hub_for_task(task["id"]), TOWER, "handoff", text, task["id"])
 
     def _chain(self, lane: str, info: dict[str, Any]) -> bool:
         """A lane whose next queued task says `after: <the task it just finished>` keeps its session: the task goes
@@ -926,7 +981,7 @@ class Engine:
                 fix = ("Commit or discard them; the task opens once the tree is clean." if dirty else
                        f"Resolve it in {self.cfg.lane_dir(lane)} (merge main, commit) or merge the branch yourself; "
                        "the task opens once main merges in.")
-                self.store.push(HUB, TOWER, "stalled",
+                self.store.push(self.store.hub_for_task(task["id"]), TOWER, "stalled",
                                 f"Not started: {lane} task #{task['id']} \"{task['title']}\": {why}. {fix}", task["id"])
             self.log(f"{lane}: task #{task['id']} waits: {why}")
             return False
@@ -1010,7 +1065,7 @@ class Engine:
     def _revive(self, lane: str, task: dict[str, Any]) -> None:
         if task["respawns"] >= RESPAWN_LIMIT:
             if task["respawns"] == RESPAWN_LIMIT:
-                self.store.push(HUB, TOWER, "stalled", f"Closed: {lane} task #{task['id']} closed {RESPAWN_LIMIT} times "
+                self.store.push(self.store.hub_for_task(task["id"]), TOWER, "stalled", f"Closed: {lane} task #{task['id']} closed {RESPAWN_LIMIT} times "
                                 f"after reopening. `dah cancel {task['id']}` or reassign it.", task["id"])
                 self.store.update_task(task["id"], respawns=RESPAWN_LIMIT + 1)
             return
@@ -1030,39 +1085,65 @@ class Engine:
 
     # ---------- hub ----------
 
-    def _hub(self, st: str) -> None:
-        info = self.store.lane(HUB)
+    def _person_hubs(self) -> None:
+        for target in self.store.pending_targets():
+            if is_hub_name(target) and not self.cfg.is_hub(target):
+                n = self.store.retarget_pending(target, HUB)
+                self.log(f"{target}: gone, {n} message(s) moved to {HUB}")
+        over = tuple(self.cfg.hub_overflow)
+        if over == self.overflow_seen:
+            return
+        self.overflow_seen = over
+        lang = self.cfg.lang.split("-")[0].lower()
+        lang = lang if lang in OVERFLOW_TITLE else "en"
+        title = OVERFLOW_TITLE[lang]
+        old = next((it for it in self.store.items(state="open", lane=HUB) if it["title"] == title), None)
+        if not over:
+            if old:
+                self.store.decide(old["id"], "ok", TOWER, note="The line is empty.")
+                self.store.update_item(old["id"], delivered=self.clock())
+            return
+        body = OVERFLOW_BODY[lang].format(n=len(over), cap=self.cfg.hub_cap, names=", ".join(over))
+        if old:
+            self.store.revise_item(old["id"], None, body, None, None)
+        else:
+            self.store.add_item(HUB, None, "review", title, body, [], [], audience=HUMAN)
+        self.log(f"person hubs: over the cap of {self.cfg.hub_cap}: {', '.join(over)}")
+
+    def _hub(self, st: str, lane: str = HUB) -> None:
+        info = self.store.lane(lane)
         if st == "closed":
             if info.get("enabled"):
                 now = self.clock()
-                self.hub_opens = [t for t in self.hub_opens if now - t < HUB_RETRY_WINDOW]
-                if len(self.hub_opens) < RESPAWN_LIMIT:
-                    self.hub_backoff = False
+                opens = self.hub_opens[lane] = [t for t in self.hub_opens.get(lane, []) if now - t < HUB_RETRY_WINDOW]
+                if len(opens) < RESPAWN_LIMIT:
+                    self.hub_backoff.discard(lane)
                 else:  # it dies as soon as it starts: say so once, then retry slowly
-                    if not self.hub_backoff:
-                        self.hub_backoff = True
-                        self.notify([{"id": HUB, "lane": HUB, "alert": True, "title": f"hub closed {RESPAWN_LIMIT} "
-                                      f"times in {HUB_RETRY_WINDOW // 60} min; see .tower/state/logs/hub.err or its "
+                    if lane not in self.hub_backoff:
+                        self.hub_backoff.add(lane)
+                        self.notify([{"id": lane, "lane": lane, "alert": True, "title": f"{lane} closed {RESPAWN_LIMIT} "
+                                      f"times in {HUB_RETRY_WINDOW // 60} min; see .tower/state/logs/{lane}.err or its "
                                       f"window"}])
-                        self.log(f"hub: closed {RESPAWN_LIMIT} times in a row, retrying slowly")
-                    if now - self.hub_opens[-1] < HUB_RETRY_WINDOW / 2:
+                        self.log(f"{lane}: closed {RESPAWN_LIMIT} times in a row, retrying slowly")
+                    if now - opens[-1] < HUB_RETRY_WINDOW / 2:
                         return
-                    self.hub_opens = self.hub_opens[1:]
-                self.hub_opens.append(now)
+                    opens.pop(0)
+                opens.append(now)
                 handoff = str(info.get("handoff") or "")
-                self.rt.open(HUB, self.hub_prompt(handoff))
+                self.rt.open(lane, self.hub_prompt(handoff, lane))
+                self.store.set_lane(lane, opened=now)
                 if handoff:
-                    self.store.set_lane(HUB, handoff=None, handoff_session=None)
-                self.idle_since.pop(HUB, None)
-                self.log("hub: opened")
+                    self.store.set_lane(lane, handoff=None, handoff_session=None)
+                self.idle_since.pop(lane, None)
+                self.log(f"{lane}: opened")
             return
-        idle_for = self._idle_for(HUB, st)
+        idle_for = self._idle_for(lane, st)
         if st == "busy":
-            self._watch_stuck()
+            self._watch_stuck(lane)
         if st != "idle" or not info.get("enabled"):
             return
         sid = info.get("session")
-        msgs = self.store.pending(HUB)
+        msgs = self.store.pending(lane)
         if msgs and sid and idle_for >= SETTLE_SECONDS and self.clock() - msgs[0]["created"] >= BATCH_SECONDS:
             lines = []
             for m in msgs:
@@ -1071,57 +1152,59 @@ class Engine:
                                  f"(answer with `dah memo reply {m['id']} \"...\"`)")
                 else:
                     lines.append(f"• {m['text']}")
-            self._send(HUB, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")
+            self._send(lane, sid, f"[tower] {len(msgs)} new\n" + "\n".join(lines) + f"\n{self.summary()}")
             self.store.mark_delivered(m["id"] for m in msgs)
             return
-        if not msgs and sid and idle_for >= 30 and self.rt.owned(HUB):
-            self._hub_handoff(sid, info)
+        if not msgs and sid and idle_for >= 30 and self.rt.owned(lane):
+            self._hub_handoff(sid, info, lane)
 
-    def _hub_handoff(self, sid: str, info: dict[str, Any]) -> None:
+    def _hub_handoff(self, sid: str, info: dict[str, Any], lane: str = HUB) -> None:
         handoff = str(info.get("handoff") or "") if info.get("handoff_session") == sid else ""
-        asked = self.hub_asked.get(HUB)
+        asked = self.hub_asked.get(lane)
         asked = asked if asked and asked[0] == sid else None
         if handoff or (asked and self.clock() - asked[1] >= HUB_HANDOFF_WAIT):
             why = "handed off" if handoff else f"asked to hand off {int(HUB_HANDOFF_WAIT // 60)} min ago, no handoff"
-            self.heavy.pop(HUB, None)
-            self.rt.close(HUB)
-            self.rt.open(HUB, self.hub_prompt(handoff))
-            self.store.set_lane(HUB, opened=self.clock(), handoff=None, handoff_session=None)
-            self.hub_asked.pop(HUB, None)
-            self.idle_since.pop(HUB, None)
-            self.log(f"hub: {why}, fresh session")
+            self.heavy.pop(lane, None)
+            self.rt.close(lane)
+            self.rt.open(lane, self.hub_prompt(handoff, lane))
+            self.store.set_lane(lane, opened=self.clock(), handoff=None, handoff_session=None)
+            self.hub_asked.pop(lane, None)
+            self.idle_since.pop(lane, None)
+            self.log(f"{lane}: {why}, fresh session")
             return
         if asked:
             return
-        limit = self.cfg.hub_context_limit(HUB) or HUB_ROTATE_K
-        ctx = self.rt.context_k(HUB, sid)
-        if HUB in self.heavy:
-            why = f"at {self.heavy[HUB]} MB of memory"
+        limit = self.cfg.hub_context_limit(lane) or HUB_ROTATE_K
+        ctx = self.rt.context_k(lane, sid)
+        if lane in self.heavy:
+            why = f"at {self.heavy[lane]} MB of memory"
         elif ctx >= limit:
             why = f"at {ctx}k tokens of context (limit {limit}k)"
         else:
             return
-        self._send(HUB, sid, HUB_ROTATE_ASK.format(why=why))
-        self.hub_asked[HUB] = (sid, self.clock())
-        self.log(f"hub: {why}, handoff asked")
+        self._send(lane, sid, HUB_ROTATE_ASK.format(why=why))
+        self.hub_asked[lane] = (sid, self.clock())
+        self.log(f"{lane}: {why}, handoff asked")
 
-    def _watch_stuck(self) -> None:
-        msgs = self.store.pending(HUB)
+    def _watch_stuck(self, lane: str = HUB) -> None:
+        msgs = self.store.pending(lane)
         if not msgs:
             return
         oldest = msgs[0]
         waited = self.clock() - oldest["created"]
-        if waited < HUB_STUCK_SECONDS or self.stuck_for == oldest["id"]:
+        if waited < HUB_STUCK_SECONDS or self.stuck_for.get(lane) == oldest["id"]:
             return
-        self.stuck_for = oldest["id"]
+        self.stuck_for[lane] = oldest["id"]
         lang = self.cfg.lang.split("-")[0].lower()
         lang = lang if lang in STUCK_TITLE else "en"
-        title = STUCK_TITLE[lang]
-        if any(it["title"] == title for it in self.store.items(state="open", lane=HUB)):
+        title = STUCK_TITLE[lang] + ("" if lane == HUB else f" ({lane})")
+        if any(it["title"] == title for it in self.store.items(state="open", lane=lane)):
             return  # already on the board (e.g. raised before a config reload)
         body = STUCK_BODY[lang].format(n=len(msgs), m=int(waited // 60))
-        self.store.add_item(HUB, None, "review", title, body, [], [], audience=HUMAN)
-        self.log(f"hub: busy with news waiting {int(waited // 60)} min, told humans")
+        if lane != HUB:
+            body = body.replace("dah last hub", f"dah last {lane}").replace("logs/hub.err", f"logs/{lane}.err")
+        self.store.add_item(lane, None, "review", title, body, [], [], audience=HUMAN)
+        self.log(f"{lane}: busy with news waiting {int(waited // 60)} min, told humans")
 
     # ---------- infra ----------
 
@@ -1148,7 +1231,8 @@ class Engine:
                 if n == RESPAWN_LIMIT + 1:
                     self.notify([{"id": msg["id"], "lane": INFRA, "title": f"infra closed {RESPAWN_LIMIT} times on "
                                   f"message #{msg['id']}; skipped", "alert": True}])
-                    self.store.push(HUB, TOWER, "stalled", f"infra gave up on message #{msg['id']} after "
+                    self.store.push(msg["sender"] if self.cfg.is_hub(str(msg["sender"])) else HUB, TOWER, "stalled",
+                                    f"infra gave up on message #{msg['id']} after "
                                     f"{RESPAWN_LIMIT} closed sessions.")
                 self.store.finish_inbox(INFRA)
                 return

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChatBox } from './components/ChatBox';
 import { ExtensionBridge } from './components/ExtensionBridge';
 import { itemSheet } from './components/item/ItemSheet';
@@ -17,6 +17,7 @@ import { forHuman, forMe } from './lib/items';
 import { useBoard } from './state/board';
 import { closeDoc, useDoc } from './state/docSheet';
 import { closeItem, useRoute } from './state/route';
+import { useHubWatch } from './state/hubWatch';
 import { useToast } from './state/toast';
 import { useLaneSheet } from './state/useLaneSheet';
 import { EngineView } from './views/EngineView';
@@ -34,6 +35,7 @@ export function App() {
   const [lb, setLb] = useState<LbState | null>(null);
   const badge = data ? data.items.filter(it => forHuman(it) && forMe(data, it)).length : 0;
   const onImage = (list: string[], i: number) => setLb({ list, i });
+  useHubWatch(data, r, useCallback(() => toast(L.hw.ready), [toast, L]));
 
   useEffect(() => { document.title = (badge ? `(${badge}) ` : '') + (data?.title || ''); }, [badge, data?.title]);
   useEffect(() => { setMenu(null); closeDoc(); }, [r]);

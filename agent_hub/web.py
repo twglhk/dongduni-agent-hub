@@ -42,6 +42,7 @@ import json
 import mimetypes
 import os
 import re
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -56,7 +57,7 @@ from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, Config
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
 from .install import edit_config
-from .store import HUMAN, Store, StoreError
+from .store import HUMAN, TOWER, Store, StoreError, is_hub_name
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BOARD_NEXT = Path(__file__).resolve().parent / "board_next"
@@ -151,8 +152,8 @@ def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict
 
 
 def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
-    """Everything the lane sheet shows. `lid` is a configured lane."""
-    ln = cfg.lanes[lid]
+    """Everything the lane sheet shows. `lid` is a configured lane or a person hub."""
+    ln = cfg.all_lanes[lid]
     row = s.lane(lid)
     live = row.get("status") not in (None, "closed")
     rows, skills_dir = engine_rows(cfg, lid)
@@ -274,12 +275,12 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
     out = []
     blamed = set(s.blames())
     libs: dict[str, list[dict[str, Any]]] = {}
-    for lid, ln in cfg.lanes.items():
+    for lid, ln in {**cfg.lanes, **cfg.person_hubs}.items():
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
         doing = None
         live = row.get("status") not in (None, "closed")
-        if lid == HUB and live and row.get("doing") and (row.get("doing_at") or 0) >= (row.get("opened") or 0):
+        if ln.kind == HUB and live and row.get("doing") and (row.get("doing_at") or 0) >= (row.get("opened") or 0):
             doing = clip(row["doing"], 80)
         elif lid == INFRA and live and row.get("active_message") is not None:
             try:
@@ -293,7 +294,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
             hit = next((r for r in rows if r["n"] == task["line_row"]), None)
             proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
-                    "status": row.get("status") or "closed", "doing": doing,
+                    "owner": ln.owner or None, "status": row.get("status") or "closed", "doing": doing,
                     "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
                     "requester": task["requester"] if task else None,
@@ -311,7 +312,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
 def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """Today's totals per runtime in use, in lane order."""
     rows: dict[str, dict[str, Any]] = {}
-    for lid, ln in cfg.lanes.items():
+    for lid, ln in {**cfg.lanes, **cfg.person_hubs}.items():
         r = rows.setdefault(ln.runtime, {"runtime": ln.runtime, "lanes": [], "tokens_in": 0, "tokens_out": 0,
                                          "cost": None, "sessions": 0})
         r["lanes"].append(lid)
@@ -325,15 +326,44 @@ def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[s
     return {"day": day, "runtimes": list(rows.values())}
 
 
+def with_hubs(s: Store, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    owners = s.task_hubs()
+    for it in items:
+        lane = str(it.get("lane") or "")
+        it["hub"] = lane if is_hub_name(lane) else owners.get(it.get("task_id"), HUB)
+    return items
+
+
+def my_hub_view(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
+    if not me or not cfg.hub_cap:
+        return {"state": "off", "hub": HUB}
+    name = str(me["name"])
+    if name in cfg.hub_overflow:
+        return {"state": "full", "hub": HUB, "place": cfg.hub_overflow.index(name) + 1,
+                "waiting": len(cfg.hub_overflow), "cap": cfg.hub_cap}
+    lid = cfg.hub_of(name)
+    if lid == HUB:
+        return {"state": "off", "hub": HUB}
+    row = s.lane(lid)
+    st = row.get("status")
+    if st == "idle" or (st in ("busy", "asking") and s.delivered_since(lid, row.get("opened") or 0)):
+        return {"state": "ready", "hub": lid}
+    return {"state": "starting", "hub": lid, "step": "reading" if st in ("busy", "asking") else "opening",
+            "since": row.get("opened")}
+
+
 def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     tasks = s.tasks(("queued", "running", "wrapping"), limit=200)
     day = s.day()
     used = s.usage(day)
+    my_hub = cfg.hub_of(str(me["name"])) if me else HUB
     return {
         "title": cfg.name,
         "lang": cfg.lang,
         "auth_mode": cfg.auth_mode,
         "me": me,
+        "my_hub": my_hub,
+        "my_hub_state": my_hub_view(cfg, s, me),
         "requester": cfg.requester,
         "running": tower_pid(cfg) is not None,
         "version": __version__,
@@ -346,12 +376,22 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
         "lanes": lanes_view(cfg, s, used),
-        "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
+        "items": with_hubs(s, s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW)),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
-        "memos": {INFRA: s.memos(INFRA, PREVIEW), HUB: s.memos(HUB, PREVIEW)},
+        "memos": {INFRA: s.memos(INFRA, PREVIEW), HUB: s.memos(my_hub, PREVIEW)},
         "counts": {k: s.history_count(k) for k in (*Store.HISTORY, *Store.MEMO_HISTORY)},
     }
+
+
+JOIN_LOCK = threading.Lock()
+
+
+def joinable(cfg: Config, ident: str) -> bool:
+    user, at, domain = ident.strip().lower().rpartition("@")
+    if not at or not user or not domain:
+        return False
+    return not cfg.hub_domains or domain in cfg.hub_domains
 
 
 class Site:
@@ -523,6 +563,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 m = st.member_by_ident(ident)
                 if m:
                     return m
+                if c.hub_auto and joinable(c, ident):
+                    return self._join(ident)
                 if any(x["ident"] for x in st.members()):
                     return None  # an allow-list exists and this person is not on it
                 return {"name": ident, "role": "member"}
@@ -535,6 +577,32 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if k == self.cookie:
                     token = token or v
             return st.member_by_token(token) if token else None
+
+        def _join(self, ident: str) -> dict[str, Any] | None:
+            st = self.site.s
+            with JOIN_LOCK:
+                m = st.member_by_ident(ident)
+                if m:
+                    return m
+                ms = st.members()
+                name = config_mod.auto_member_name(ident, [x["name"] for x in ms])
+                st.add_member(name, "owner" if not ms else "member", ident)
+                path = self.site.cfg.home / TOWER_DIR / CONFIG_NAME
+                os.utime(path)
+                try:
+                    self.site.cfg, self.site.mtime = config_mod.load(self.site.cfg.home), path.stat().st_mtime
+                except ConfigError as e:
+                    log(f"board keeps the last good tower.json: {e}")
+                c = self.site.cfg
+                hub = c.hub_of(name)
+                where = (f"their hub {hub} is opening" if hub != HUB else
+                         f"person hubs are full ({c.hub_cap}): they wait in line as number "
+                         f"{c.hub_overflow.index(name) + 1 if name in c.hub_overflow else '?'} and you take their "
+                         f"requests meanwhile")
+                st.push(HUB, TOWER, "member", f"New board member {name} ({ident}) signed in for the first time and was "
+                        f"added on their own: {where}.")
+                log(f"{ident} joined as member {name} · {hub}")
+                return st.member_by_ident(ident)
 
         # ----- responses -----
 
@@ -613,7 +681,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if me is None:
                 return self._json(401, {"error": "sign in"})
             if path == "/api/state":
-                return self._json(200, state(c, st, me))
+                return self._json(200, state(self.site.cfg, st, me))
             if path == "/api/machine":
                 return self._json(200, {"machine": mach.view(), "waits": read_waits(c.state_dir),
                                         "usage": cusage.view() if c.usage_percent == "claude" else None})
@@ -642,7 +710,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             m = re.fullmatch(r"/api/lanes/([^/]+)", path)
             if m:
                 lid = unquote(m.group(1))
-                if lid not in c.lanes:
+                if lid not in c.lanes and lid not in c.person_hubs:
                     return self._json(404, {"error": f"no lane {lid}"})
                 return self._json(200, lane_view(c, st, lid))
             m = re.fullmatch(r"/api/items/(\d+)", path)
@@ -785,6 +853,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                         raise StoreError("infra only takes requests from the hub: ask the hub")
                     if to != HUB or to not in c.lanes:
                         raise StoreError("requests from the board go to the hub")
+                    to = c.hub_of(who)
                     if not text:
                         raise StoreError("empty memo")
                     mid = st.push(to, who, "memo", text)
