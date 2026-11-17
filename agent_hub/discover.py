@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from . import procs
 
@@ -116,6 +117,17 @@ def claude(home: Path) -> dict[str, Any]:
             "settings": (d / "settings.json").is_file(), **claude_settings(d), "mcp_servers": sorted(mcp)}
 
 
+def plugin_name(spec: Any) -> str:
+    if isinstance(spec, (list, tuple)):
+        spec = spec[0] if spec else ""
+    s = str(spec).strip()
+    if "://" in s:
+        u = urlsplit(s.split("+", 1)[-1] if s.startswith("git+") else s)
+        return ((u.hostname or "") + u.path.removesuffix(".git")).rstrip("/")
+    scope = "@" if s.startswith("@") else ""
+    return scope + s[len(scope):].split("@")[0]
+
+
 def opencode_agents(project_dir: Path) -> list[str]:
     """Agent names as OpenCode resolves them (config, plugins, project), from `opencode agent list` headers only."""
     binary = shutil.which(os.environ.get("TOWER_OPENCODE_BIN", "opencode"))
@@ -133,7 +145,7 @@ def opencode_agents(project_dir: Path) -> list[str]:
 def opencode(home: Path) -> dict[str, Any]:
     d = home / ".config" / "opencode"
     cfg = read_json(d / "opencode.json") or read_json(d / "opencode.jsonc")
-    plugins = [str(p).split("@")[0] for p in cfg.get("plugin")][:20] if isinstance(cfg.get("plugin"), list) else []
+    plugins = [plugin_name(p) for p in cfg.get("plugin")][:20] if isinstance(cfg.get("plugin"), list) else []
     short = {p.rsplit("/", 1)[-1] for p in plugins}
     stale = (".bak", "backup", ".legacy", ".tmp", ".old")
     plugin_configs = sorted(e.name for e in d.iterdir() if e.name.split(".")[0] in short
@@ -196,7 +208,7 @@ def project_agents(path: Path, home: Path) -> dict[str, Any]:
                      "agents": sorted({*stems(oc / "agent", oc / "agents"), *keys(oc_cfg.get("agent"))}),
                      "commands": count(oc / "command", "*.md") + count(oc / "commands", "*.md"),
                      "skills": skills(oc / "skill", oc / "skills"),
-                     "plugins": [str(p).split("@")[0] for p in oc_plugins][:20]},
+                     "plugins": [plugin_name(p) for p in oc_plugins][:20]},
         "codex": {"config": (path / ".codex" / "config.toml").is_file(), "mcp_servers": cx_mcp, "profiles": cx_profiles,
                   "skills": skills(path / ".codex" / "skills", path / ".agents" / "skills")},
     }
@@ -205,7 +217,8 @@ def project_agents(path: Path, home: Path) -> dict[str, Any]:
 def project(path: Path, home: Path) -> dict[str, Any]:
     remote = None
     if shutil.which("git"):
-        p = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True, text=True)
+        p = subprocess.run(["git", "-C", str(path), "remote", "get-url", "origin"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
         if p.returncode == 0:
             url = p.stdout.strip()
             m = re.search(r"(?:@|//)(?:[^@/]+@)?([^/:]+)[:/](.+?)(?:\.git)?$", url)

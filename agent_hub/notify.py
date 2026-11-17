@@ -10,44 +10,67 @@ from __future__ import annotations
 
 import json
 import shutil
+import ssl
 import subprocess
 import sys
+import threading
+import urllib.error
 import urllib.request
 from typing import Any, Callable
 
 from .config import Config, secret
 
 
+def _curl_config(url: str, data: str) -> str:
+    def q(s: str) -> str:
+        return '"' + s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r") + '"'
+    return "\n".join([f"url = {q(url)}", f"data = {q(data)}", 'header = "content-type: application/json"',
+                      "max-time = 10", "silent", "show-error", "fail", ""])
+
+
+def _is_tls_error(e: BaseException) -> bool:
+    reason = e.reason if isinstance(e, urllib.error.URLError) else e
+    return isinstance(reason, ssl.SSLError)
+
+
 def _post(url: str, body: dict[str, Any], log: Callable[[str], None]) -> None:
-    data = json.dumps(body, ensure_ascii=False).encode()
-    req = urllib.request.Request(url, data=data, method="POST", headers={"content-type": "application/json"})
+    data = json.dumps(body)
+    req = urllib.request.Request(url, data=data.encode(), method="POST", headers={"content-type": "application/json"})
     try:
         urllib.request.urlopen(req, timeout=10).read()
         return
-    except Exception as e:  # some Python builds ship without CA certs; the system curl usually has them
-        if not shutil.which("curl"):
+    except Exception as e:  # any network or HTTP failure is a lost notification, never a tower crash
+        if not _is_tls_error(e) or not shutil.which("curl"):
             log(f"notify failed: {e}")
             return
-    p = subprocess.run(["curl", "-fsS", "-m", "10", "-H", "content-type: application/json", "-d", data.decode(), url],
-                       capture_output=True, text=True)
+    # some Python builds ship without CA certs; the system curl usually has them. The URL is a secret, so not in argv
+    p = subprocess.run(["curl", "--config", "-"], input=_curl_config(url, data), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
     if p.returncode:
         log(f"notify failed: {p.stderr.strip()}")
 
 
 def _desktop(title: str, text: str) -> None:
     if sys.platform == "darwin":
-        subprocess.run(["osascript", "-e", f"display notification {json.dumps(text)} with title {json.dumps(title)}"],
-                       capture_output=True)
+        script = f"display notification {json.dumps(text, ensure_ascii=False)} with title {json.dumps(title, ensure_ascii=False)}"
+        subprocess.run(["osascript", "-e", script], capture_output=True)
     elif shutil.which("notify-send"):
         subprocess.run(["notify-send", title, text], capture_output=True)
 
 
-def notifier(cfg: Config, log: Callable[[str], None] = print) -> Callable[[list[dict[str, Any]]], None]:
+def notifier(cfg: Config, log: Callable[[str], None] = print,
+             background: bool = True) -> Callable[[list[dict[str, Any]]], None]:
     n = {k: secret(v) for k, v in cfg.notify.items()}
 
     def push(items: list[dict[str, Any]]) -> None:
         if not items:
             return
+        if background:
+            threading.Thread(target=send, args=(items,), daemon=True).start()
+        else:
+            send(items)
+
+    def send(items: list[dict[str, Any]]) -> None:
         first = items[0]
         title = first["title"] if first.get("alert") else f"{cfg.name}: {len(items)} for you"
         text = "\n".join(f"#{it['id']} {it['title']}" for it in items[:5])

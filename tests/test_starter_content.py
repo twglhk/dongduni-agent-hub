@@ -67,10 +67,6 @@ class FreshInitTest(unittest.TestCase):
         self.assertEqual(starter.skill_dirs(cfg), [".claude/skills"])  # OpenCode reads .claude/skills too: no double
 
     def test_skills_pass_skill_lint(self) -> None:
-        try:
-            import yaml  # noqa: F401
-        except ImportError:
-            self.skipTest("PyYAML is not installed")
         cfg = make_home({"hub": {"runtime": "claude"}, "infra": {"runtime": "codex"}})
         starter.install(cfg, False, [])
         p = subprocess.run([sys.executable, str(ROOT / "tools" / "skill_lint.py"), str(cfg.home)], capture_output=True, text=True)

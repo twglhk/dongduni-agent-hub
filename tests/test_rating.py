@@ -274,3 +274,22 @@ class EngineIntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersionBumpsEncodingTest(unittest.TestCase):
+    def test_a_card_with_bytes_that_are_not_utf8_does_not_break_the_history_read(self) -> None:
+        import tempfile
+        from pathlib import Path
+        repo = Path(tempfile.mkdtemp())
+
+        def git(*a: str) -> None:
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *a], check=True, capture_output=True)
+
+        git("init", "-q")
+        card = repo / "card.md"
+        card.write_bytes(b"# Card \xe2\x80\x94 v1\n\xff\xfe bytes\n")
+        git("add", ".")
+        git("commit", "-qm", "one")
+        card.write_bytes(b"# Card \xe2\x80\x94 v2\n\xff\xfe bytes\n")
+        git("commit", "-qam", "two")
+        self.assertEqual(len(rating._version_bumps(repo, "card.md")), 1)

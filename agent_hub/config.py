@@ -296,6 +296,12 @@ def load(home: Path | None = None) -> Config:
         raise ConfigError(f"{path} does not exist. Run `dah init`.")
     except json.JSONDecodeError as e:
         raise ConfigError(f"{path} is not valid JSON: {e}")
+    return from_raw(home, raw)
+
+
+def from_raw(home: Path, raw: Any) -> Config:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{home / TOWER_DIR / CONFIG_NAME} must hold a JSON object")
     lanes_raw = raw.get("lanes") or {}
     if HUB not in lanes_raw:
         raise ConfigError("tower.json needs a `hub` lane.")
@@ -327,6 +333,10 @@ def load(home: Path | None = None) -> Config:
         raise ConfigError("auth.mode must be local, header or token")
     if mode == "header" and not auth.get("header"):
         raise ConfigError("auth.mode header needs auth.header (e.g. Cf-Access-Authenticated-User-Email)")
+    exposed = str(web.get("host") or "127.0.0.1") not in ("127.0.0.1", "localhost", "::1") or web.get("public_url") or raw.get("tunnel")
+    if mode == "local" and exposed and not auth.get("allow_exposed"):
+        raise ConfigError("auth.mode local trusts everyone who reaches the board, but web.host, web.public_url or tunnel "
+                          "expose it: use auth.mode header or token (or set auth.allow_exposed true to accept that)")
     project = raw.get("project")
     engines = _engines(raw.get("engines"), lanes)
     return Config(

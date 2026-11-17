@@ -156,7 +156,7 @@ def _version_bumps(repo: Path, rel: str) -> list[float]:
     not change the version do not count. No git or no history gives []."""
     try:
         out = subprocess.run(["git", "-C", str(repo), "log", "--follow", "-p", "-U0", "--format=@%ct", "--", rel],
-                             capture_output=True, text=True, timeout=30).stdout
+                             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     bumps: list[float] = []

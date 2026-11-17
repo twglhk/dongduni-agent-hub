@@ -34,7 +34,7 @@ Every engine also gets two lanes: `NAME-research` (a referenced note against tie
 4. Run a few tasks with `prepare` and `make` lines (`Line: #1 Deliverable · stage 2 · make`). `make` is refused until the process card says `Status: confirmed` and its pattern cards are confirmed or tuned; the review lane proposes the card changes that get them there. A type the library has no row for yet is built with `Line: new <type> · prepare` (only `prepare` is allowed; it is refused when the library already has that type). When an engine sets no `skills` folder, `.claude/skills` is used if it exists, else `.agents/skills`; a library cell may also name a repo path (`docs/demo/skill.md`, `demo/processes/planning.md`) instead of a skill folder.
 5. Read `dah ratings --engine NAME` weekly and tune the lowest-rated stage first, one change at a time.
 
-Check the scaffold at any time with `dah engine show NAME`, the AI Engine tab on the board, and `python3 tools/skill_lint.py` for the skills.
+Check the scaffold at any time with `dah engine show NAME`, the AI Engine tab on the board, and, from a clone of the agent-hub repository (the script is not in the installed package), `python3 tools/skill_lint.py` for the skills. It needs no extra package.
 
 ## A usage cap (optional)
 

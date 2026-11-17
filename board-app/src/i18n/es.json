@@ -116,6 +116,7 @@
     "reviewed": "Revisión hecha",
     "sent": "Enviado",
     "fail": "No se pudo enviar",
+    "loadFail": "No se pudo cargar",
     "net": "Sin conexión",
     "badToken": "Token incorrecto",
     "notFound": "No encontrado",

@@ -112,7 +112,7 @@ In `.tower/tower.json`:
 "auth": {"mode": "header", "header": "X-Forwarded-Email"}
 ```
 
-Restart the tower (`dah stop && dah start`, or `sudo systemctl restart agent-hub.service`). Optionally pin people to names and roles: `dah member add ana --role owner --ident ana@example.com`. Once any member has an ident, only those members get in, even if oauth2-proxy lets the whole domain through.
+Restart the tower (`dah restart`, or `sudo systemctl restart agent-hub.service`). Optionally pin people to names and roles: `dah member add ana --role owner --ident ana@example.com`. Once any member has an ident, only those members get in, even if oauth2-proxy lets the whole domain through.
 
 As in the [Cloudflare guide](cloudflare.md), the tower trusts the identity header only on connections from loopback, which is where oauth2-proxy connects from. Keep the board on `127.0.0.1` and never bind it to `0.0.0.0` in header mode.
 

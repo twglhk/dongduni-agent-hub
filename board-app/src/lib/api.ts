@@ -1,4 +1,5 @@
 import { BASE } from './base';
+import { joinBase } from './path';
 
 export class HttpError extends Error {
   constructor(public status: number, msg: string) { super(msg); }
@@ -10,12 +11,18 @@ let onUnauthorized = () => {};
 
 export function configureApi(t: Texts, unauthorized: () => void) { texts = t; onUnauthorized = unauthorized; }
 
+const tagged = new Map<string, { tag: string; body: unknown }>();
+
 async function req<T>(path: string, opt?: RequestInit): Promise<T> {
+  const url = joinBase(BASE, path), isGet = !opt?.method || opt.method === 'GET', seen = isGet ? tagged.get(url) : undefined;
   let r: Response;
-  try { r = await fetch(BASE + path, { cache: 'no-store', ...opt }); }
-  catch { throw new HttpError(0, texts.net); }
-  let j: any = null;
-  try { j = await r.json(); } catch { /* not JSON */ }
+  try {
+    r = await fetch(url, { cache: 'no-store', ...opt, headers: { ...(seen ? { 'if-none-match': seen.tag } : {}), ...(opt?.headers as Record<string, string> | undefined) } });
+  } catch { throw new HttpError(0, texts.net); }
+  if (r.status === 304 && seen) return seen.body as T;
+  const j: any = await r.json().catch(() => null);
+  const tag = isGet && r.ok ? r.headers.get('etag') : null;
+  if (tag) tagged.set(url, { tag, body: j });
   if (r.status === 401) { onUnauthorized(); throw new HttpError(401, j?.error || texts.badToken); }
   if (!r.ok) throw new HttpError(r.status, j?.error || `${texts.fail} (${r.status})`);
   return j as T;

@@ -1,6 +1,8 @@
 import http.client
 import json
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -131,6 +133,46 @@ class BoardNextTest(unittest.TestCase):
             self.assertIn(key, flat(en), key)
         self.assertIn("tabs: { hub:", ui)
         self.assertNotIn("chat.open", flat(en))
+
+
+class UrlBuilderTest(unittest.TestCase):
+    def run_node(self, script: str) -> str:
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        path = APP / "src" / "lib" / "path.ts"
+        code = f"import {{ joinBase, relPath, encodePath }} from {json.dumps(path.as_uri())};\n{script}"
+        p = subprocess.run([node, "--experimental-strip-types", "--input-type=module", "-e", code], capture_output=True,
+                           text=True, encoding="utf-8")
+        if p.returncode:
+            self.skipTest("this node cannot run TypeScript: " + p.stderr[-200:])
+        return p.stdout.strip()
+
+    def test_extension_calls_are_not_prefixed_twice(self) -> None:
+        out = json.loads(self.run_node(
+            "console.log(JSON.stringify([joinBase('/', 'api/x/stats'), joinBase('/w/s/', relPath('/api/x/stats')), "
+            "joinBase('/w/s/', 'api/x/stats'), joinBase('/', encodePath('a b/c#1/d?.png'))]));"))
+        self.assertEqual(out, ["/api/x/stats", "/w/s/api/x/stats", "/w/s/api/x/stats", "/a%20b/c%231/d%3F.png"])
+
+    def test_registry_hands_the_api_a_path_without_the_prefix(self) -> None:
+        reg = (APP / "src" / "ext" / "registry.ts").read_text(encoding="utf-8")
+        self.assertIn("get: (p: string) => get(relPath(p))", reg)
+        self.assertIn("post: (p: string, body?: unknown) => post(relPath(p), body)", reg)
+        self.assertNotIn("BASE + ", reg.split("const API")[1])
+        self.assertIn("joinBase(BASE, path)", (APP / "src" / "lib" / "api.ts").read_text(encoding="utf-8"))
+
+    def test_no_empty_catch_blocks_in_the_app(self) -> None:
+        for f in (APP / "src").rglob("*.ts*"):
+            text = f.read_text(encoding="utf-8")
+            self.assertIsNone(re.search(r"catch\s*(\([^)]*\))?\s*\{\s*(/\*.*?\*/)?\s*\}", text), f.name)
+
+    def test_polling_sends_if_none_match_and_takes_a_304(self) -> None:
+        api = (APP / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+        self.assertIn("'if-none-match'", api)
+        self.assertIn("r.status === 304", api)
+        js = "".join((BOARD_NEXT / a).read_text(encoding="utf-8") for a in re.findall(
+            r'(?:src|href)="\./(assets/[^"]+\.js)"', (BOARD_NEXT / "index.html").read_text(encoding="utf-8")))
+        self.assertIn("if-none-match", js)
 
 
 class WorkspacePrefixTest(unittest.TestCase):

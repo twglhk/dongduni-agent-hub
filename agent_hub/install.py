@@ -5,15 +5,18 @@ in Codex). A lane is a role put on top of the agent the person already uses, not
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
-from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, template
+from . import starter
+from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, from_raw, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 SHIM_PREFIX = "dah-"
@@ -60,8 +63,11 @@ def _write(path: Path, text: str, force: bool, wrote: list[str], home: Path) -> 
     if path.exists() and not force:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    shown = (lambda p: str(p.relative_to(home)) if home in p.parents else str(p))
+    if bak := starter.backup(path, text):
+        wrote.append(shown(bak) + " (your previous copy)")
     path.write_text(text, encoding="utf-8")
-    wrote.append(str(path.relative_to(home)) if home in path.parents else str(path))
+    wrote.append(shown(path))
 
 
 REQUIRED_LANES = {"research": ("research.md", "opus"), "audit": ("audit.md", "fable")}  # role -> (template, claude model alias)
@@ -136,7 +142,6 @@ def install(cfg: Config, force: bool = False) -> list[str]:
             for path, text in required_skill_files(home, role, role, "this project", required_skills_dir(cfg, role)).items():
                 _write(path, text, force, wrote, home)
     write_shims(cfg, list(cfg.lanes), force, wrote)
-    from . import starter
     starter.install(cfg, force, wrote)  # neutral subagents and skills (starter.py)
     write_agents_block(home, wrote)
     ignore_state(home, wrote)
@@ -250,8 +255,13 @@ def upgrade_command() -> list[str] | None:
     raise FileNotFoundError("cannot tell how dah was installed")
 
 
+MODEL_REFUSED = re.compile(r"issue with the selected model|model[^\n]{0,60}(not found|not exist|invalid|unknown|not available|"
+                           r"unsupported)|(not found|invalid|unknown|unsupported)[^\n]{0,30}model|may not have access", re.I)
+
+
 def model_works(runtime: str, model: str, timeout: int = 90) -> bool:
-    """One tiny call to see whether the agent CLI accepts a model alias (a plan may lack `fable`)."""
+    """One tiny call to see whether the agent CLI accepts a model alias (a plan may lack `fable`). Only a clear "model not
+    found / invalid" answer counts as a refusal; offline, signed out or rate limited keeps the model."""
     if runtime != "claude" or not shutil.which("claude"):
         return True
     try:
@@ -259,7 +269,7 @@ def model_works(runtime: str, model: str, timeout: int = 90) -> bool:
                            encoding="utf-8", errors="replace", timeout=timeout, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
         return True  # cannot tell: keep the default
-    return p.returncode == 0
+    return p.returncode == 0 or not MODEL_REFUSED.search(f"{p.stdout}\n{p.stderr}")
 
 
 def fix_models(home: Path, probe=model_works) -> list[str]:
@@ -290,15 +300,47 @@ def init(home: Path, name: str, lang: str, hub: str, infra: str, project: str | 
     if project:
         data["project"] = project
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    starter.backup(path, text)
+    path.write_text(text, encoding="utf-8")
     return path
 
 
-def edit_config(home: Path, fn) -> None:
+def lock_file(path: Path) -> Path:
+    lock = path.with_name(path.name + ".lock")
+    deadline = time.time() + 10
+    while True:
+        try:
+            os.close(os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return lock
+        except FileExistsError:
+            try:
+                if time.time() - lock.stat().st_mtime > 30:
+                    lock.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.time() > deadline:
+                raise OSError(f"{lock} is held by another dah process; remove it if none is running")
+            time.sleep(0.05)
+
+
+def edit_config(home: Path, fn) -> bool:
     path = home / TOWER_DIR / CONFIG_NAME
-    data = json.loads(path.read_text(encoding="utf-8"))
-    fn(data)
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    lock = lock_file(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        before = copy.deepcopy(data)
+        fn(data)
+        if data == before:
+            return False
+        from_raw(home, data)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+        return True
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 SHIPPED = TEMPLATES / "shipped.json"  # every released text of each template, oldest first, the current one last
@@ -368,7 +410,6 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
-    from . import starter
     starter.refresh(cfg, versions, report, _refresh_file)  # neutral subagents and skills, kept like PROTOCOL.md
     for role in REQUIRED_LANES:
         if role in cfg.lanes and cfg.lanes[role].engine in ("", DEFAULT_ENGINE) and cfg.lanes[role].runtime == "claude":

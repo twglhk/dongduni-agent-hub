@@ -9,6 +9,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
 
 from agent_hub import engines
 from agent_hub.store import Store
@@ -315,6 +317,48 @@ class RepoPathLayoutTest(unittest.TestCase):
         start = self.home / "demo"
         self.assertEqual(engines.repo_file(start, "see `docs/demo/skill.md`"), self.home / "docs/demo/skill.md")
         self.assertIsNone(engines.repo_file(start, "`../outside.md`"))
+
+    def test_repo_file_does_not_climb_above_the_workspace(self) -> None:
+        stray = self.home.parent / "stray-outside-card.md"
+        stray.write_text("# x\n", encoding="utf-8")
+        try:
+            self.assertIsNone(engines.repo_file(self.home / "demo", "see `stray-outside-card.md`"))
+        finally:
+            stray.unlink()
+
+    def test_skill_hash_reads_only_the_head_and_is_cached_until_a_file_changes(self) -> None:
+        from unittest import mock
+        skills = self.home / ".claude/skills"
+        f = skills / "review" / "big.bin"
+        f.write_bytes(b"a" * (engines.HASH_BYTES * 3))
+        reads: list[int] = []
+        real = Path.open
+
+        class Counting:
+            def __init__(self, fh: Any):
+                self.fh = fh
+
+            def __enter__(self) -> Counting:
+                return self
+
+            def __exit__(self, *exc: Any) -> None:
+                self.fh.close()
+
+            def read(self, n: int = -1) -> bytes:
+                reads.append(n)
+                return self.fh.read(n)
+
+        def spy(self: Path, *a: Any, **k: Any) -> Any:
+            fh = real(self, *a, **k)
+            return Counting(fh) if self.name == "big.bin" else fh
+
+        with mock.patch.object(Path, "open", spy):
+            first = engines.skill_list(skills, {})
+            again = engines.skill_list(skills, {})
+        self.assertEqual(first, again)
+        self.assertEqual(reads, [engines.HASH_BYTES])
+        f.write_bytes(b"b" * 10)
+        self.assertNotEqual(engines.skill_list(skills, {})[0]["hash"], first[0]["hash"])
 
     def test_version_word_is_not_a_status(self) -> None:
         self.assertEqual(engines._first_word("v1 draft, not run"), "draft")

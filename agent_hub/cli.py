@@ -15,14 +15,15 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import config as config_mod
 from . import procs, stagemodel, stats
 from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, base_lane, tower_pid
 from .engine import VERDICT_WORD, Engine, clip, conflict_of
 from .memwatch import MemWatch
-from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
+from .install import (SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, lock_file, remove_shims,
+                      write_shims)
 from .notify import notifier
 from .store import HUMAN, Store, StoreError
 
@@ -36,6 +37,13 @@ class TowerError(Exception):
 
 def cfg() -> Config:
     return config_mod.load()
+
+
+def edit_tower_json(home: Path, fn: Callable[[dict[str, Any]], None]) -> bool:
+    try:
+        return edit_config(home, fn)
+    except config_mod.ConfigError as e:
+        raise TowerError(str(e))
 
 
 def store(c: Config | None = None) -> Store:
@@ -670,16 +678,37 @@ def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
             say(f"{lid}: runtime, terminal or worktree changed, closed its session; it reopens the new way")
 
 
+def claim_pid(c: Config) -> None:
+    c.state_dir.mkdir(parents=True, exist_ok=True)
+    pid_file = c.state_dir / "tower.pid"
+    lock = lock_file(pid_file)
+    try:
+        running = tower_pid(c)
+        if running and running != os.getpid():
+            raise TowerError(f"the tower already runs (pid {running})")
+        pid_file.unlink(missing_ok=True)
+        fd = os.open(pid_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, str(os.getpid()).encode())
+        finally:
+            os.close(fd)
+    finally:
+        lock.unlink(missing_ok=True)
+    managed = c.state_dir / "tower.managed"
+    if os.environ.get("INVOCATION_ID") or os.environ.get("DAH_SERVICE"):
+        managed.write_text("1", encoding="utf-8")
+    else:
+        managed.unlink(missing_ok=True)
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     from .ext import Extensions
     from .runtimes import Runtimes
     from .web import server
 
     c = cfg()
-    if tower_pid(c) and tower_pid(c) != os.getpid():
-        raise TowerError(f"the tower already runs (pid {tower_pid(c)})")
+    claim_pid(c)
     s = store(c)
-    (c.state_dir / "tower.pid").write_text(str(os.getpid()), encoding="utf-8")
     config_mod.register(c.home)
     if not args.no_hub:
         s.set_lane(HUB, enabled=1)
@@ -779,13 +808,15 @@ def stop_loop(c: Config) -> int | None:
 
 
 RESTART_WAIT_SECONDS = 15
+FORCE_HELP = "overwrite files that exist; a file you changed is first saved next to it as NAME.bak"
 
 
 def cmd_restart(_args: argparse.Namespace) -> None:
     c = cfg()
+    managed = (c.state_dir / "tower.managed").exists()
     pid = stop_loop(c)
     print(f"tower stopped (pid {pid}); lane sessions keep running" if pid else "the tower was not running")
-    for _ in range(RESTART_WAIT_SECONDS * 4 if pid else 0):
+    for _ in range(RESTART_WAIT_SECONDS * 4 if pid and managed else 0):
         if tower_pid(c):
             print(f"tower back (pid {tower_pid(c)}), started by its service")
             return
@@ -1054,14 +1085,21 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
           "command itself: `uv tool uninstall dongduni-agent-hub` or `pipx uninstall dongduni-agent-hub`.")
 
 
+GUIDES_TOP = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md", "models": "MODELS.md"}
+
+
+def guide_names() -> list[str]:
+    from .install import GUIDE
+    return [*GUIDES_TOP, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
+
+
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md", "models": "MODELS.md"}
+    top = GUIDES_TOP
     path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
-        names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
-        raise TowerError(f"no guide {name!r} (guides: {', '.join(names)})")
+        raise TowerError(f"no guide {name!r} (guides: {', '.join(guide_names())})")
     print(f"<!-- {path} -->")
     print(path.read_text(encoding="utf-8"))
 
@@ -1114,7 +1152,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
             if args.engine not in c.engines or c.engines[args.engine].implicit:
                 raise TowerError(f"--engine: no engine {args.engine} (`dah engine list`; `dah engine add NAME`)")
             entry["engine"] = args.engine
-        edit_config(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
+        edit_tower_json(c.home, lambda d: d["lanes"].__setitem__(args.id, entry))
         c = config_mod.load(c.home)
         path = c.instructions(args.id)
         if not path.exists():
@@ -1132,7 +1170,7 @@ def cmd_lane(args: argparse.Namespace) -> None:
         raise TowerError(f"no lane {args.id}")
     if store(c).live_task(args.id):
         raise TowerError(f"{args.id} has a running task; wrap or cancel it first")
-    edit_config(c.home, lambda d: d["lanes"].pop(args.id))
+    edit_tower_json(c.home, lambda d: d["lanes"].pop(args.id))
     remove_shims(c, args.id)
     print(f"lane {args.id} removed (its instruction file is kept)")
 
@@ -1165,14 +1203,7 @@ def cmd_engine(args: argparse.Namespace) -> None:
         return scaffold_engine_cmd(c, args)
     entry = {k: v for k, v in (("label", args.label), ("dir", args.dir), ("library", args.library),
                                ("skills", args.skills), ("map", args.map), ("cap", args.cap)) if v}
-    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
-    before = path.read_text(encoding="utf-8")
-    edit_config(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
-    try:
-        config_mod.load(c.home)
-    except config_mod.ConfigError as e:
-        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
-        raise TowerError(str(e))
+    edit_tower_json(c.home, lambda d: d.setdefault("engines", {}).__setitem__(args.id, entry))
     print(f"engine {args.id} added. Put lanes in it with `dah lane add ID --runtime R --engine {args.id}`.")
 
 
@@ -1185,19 +1216,13 @@ def scaffold_engine_cmd(c: Any, args: argparse.Namespace) -> None:
                                args.skills or "", args.cap or "")
     except ValueError as e:
         raise TowerError(str(e))
-    path = c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME
-    before = path.read_text(encoding="utf-8")
 
     def add(d: dict[str, Any]) -> None:
         d.setdefault("engines", {})[args.id] = made["entry"]
         d["lanes"].update(made["lanes"])
 
-    edit_config(c.home, add)
-    try:
-        c2 = config_mod.load(c.home)
-    except config_mod.ConfigError as e:
-        path.write_text(before, encoding="utf-8")  # never leave a tower.json the tower cannot read
-        raise TowerError(str(e))
+    edit_tower_json(c.home, add)
+    c2 = config_mod.load(c.home)
     for f, text in made["files"].items():
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(text, encoding="utf-8")
@@ -1366,9 +1391,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--terminal", choices=TERMINALS, default="none",
                    help="where lane sessions run: none (in the background, the default), tmux or orca (windows the "
                         "tower opens and closes, which people can watch)")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help=FORCE_HELP)
     p = sub.add_parser("install", help="(re)write protocol, lane files and command shims")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help=FORCE_HELP)
     p = sub.add_parser("update", help="upgrade dah, bring this workspace's files up to date, restart the tower")
     p.add_argument("--no-upgrade", action="store_true", help="only update the workspace with the installed version")
     p.add_argument("--dry-run", action="store_true",
@@ -1386,7 +1411,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--purge", action="store_true", help="also delete .tower/ (config, lane files, extensions, history)")
     p.add_argument("--keep-lanes", action="store_true", help="leave running lane sessions open")
     p = sub.add_parser("guide", help="print the setup playbook, the extension guide, or a guide for reaching the board")
-    p.add_argument("name", nargs="?", help="setup (default), extend, engines, models, lan, tailscale, cloudflare, aws")
+    p.add_argument("name", nargs="?", help="one of: " + ", ".join(guide_names()) + " (default: setup)")
     p = sub.add_parser("workspaces", help="workspaces with a tower on this machine (the board switches between them)")
     wsub = p.add_subparsers(dest="sub")
     wsub.add_parser("list")

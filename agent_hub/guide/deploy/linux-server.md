@@ -102,7 +102,11 @@ If lanes run in terminal windows people can watch (`"terminal": "orca"` in `towe
    systemctl --user enable --now orca-serve.service
    ```
 
-   Check the flags with `orca-ide serve --help` for your Orca version: they differ between releases. The server listens on the port you pass; do not open that port to the internet (firewall or security group), it is a control channel, not a web page.
+   Check the flags with `orca-ide serve --help` for your Orca version: they differ between releases. Treat the port as a remote control for every terminal on the machine, not as a web page.
+
+   - Orca's documentation lists `--bind <address>` (the listening interface) and says `serve` accepts clients from localhost, LAN and Tailscale addresses unless `--allow-public` is added. Some releases (for example 1.4.224) listened on `0.0.0.0` and ignored any bind option, so do not assume your version binds loopback: check with `ss -ltn | grep 6768` after the start.
+   - The unit above uses `--no-pairing`, as Orca's own `serve service install` does. This guide cannot say what authentication remains with that flag: Orca's documentation does not state it. Assume none.
+   - So: add `--bind 127.0.0.1` where your version has it (or your tailnet address), block the port in the host firewall and the cloud security group (only SSH and what you really serve may be open), and re-check with `ss` after every Orca update.
 
    Over SSH, `systemctl --user` needs `XDG_RUNTIME_DIR=/run/user/$(id -u)` if the session has none.
 
@@ -152,7 +156,7 @@ Reinstalling the package under a live tower is the riskiest routine thing on a s
 2. Do it when no team lane is working (`dah status` shows none `busy`).
 3. Note the version that runs now (`dah --version`, or `uv tool list`) so you can go back: `uv tool install --force dongduni-agent-hub==<old>`.
 4. Install a fixed copy, never an editable one. Then `dah update` (or reinstall) and restart: `sudo systemctl restart agent-hub.service`.
-5. Check: the board answers `200` (`curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/state` on the machine, or through your public URL with sign-in), and the hub can run a command (ask it for the tower version in the board chat).
+5. Check: the board answers (`curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/state` on the machine: `200` in `local` mode, `401` in token or header mode without sign-in or the identity header; through your public URL with sign-in, `200`), and the hub can run a command (ask it for the tower version in the board chat).
 
 Failure mode to know: an agent session that was opened before the update has the path of the old `hooks.py` file written into its hook configuration. If an update or reinstall deletes that file, the hook exits with an error on every tool call and the agent cannot run anything ("PreToolUse ... hook error"). Newer versions run the hooks as a module (`python -m agent_hub.hooks`), which survives reinstalls; sessions opened by an older version keep the old path until they are renewed.
 

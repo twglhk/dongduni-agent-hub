@@ -1,6 +1,8 @@
+import { encodePath, joinBase } from './path';
+
 export const BASE = location.pathname.replace(/[^/]*$/, '');
 
-export const fileUrl = (p: string) => BASE + 'f/' + encodeURI(String(p));
+export const fileUrl = (p: string) => joinBase(BASE, 'f/' + encodePath(p));
 export const fname = (p: string) => String(p).split('/').pop() || p;
 export const fext = (p: string) => /\.([a-z0-9]+)$/i.exec(p)?.[1] ?? '';
 

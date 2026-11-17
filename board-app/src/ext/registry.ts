@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { BASE } from '../lib/base';
+import { relPath } from '../lib/path';
 import { get, post } from '../lib/api';
 import type { Dict } from '../i18n/dict';
 import type { BoardState } from '../lib/types';
@@ -94,7 +95,6 @@ export function xStart(ext?: { css?: boolean; js?: boolean }) {
   if (ext?.js) document.body.append(h('script', { src: BASE + 'x/extra.js', onerror: () => console.error('[dah] could not load ' + BASE + 'x/extra.js') }));
 }
 
-const url = (p: string) => BASE + String(p || '').replace(/^\/+/, '');
 const API = {
   get version() { return bridge.data?.version || ''; },
   BASE: BASE.replace(/\/$/, ''),
@@ -103,8 +103,8 @@ const API = {
   get S() { return { data: bridge.data }; },
   h, svg, sec, empty,
   toast: (m: string, err?: boolean) => bridge.toast(m, err),
-  get: (p: string) => get(url(p)),
-  post: (p: string, body?: unknown) => post(url(p), body),
+  get: (p: string) => get(relPath(p)),
+  post: (p: string, body?: unknown) => post(relPath(p), body),
   refresh: () => bridge.refresh(),
   addSection, addTab, onState,
 };

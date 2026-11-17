@@ -1,5 +1,6 @@
 """The CLI end to end in a temp workspace, the way lanes call it."""
 
+import argparse
 import os
 import subprocess
 import sys
@@ -36,6 +37,15 @@ class CliTest(unittest.TestCase):
         if ok and p.returncode:
             self.fail(f"tower {' '.join(args)} failed: {p.stderr}")
         return p.stdout + p.stderr
+
+    def test_a_lane_with_an_invalid_id_leaves_tower_json_untouched(self) -> None:
+        path = self.home / ".tower" / "tower.json"
+        before = path.read_bytes()
+        out = self.tower("lane", "add", "bad id!", "--runtime", "claude", ok=False)
+        self.assertIn("lane id", out)
+        self.assertEqual(path.read_bytes(), before)
+        self.tower("engine", "add", "bad id!", ok=False)
+        self.assertEqual(path.read_bytes(), before)
 
     def test_files_written(self) -> None:
         for rel in (".tower/tower.json", ".tower/PROTOCOL.md", ".tower/lanes/hub.md", ".tower/lanes/infra.md",
@@ -241,10 +251,15 @@ class RestartTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.mock = mock
 
-    def run_restart(self, stopped: int | None, pids: list[int | None]) -> str:
+    def run_restart(self, stopped: int | None, pids: list[int | None], managed: bool = False) -> str:
         import contextlib
         import io
         out = io.StringIO()
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        marker = self.cfg.state_dir / "tower.managed"
+        marker.unlink(missing_ok=True)
+        if managed:
+            marker.write_text("1")
         with self.mock.patch.object(self.cli, "stop_loop", return_value=stopped), \
                 self.mock.patch.object(self.cli, "tower_pid", side_effect=pids + [pids[-1]] * 400), \
                 contextlib.redirect_stdout(out):
@@ -257,12 +272,183 @@ class RestartTest(unittest.TestCase):
         self.assertEqual(self.calls, ["start"])
 
     def test_a_service_that_brings_it_back_is_left_alone(self) -> None:
-        out = self.run_restart(4242, [None, None, 5151])
+        out = self.run_restart(4242, [None, None, 5151], managed=True)
         self.assertIn("tower back (pid 5151), started by its service", out)
         self.assertEqual(self.calls, [])
+
+    def test_without_a_service_manager_it_starts_at_once_and_does_not_wait(self) -> None:
+        out = self.run_restart(4242, [None])
+        self.assertIn("tower stopped (pid 4242)", out)
+        self.assertEqual(self.calls, ["start"])
+        self.assertEqual(self.cli.time.sleep.call_count, 0)
+
+    def test_a_service_that_does_not_bring_it_back_is_waited_for_then_started_here(self) -> None:
+        self.run_restart(4242, [None], managed=True)
+        self.assertEqual(self.calls, ["start"])
+        self.assertEqual(self.cli.time.sleep.call_count, self.cli.RESTART_WAIT_SECONDS * 4)
 
     def test_a_tower_that_was_not_running_is_started_without_waiting(self) -> None:
         out = self.run_restart(None, [None])
         self.assertIn("the tower was not running", out)
         self.assertEqual(self.calls, ["start"])
         self.assertEqual(self.cli.time.sleep.call_count, 0)
+
+
+class EditConfigTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from tests.helpers import make_home
+        self.home = make_home().home
+        self.path = self.home / ".tower" / "tower.json"
+
+    def test_an_edit_that_changes_nothing_does_not_rewrite_the_file(self) -> None:
+        from agent_hub.install import edit_config
+        self.path.write_text('{"name":"Test","lanes":{"hub":{"runtime":"claude"}}}', encoding="utf-8")
+        self.assertFalse(edit_config(self.home, lambda d: d.__setitem__("name", "Test")))
+        self.assertEqual(self.path.read_text(encoding="utf-8"), '{"name":"Test","lanes":{"hub":{"runtime":"claude"}}}')
+        self.assertTrue(edit_config(self.home, lambda d: d.__setitem__("name", "Other")))
+        self.assertIn('"name": "Other"', self.path.read_text(encoding="utf-8"))
+
+    def test_an_invalid_result_is_never_written_and_no_lock_or_tmp_is_left(self) -> None:
+        from agent_hub.config import ConfigError
+        from agent_hub.install import edit_config
+        before = self.path.read_bytes()
+        with self.assertRaises(ConfigError):
+            edit_config(self.home, lambda d: d["lanes"].__setitem__("bad id", {"runtime": "claude"}))
+        self.assertEqual(self.path.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in self.path.parent.iterdir() if p.name.startswith("tower.json")), ["tower.json"])
+
+    def test_a_held_lock_is_waited_for_and_a_stale_one_is_removed(self) -> None:
+        import os
+        import threading
+        import time
+        from agent_hub.install import edit_config
+        lock = self.path.with_name("tower.json.lock")
+        lock.write_text("")
+        old = time.time() - 60
+        os.utime(lock, (old, old))
+        edit_config(self.home, lambda d: d.__setitem__("name", "A"))
+        lock.write_text("")
+        threading.Timer(0.3, lock.unlink).start()
+        edit_config(self.home, lambda d: d.__setitem__("name", "B"))
+        self.assertIn('"B"', self.path.read_text(encoding="utf-8"))
+
+
+class ClaimPidTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from tests.helpers import make_home
+        self.cfg = make_home()
+        self.pid_file = self.cfg.state_dir / "tower.pid"
+
+    def test_a_second_tower_is_refused_and_a_stale_pid_is_replaced(self) -> None:
+        from agent_hub import cli
+        self.cfg.state_dir.mkdir(parents=True, exist_ok=True)
+        self.pid_file.write_text("999999999")
+        cli.claim_pid(self.cfg)
+        self.assertEqual(self.pid_file.read_text(), str(os.getpid()))
+        self.assertFalse(self.pid_file.with_name("tower.pid.lock").exists())
+        with self.assertRaises(cli.TowerError):
+            self.pid_file.write_text(str(os.getppid()))
+            cli.claim_pid(self.cfg)
+        self.assertEqual(self.pid_file.read_text(), str(os.getppid()))
+
+    def test_the_service_marker_follows_the_environment(self) -> None:
+        from unittest import mock
+        from agent_hub import cli
+        marker = self.cfg.state_dir / "tower.managed"
+        with mock.patch.dict(os.environ, {"INVOCATION_ID": "abc"}):
+            cli.claim_pid(self.cfg)
+        self.assertTrue(marker.exists())
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("INVOCATION_ID", None)
+            os.environ.pop("DAH_SERVICE", None)
+            cli.claim_pid(self.cfg)
+        self.assertFalse(marker.exists())
+
+
+class ForceBackupTest(unittest.TestCase):
+    def test_force_saves_an_edited_file_as_bak_and_leaves_an_untouched_one_alone(self) -> None:
+        from agent_hub import config as config_mod
+        from agent_hub.install import install
+        from tests.helpers import make_home
+        cfg = make_home()
+        install(cfg)
+        proto = cfg.home / ".tower" / "PROTOCOL.md"
+        shipped = proto.read_text(encoding="utf-8")
+        proto.write_text(shipped + "\nmine\n", encoding="utf-8")
+        wrote = install(cfg, force=True)
+        self.assertEqual(proto.read_text(encoding="utf-8"), shipped)
+        self.assertEqual(proto.with_name("PROTOCOL.md.bak").read_text(encoding="utf-8"), shipped + "\nmine\n")
+        self.assertIn(".tower/PROTOCOL.md.bak (your previous copy)", wrote)
+        self.assertEqual([p.name for p in (cfg.home / ".tower" / "lanes").glob("*.bak")], [])
+        self.assertTrue(config_mod.load(cfg.home))
+
+    def test_force_help_says_so(self) -> None:
+        p = subprocess.run([sys.executable, "-m", "agent_hub", "install", "-h"], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONPATH": str(ROOT)})
+        self.assertIn(".bak", p.stdout)
+
+
+class ModelCheckTest(unittest.TestCase):
+    def probe(self, code: int, out: str) -> bool:
+        from unittest import mock
+        from agent_hub import install
+        done = mock.Mock(returncode=code, stdout=out, stderr="")
+        with mock.patch.object(install.shutil, "which", return_value="/bin/claude"), \
+                mock.patch.object(install.subprocess, "run", return_value=done):
+            return install.model_works("claude", "fable")
+
+    def test_only_a_clear_model_refusal_replaces_the_model(self) -> None:
+        self.assertTrue(self.probe(0, "ok"))
+        self.assertFalse(self.probe(1, "There's an issue with the selected model (fable). It may not exist or you may not have access to it."))
+        self.assertFalse(self.probe(1, "Error: model 'fable' not found"))
+        for msg in ("Could not resolve host: api.anthropic.com", "Please run /login", "API Error: 429 rate limit exceeded", ""):
+            self.assertTrue(self.probe(1, msg), msg)
+
+
+class TemplateCommandsTest(unittest.TestCase):
+    def sub(self, parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+        for a in parser._actions:
+            if isinstance(a, argparse._SubParsersAction):
+                return dict(a.choices)
+        return {}
+
+    def test_every_dah_command_in_a_template_names_real_commands_and_flags(self) -> None:
+        import re
+        import shlex
+        from agent_hub.cli import build_parser
+        problems = []
+        for f in sorted((ROOT / "agent_hub" / "templates").rglob("*.md")):
+            for m in re.finditer(r"`(dah [^`\n]*)`", f.read_text(encoding="utf-8")):
+                try:
+                    toks = shlex.split(m.group(1))[1:]
+                except ValueError:
+                    continue
+                parser = build_parser()
+                choices = self.sub(parser)
+                for tok in toks:
+                    tok = tok.strip("[]").rstrip(".")
+                    if tok.startswith("--"):
+                        if tok.split("=")[0] not in parser._option_string_actions:
+                            problems.append(f"{f.name}: {m.group(1)}: no flag {tok}")
+                    elif choices and re.fullmatch(r"[a-z][a-z-]*", tok):
+                        if tok in choices:
+                            parser = choices[tok]
+                            choices = self.sub(parser)
+                        else:
+                            problems.append(f"{f.name}: {m.group(1)}: no command {tok}")
+                            break
+                    else:
+                        choices = {}
+        self.assertEqual(problems, [])
+
+
+class GuideHelpTest(unittest.TestCase):
+    def test_help_lists_every_guide_that_ships(self) -> None:
+        from agent_hub.cli import guide_names
+        p = subprocess.run([sys.executable, "-m", "agent_hub", "guide", "-h"], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONPATH": str(ROOT)})
+        flat = " ".join(p.stdout.split())
+        shipped = [f.stem for f in (ROOT / "agent_hub" / "guide" / "deploy").glob("*.md")]
+        for name in (*shipped, "setup", "extend", "engines", "models"):
+            self.assertIn(name, flat)
+        self.assertIn("oauth2-proxy", guide_names())

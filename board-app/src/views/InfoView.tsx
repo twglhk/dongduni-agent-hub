@@ -7,8 +7,8 @@ import { useBoard } from '../state/board';
 
 export function InfoView() {
   const { L } = useL();
-  const { mach } = useBoard();
-  if (!mach?.machine) return <Empty>{L.empty.loading}</Empty>;
+  const { mach, machFailed } = useBoard();
+  if (!mach?.machine) return <Empty>{machFailed ? L.msg.loadFail : L.empty.loading}</Empty>;
   const disks = mach.machine.disks || [];
   return (
     <>

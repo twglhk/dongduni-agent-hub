@@ -13,7 +13,7 @@ Built-in routes and the engine's decisions are the contract extensions build on;
 
 ## Board
 
-Everything under `.tower/board/` is served to signed-in people at `x/<path>` (relative to the board, so it also works under `/w/<workspace>/`). Python files, dot files and secrets are never served.
+Everything under `.tower/board/` is served to signed-in people at `x/<path>` (relative to the board, so it also works under `/w/<workspace>/`). Python files, dot files and secrets are never served, and every file is sent with `content-security-policy: sandbox` and `nosniff` (SVG and XML files download unless a page shows them as an `<img>`).
 
 If `extra.css` exists the board links it; if `extra.js` exists the board loads it once, after the first state arrives, with `window.dah` ready:
 
@@ -29,7 +29,7 @@ If `extra.css` exists the board links it; if `extra.js` exists the board loads i
 
 `render` runs on every refresh of the visible tab, but the section is repainted only when its HTML changes (the React board also calls `onState` after every state load, changed or not, as the single-file board does), so scroll position, focus and typed text survive. A click handler should therefore read fresh data when it runs (`dah.S.data`), not rely on values captured at render time. Returning the same Node each time keeps it mounted for you to update. An extension that throws shows a small error box in its own section; the rest of the board is unaffected. Do not call `dah.refresh()` from `onState`: it would load the state in a loop.
 
-A whole board of your own: put it at `.tower/board/index.html`. It can use every route in the board API (`GET api/state`, `POST api/memo`, ...; see the top of `agent_hub/web.py`) and your own `api/x/...` routes. `?builtin` on the board URL always opens the built-in board, so a broken page never locks people out. When an update changes the built-in board, `dah update` asks infra to carry the change over.
+A whole board of your own: put it at `.tower/board/index.html`. It can use every route in the board API (`GET api/state`, `POST api/memo`, ...; see the top of `agent_hub/web.py`) and your own `api/x/...` routes. `?builtin` on the board URL always opens the built-in board, so a broken page never locks people out. The page itself (like the built-in one) and `manifest.webmanifest` (it holds only the workspace name) are served without sign-in, because the page has to show the sign-in; everything with data is behind `api/` and needs the same auth. The page is sent with `frame-ancestors 'none'` only, not the built-in page's stricter policy, so it may load what it needs. When an update changes the built-in board, `dah update` asks infra to carry the change over.
 
 ## API routes
 

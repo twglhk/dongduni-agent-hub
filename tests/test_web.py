@@ -1,3 +1,4 @@
+import http.client
 import json
 import os
 import threading
@@ -260,6 +261,187 @@ class WorkspacesTest(unittest.TestCase):
         finally:
             front.srv.shutdown()
             config_mod.unregister(slug)
+
+
+def raw(b: Board, method: str, path: str, headers: dict[str, str], body: bytes | None = None) -> tuple[int, Any, bytes]:
+    conn = http.client.HTTPConnection("127.0.0.1", b.srv.server_address[1], timeout=5)
+    try:
+        conn.putrequest(method, path, skip_host="host" in {k.lower() for k in headers})
+        for k, v in headers.items():
+            conn.putheader(k, v)
+        conn.endheaders(body)
+        r = conn.getresponse()
+        return r.status, r, r.read()
+    finally:
+        conn.close()
+
+
+class HostAndOriginTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.b = Board()
+        self.port = self.b.srv.server_address[1]
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def test_unknown_host_is_refused(self) -> None:
+        for host in ("evil.example", f"evil.example:{self.port}", "127.0.0.1:1", "localhost.evil.example"):
+            self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 421, host)
+            self.assertEqual(self.b.req("POST", "/api/memo", {"text": "x"}, {**POST, "Host": host})[0], 421, host)
+        for host in (f"127.0.0.1:{self.port}", f"localhost:{self.port}", f"[::1]:{self.port}"):
+            self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+
+    def test_public_url_host_and_exposed_bind_are_allowed(self) -> None:
+        b = Board(web={"host": "0.0.0.0", "public_url": "https://board.example.com"}, auth={"mode": "token", "allow_exposed": True})
+        try:
+            for host in ("board.example.com", f"192.168.1.5:{b.srv.server_address[1]}"):
+                self.assertEqual(b.req("GET", "/", headers={"Host": host})[0], 200, host)
+            self.assertEqual(b.req("GET", "/", headers={"Host": "evil.example"})[0], 421)
+        finally:
+            b.srv.shutdown()
+
+    def test_post_from_another_origin_is_refused(self) -> None:
+        host = f"127.0.0.1:{self.port}"
+        for h in ({"Origin": "http://evil.example"}, {"Origin": "null"}, {"Sec-Fetch-Site": "cross-site"},
+                  {"Sec-Fetch-Site": "same-site"}):
+            self.assertEqual(self.b.req("POST", "/api/memo", {"text": "x"}, {**POST, **h})[0], 403, h)
+        for h in ({"Origin": f"http://{host}"}, {"Sec-Fetch-Site": "same-origin"}, {}):
+            self.assertEqual(self.b.req("POST", "/api/memo", {"text": "x"}, {**POST, **h})[0], 200, h)
+
+    def test_content_length_is_checked_before_reading(self) -> None:
+        host = {"host": f"127.0.0.1:{self.port}", "x-tower": "1"}
+        self.assertEqual(raw(self.b, "POST", "/api/memo", {**host, "content-length": "-1"})[0], 413)
+        self.assertEqual(raw(self.b, "POST", "/api/memo", {**host, "content-length": "99999999"})[0], 413)
+        self.assertEqual(raw(self.b, "POST", "/api/memo", {**host, "content-length": "abc"})[0], 400)
+
+    def test_handler_has_a_socket_timeout_and_no_python_banner(self) -> None:
+        _, resp, _ = raw(self.b, "GET", "/api/state", {"host": f"127.0.0.1:{self.port}"})
+        self.assertNotIn("Python", resp.getheader("server"))
+        self.assertNotIn("BaseHTTP", resp.getheader("server"))
+        self.assertEqual(self.b.srv.RequestHandlerClass.timeout, 30)
+
+
+class SiblingAuthTest(unittest.TestCase):
+    H = "Tailscale-User-Login"
+
+    def other_home(self, **extra: Any) -> str:
+        cfg = make_home(**extra)
+        slug = config_mod.register(cfg.home)
+        self.slugs.append(slug)
+        return slug
+
+    def setUp(self) -> None:
+        self.slugs: list[str] = []
+
+    def tearDown(self) -> None:
+        for slug in self.slugs:
+            config_mod.unregister(slug)
+
+    def test_header_sibling_needs_a_header_front_with_the_same_header_name(self) -> None:
+        sib = self.other_home(auth={"mode": "header", "header": self.H})
+        for front_auth, ok in (({"mode": "token"}, False), ({"mode": "header", "header": "X-Other"}, False),
+                               ({"mode": "header", "header": self.H.lower()}, True)):
+            front = Board(auth=front_auth)
+            try:
+                if front_auth["mode"] == "token":
+                    tok = front.s.add_member("ana", "owner", with_token=True)
+                    head = {"authorization": f"Bearer {tok}", self.H: "x@y.z"}
+                else:
+                    head = {front_auth["header"]: "x@y.z", self.H: "x@y.z"}
+                self.assertEqual(front.req("GET", f"/w/{sib}/api/state", headers=head)[0], 200 if ok else 403, front_auth)
+            finally:
+                front.srv.shutdown()
+
+
+class ServedFileTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.b = Board()
+        self.home = self.b.cfg.home
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def test_every_part_of_the_resolved_path_obeys_the_name_rules(self) -> None:
+        (self.home / ".env.local").write_text("TOKEN=1")
+        (self.home / "innocent.txt").symlink_to(self.home / ".env.local")
+        (self.home / "state.TFSTATE").write_text("{}")
+        (self.home / "Secrets.YAML").write_text("a: 1")
+        (self.home / "service-account-prod.json").write_text("{}")
+        (self.home / "cert.pfx").write_bytes(b"x")
+        (self.home / "ok.txt").write_text("fine")
+        self.assertEqual(self.b.req("GET", "/f/ok.txt")[0], 200)
+        for name in ("innocent.txt", "state.TFSTATE", "Secrets.YAML", "service-account-prod.json", "cert.pfx"):
+            self.assertEqual(self.b.req("GET", "/f/" + name)[0], 404, name)
+
+    def test_files_are_sandboxed_and_xml_types_download(self) -> None:
+        (self.home / "pic.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'><script>1</script></svg>")
+        (self.home / "page.html").write_text("<p>x</p>")
+        (self.home / "a.png").write_bytes(b"\x89PNG")
+        code, _, h = self.b.req("GET", "/f/pic.svg")
+        self.assertEqual(code, 200)
+        self.assertEqual(h["x-content-type-options"], "nosniff")
+        self.assertTrue(h["content-security-policy"].startswith("sandbox"))
+        self.assertEqual(h["content-disposition"], "attachment")
+        _, _, h = self.b.req("GET", "/f/pic.svg", headers={"Sec-Fetch-Dest": "image"})
+        self.assertIsNone(h["content-disposition"])
+        self.assertEqual(h["x-content-type-options"], "nosniff")
+        self.assertIsNone(self.b.req("GET", "/f/a.png")[2]["content-disposition"])
+        self.assertIn("sandbox", self.b.req("GET", "/f/page.html")[2]["content-security-policy"])
+        board = self.home / ".tower" / "board"
+        board.mkdir()
+        (board / "logo.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+        h = self.b.req("GET", "/x/logo.svg")[2]
+        self.assertEqual((h["x-content-type-options"], h["content-disposition"]), ("nosniff", "attachment"))
+        self.assertIn("sandbox", h["content-security-policy"])
+
+    def test_empty_file_with_a_range_is_a_plain_200(self) -> None:
+        (self.home / "empty.txt").write_text("")
+        code, body, h = self.b.req("GET", "/f/empty.txt", headers={"range": "bytes=0-"})
+        self.assertEqual((code, body, h["content-range"], h["content-length"]), (200, b"", None, "0"))
+
+
+class HardeningHeadersTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.b = Board()
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def test_page_and_json_cannot_be_framed(self) -> None:
+        for path in ("/", "/old/", "/api/state"):
+            h = self.b.req("GET", path)[2]
+            self.assertEqual(h["x-frame-options"], "DENY", path)
+            self.assertEqual(h["x-content-type-options"], "nosniff", path)
+            self.assertEqual(h["referrer-policy"], "no-referrer", path)
+            self.assertIn("frame-ancestors 'none'", h["content-security-policy"], path)
+
+    def test_react_page_csp_allows_only_its_own_origin(self) -> None:
+        csp = self.b.req("GET", "/")[2]["content-security-policy"]
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("connect-src 'self'", csp)
+        self.assertNotIn("http", csp)
+
+
+class SettingsRoleTest(unittest.TestCase):
+    def test_only_an_owner_changes_settings(self) -> None:
+        b = Board(auth={"mode": "token"})
+        try:
+            member = b.s.add_member("bo", "member", with_token=True)
+            owner = b.s.add_member("ana", "owner", with_token=True)
+            self.assertEqual(b.req("POST", "/api/settings", {"max_lanes": 3}, {**POST, "authorization": f"Bearer {member}"})[0], 403)
+            self.assertEqual(b.req("POST", "/api/settings", {"max_lanes": 3}, {**POST, "authorization": f"Bearer {owner}"})[0], 200)
+        finally:
+            b.srv.shutdown()
+
+
+class ExposedLocalModeTest(unittest.TestCase):
+    def test_local_mode_refuses_to_be_exposed_without_opt_in(self) -> None:
+        for extra in ({"web": {"host": "0.0.0.0"}}, {"web": {"public_url": "https://b.example.com"}}, {"tunnel": "cloudflared run x"}):
+            with self.assertRaises(config_mod.ConfigError, msg=extra):
+                make_home(**extra)
+            make_home(**extra, auth={"mode": "local", "allow_exposed": True})
+            make_home(**extra, auth={"mode": "token"})
+        make_home(web={"host": "127.0.0.1", "port": 9000})
 
 
 if __name__ == "__main__":
