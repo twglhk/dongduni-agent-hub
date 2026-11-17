@@ -28,7 +28,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import engines as engines_mod, leftovers, procs, processes, rulewatch, schedules, stagemodel
+from . import engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -189,6 +189,9 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
             dep = None
         if dep and dep["state"] in ("queued", "running", "wrapping"):
             return f"waiting for #{dep['id']}: after"
+    hold = overlap.hold_of(store, f"task:{task['id']}")
+    if hold:
+        return overlap.held_text(hold)
     b = task_block(store, task, also)
     if b is None:
         return None
@@ -276,22 +279,27 @@ BLOCK_TEXT = {
     "en": {"declaring": "waits for #{o} ({lane}) to declare its paths", "alone": "#{o} ({lane}) runs alone",
            "busy": "runs alone: waits until #{o} ({lane}) and every other infra session finish",
            "overlap": "paths overlap #{o} ({lane}): waits until it finishes", "full": "all {n} infra sessions are busy",
-           "behind": "waits behind #{o}, which runs alone"},
+           "behind": "waits behind #{o}, which runs alone",
+           "overlap_hold": "overlaps another person's work: waits for the answer on card #{o}"},
     "ko": {"declaring": "#{o}({lane})가 고칠 경로를 선언하는 중이라 대기", "alone": "#{o}({lane})가 혼자 실행 중이라 대기",
            "busy": "혼자 실행할 메모라 #{o}({lane}) 등 다른 인프라 세션이 끝날 때까지 대기",
            "overlap": "#{o}({lane})와 고칠 경로가 겹쳐 그것이 끝날 때까지 대기", "full": "인프라 세션 {n}개가 모두 사용 중",
-           "behind": "혼자 실행할 #{o} 차례를 기다리는 중"},
+           "behind": "혼자 실행할 #{o} 차례를 기다리는 중",
+           "overlap_hold": "다른 사람 일과 겹쳐 카드 #{o} 답을 기다리는 중"},
     "ja": {"declaring": "#{o}（{lane}）が変更するパスを宣言するのを待っています", "alone": "#{o}（{lane}）が単独で実行中のため待機",
            "busy": "単独実行のメモなので、#{o}（{lane}）ほかの infra セッションが終わるまで待機",
            "overlap": "#{o}（{lane}）と変更するパスが重なるため、それが終わるまで待機", "full": "infra セッション {n} 件がすべて使用中",
-           "behind": "単独実行の #{o} の順番を待っています"},
+           "behind": "単独実行の #{o} の順番を待っています",
+           "overlap_hold": "他の人の作業と重なるため、カード #{o} の返答を待機"},
     "zh": {"declaring": "等待 #{o}（{lane}）声明它要修改的路径", "alone": "#{o}（{lane}）正在独占运行，等待",
            "busy": "此备忘需独占运行：等到 #{o}（{lane}）和其他 infra 会话都结束", "overlap": "与 #{o}（{lane}）要修改的路径重叠，等它结束",
-           "full": "{n} 个 infra 会话全部在用", "behind": "排在需独占运行的 #{o} 之后"},
+           "full": "{n} 个 infra 会话全部在用", "behind": "排在需独占运行的 #{o} 之后",
+           "overlap_hold": "与他人的工作重叠，等待卡片 #{o} 的答复"},
     "es": {"declaring": "espera a que #{o} ({lane}) declare sus rutas", "alone": "#{o} ({lane}) se ejecuta a solas",
            "busy": "se ejecuta a solas: espera a que #{o} ({lane}) y las demás sesiones de infra terminen",
            "overlap": "las rutas se solapan con #{o} ({lane}): espera a que termine", "full": "las {n} sesiones de infra están ocupadas",
-           "behind": "espera detrás de #{o}, que se ejecuta a solas"},
+           "behind": "espera detrás de #{o}, que se ejecuta a solas",
+           "overlap_hold": "se solapa con el trabajo de otra persona: espera la respuesta en la tarjeta #{o}"},
 }
 
 
@@ -313,6 +321,10 @@ def infra_waits(store: Store, sessions: list[str], now: float, fair: bool = Fals
     out: list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]] = []
     barrier = None
     for m in store.inbox_queue(INFRA, fair)[:limit]:
+        hold = overlap.hold_of(store, f"memo:{m['id']}")
+        if hold:
+            out.append((m, ("overlap_hold", {"id": hold["items"][0], "_lane": "card"})))
+            continue
         b = message_block(m, live, now)
         if b is None and barrier is not None:
             b = ("behind", barrier)
@@ -399,6 +411,7 @@ class Engine:
         self.catch_up_at: float | None = None
         self.catch_up_told: dict[str, str] = {}
         self.sync_retry: dict[str, float] = {}
+        self.overlaps = overlap.Overlaps(cfg, store, log) if cfg.overlap_check else None
         self.rules = rulewatch.RuleWatch(cfg.home, store, cfg.state_dir, cfg.rule_watch, cfg.lang, clock, log,
                                          lambda k: self.person_of(k)) if cfg.rule_watch else None
 
@@ -585,6 +598,11 @@ class Engine:
                 self._lane(lane, statuses[lane])
             except Exception as e:
                 self.log(f"{lane}: {e}")
+        try:
+            if self.overlaps:
+                self.overlaps.scan()
+        except Exception as e:
+            self.log(f"overlap: {e}")
         self._start_queued(statuses)
         try:
             self._person_hubs()
@@ -747,6 +765,10 @@ class Engine:
 
     def route_decisions(self) -> None:
         for it in self.store.undelivered_decisions():
+            told = self.overlaps.route(it) if self.overlaps else None
+            if told:
+                self.store.route_decision(it["id"], told[0], also=told[1:])
+                continue
             push, follow = self._route(it)
             self.store.route_decision(it["id"], push, follow, self._decision_paths(it) if push and push[0] == INFRA else None)
 
@@ -1409,9 +1431,10 @@ class Engine:
             return
         live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
         now, barrier = self.clock(), []
+        held = {int(r["work"].split(":")[1]) for r in self.store.overlaps(overlap.HOLDS) if r["work"].startswith("memo:")}
 
         def allow(m: dict[str, Any]) -> bool:
-            if barrier:
+            if barrier or m["id"] in held:
                 return False
             if message_block(m, live, now) is None:
                 return True

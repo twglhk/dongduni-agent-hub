@@ -186,6 +186,19 @@ def cmd_cancel(args: argparse.Namespace) -> None:
     print(f"task #{args.task} cancelled")
 
 
+def cmd_overlap(args: argparse.Namespace) -> None:
+    from .. import overlap
+    c = cfg()
+    me = need(args, c, HUB)
+    if not c.overlap_check:
+        raise TowerError('overlap_check is off in tower.json (`"overlap_check": true`, needs `rule_watch.files`)')
+    try:
+        work = overlap.decide_by_hub(c, store(c), args.item, args.how, me)
+    except (ValueError, StoreError) as e:
+        raise TowerError(str(e))
+    print(f"{work}: {args.how}")
+
+
 def cmd_memo(args: argparse.Namespace) -> None:
     c = cfg()
     me = need(args, c, HUB, *c.infra_sessions())

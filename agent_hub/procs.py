@@ -33,7 +33,6 @@ def detached() -> dict[str, Any]:
 
 
 def capture(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str] | None:
-    """Run a short command and return its text output, or None when it could not start or ran past the timeout."""
     extra: dict[str, Any] = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if WINDOWS else {}
     try:
         return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace",
