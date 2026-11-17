@@ -10,7 +10,7 @@ Instructions for coding agents working in this repository.
 | path | what |
 | --- | --- |
 | `agent_hub/engine.py` | the tick: hub, infra inbox, team lanes, decision routing, live asks, scheduling (paths, slots, linked tasks, usage caps). No LLM. |
-| `agent_hub/runtimes.py` | one adapter per agent runtime (opencode / claude / codex), in the background or in a terminal window (tmux, Orca) |
+| `agent_hub/runtimes/` | one adapter per agent runtime (opencode / claude / codex), in the background or in a terminal window (tmux, Orca); modules in [docs/runtimes.md](docs/runtimes.md) |
 | `agent_hub/store.py` | SQLite schema and all state changes (tasks, items, messages, ledger, deliverables, …) |
 | `agent_hub/config.py` | `tower.json`, the workspace registry (`~/.config/agent-hub/workspaces.json`, `%APPDATA%\agent-hub` on Windows), port picking |
 | `agent_hub/procs.py` | starting, checking and stopping processes on Linux, macOS and Windows; npm shims on Windows |
@@ -19,7 +19,7 @@ Instructions for coding agents working in this repository.
 | `board-app/` | source of the board UI: React 19, TypeScript, Vite and Tailwind. UI strings are in `src/i18n/<lang>.json` (en, ko, ja, zh, es). `src/ext/` is `window.dah` for workspace extensions |
 | `agent_hub/board_next/` | the committed build of `board-app/`: served at `/` (page) and `/assets/` (hashed files), shipped as package data. Never edit it by hand |
 | `agent_hub/board/index.html` | the single-file board from before the React app, kept as it was and served at `/old/`; it has its own `UI` dict and is no longer where new board features go |
-| `agent_hub/cli.py` | the `dah` command lanes and people use |
+| `agent_hub/cli/` | the `dah` command lanes and people use: `common`, `lanes`, `hub`, `reading`, `running`, `setup`, `manage`, `parser`, `main` |
 | `agent_hub/discover.py` · `install.py` | setup survey and workspace installer |
 | `agent_hub/templates/` | protocol and lane instruction templates copied into workspaces |
 | `agent_hub/guide/` | the setup playbook, the extension guide and the guides for reaching the board (`dah guide`); shipped in the package |
@@ -29,13 +29,14 @@ Instructions for coding agents working in this repository.
 | `agent_hub/leftovers.py` | opt-in (`leftover_sweep`, Linux): stops lane processes left by closed sessions |
 | `agent_hub/sessinfo.py` | the model and effort a Claude Code lane session really runs with, read from its transcript (`run` in the board state) |
 | `agent_hub/memwatch.py` | renews idle sessions over a memory line |
-| `docs/` | README illustrations, the engine playbook, a Claude lane harness section, releasing |
+| `docs/` | README illustrations, the engine playbook, a Claude lane harness section, runtime adapters and the cli/runtimes module layout, releasing |
 | `tools/skill_lint.py` | lint for OpenCode skills |
 
 ## Rules
 
 - Standard library only, Python 3.10+. No new dependency without a strong reason.
 - No comments and no docstrings by default, in code and tests alike. Names, small functions and tests carry the meaning; usage and design go into `agent_hub/guide/` or `docs/`. Write a comment only where the code cannot say it (a workaround for an outside tool's bug, a constraint nobody would guess), one line, the why and never the what.
+- `cli` and `runtimes` are packages: a test that patches a name patches the module that looks it up (`agent_hub.cli.running`, not `agent_hub.cli`). A `common` module imports no sibling of its package.
 - Every state change goes through `Store`. The engine must stay deterministic given a clock and a runtime; tests inject both (`tests/helpers.py`).
 - A new runtime = one `Adapter` subclass with `status/open/send/close` (+ optional `questions`, `context_k`, `last_text`) and a stand-in CLI test in `tests/test_runtimes.py` (a workspace can also register one from `.tower/ext/`, without changing the package) (terminal windows: `tests/test_terminal.py`, against a stand-in terminal app). Never call a real model in tests.
 - The board is the React app in `board-app/`. Its build is committed in `agent_hub/board_next/` and shipped in the package, so users need no Node; contributors run `cd board-app && npm ci && npm run build` (it typechecks first) and commit source and build together. CI rebuilds and fails when they differ, so keep the build reproducible (pinned versions, `npm ci`, no timestamps). Python code never imports or runs Node.

@@ -33,7 +33,7 @@ Issues = "https://github.com/twglhk/dongduni-agent-hub/issues"
 dah = "agent_hub.cli:main"
 
 [tool.setuptools]
-packages = ["agent_hub"]
+packages = ["agent_hub", "agent_hub.cli", "agent_hub.runtimes"]
 
 [tool.setuptools.dynamic]
 version = { attr = "agent_hub.__version__" }

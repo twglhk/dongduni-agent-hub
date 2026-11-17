@@ -246,7 +246,7 @@ class RestartTest(unittest.TestCase):
 
     def setUp(self) -> None:
         from unittest import mock
-        from agent_hub import cli
+        from agent_hub.cli import running as cli
         from tests.helpers import make_home
         self.cli, self.cfg = cli, make_home()
         self.calls: list[str] = []
@@ -464,7 +464,7 @@ class GuideHelpTest(unittest.TestCase):
 class TowerLaneTest(unittest.TestCase):
     def test_the_tower_does_not_inherit_the_lane_that_started_it(self) -> None:
         from unittest import mock
-        from agent_hub import cli
+        from agent_hub.cli import running as cli
         from agent_hub.config import load
         home = Path(tempfile.mkdtemp())
         (home / ".tower").mkdir()
@@ -482,7 +482,7 @@ class TowerLaneTest(unittest.TestCase):
 
     def test_run_drops_a_lane_it_was_started_from(self) -> None:
         from unittest import mock
-        from agent_hub import cli
+        from agent_hub.cli import running as cli
         seen: list[str | None] = []
 
         def boom() -> None:
