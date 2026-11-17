@@ -116,7 +116,8 @@ def cmd_report(args: argparse.Namespace) -> None:
             s.signal(tid)
             return
     text, retro = stats.split_retro(args.text) if args.kind == "wrapped" else (args.text, None)
-    s.add_report(tid, me, args.kind, text, atts)
+    held = s.lane(me).get("active_message") if is_infra(me) else None
+    s.add_report(tid, me, args.kind, text, atts, int(held) if held is not None else None)
     if retro:
         s.add_retro(tid, me, text, retro["cost"], retro["corrected"], retro["rule"], retro["raw"])
     s.signal(tid)

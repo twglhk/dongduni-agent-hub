@@ -5,6 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Callable
 
+from . import worklog
 from .config import INFRA, Config
 from .requester import visible_to_requester
 from .store import HOLD, HUMAN, Store, item_view
@@ -171,6 +172,31 @@ def memo_count(g: Gate, target: str) -> int:
     if not g.me:
         return 0
     return len([m for m in g.s.memos(target, MEMO_SCAN) if can_see_memo(g, target, m)])
+
+
+def _work_allow(g: Gate) -> worklog.Allow | None:
+    if g.owner:
+        return None
+    if not g.me:
+        return lambda _: False
+    if not (g.person_hubs or g.requester):
+        return None
+
+    def allow(key: dict[str, Any]) -> bool:
+        who = str(key["from"] or "")
+        return key["src"] != "report" and bool(who) and (g.person_hubs.get(who) or who) == g.name
+    return allow
+
+
+def work(g: Gate, offset: int, limit: int) -> list[dict[str, Any]]:
+    card = None if g.owner else (lambda it: can_see(g, it))
+    with g.s.conn() as con:
+        return worklog.page(con, offset, limit, _work_allow(g), card)
+
+
+def work_count(g: Gate) -> int:
+    with g.s.conn() as con:
+        return worklog.count(con, _work_allow(g))
 
 
 def _like(text: str) -> str:

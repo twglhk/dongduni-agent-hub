@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Collection, Iterable, Iterator
 
+from . import worklog
+
 HUB = "hub"
 ALL_HUBS = "hub*"
 INFRA = "infra"
@@ -110,7 +112,8 @@ CREATE TABLE IF NOT EXISTS reports(
   kind TEXT NOT NULL,               -- done | blocked | note | handoff | wrapped
   text TEXT NOT NULL,
   attachments TEXT NOT NULL DEFAULT '[]',
-  created REAL NOT NULL
+  created REAL NOT NULL,
+  message_id INTEGER                -- infra: the memo or decision message the reporting session held
 );
 CREATE TABLE IF NOT EXISTS member_prefs(
   member TEXT PRIMARY KEY,
@@ -315,6 +318,8 @@ class Store:
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
             if "message_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")
+            if "message_id" not in _columns(con, "reports"):
+                con.execute("ALTER TABLE reports ADD COLUMN message_id INTEGER")
 
     def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
         if table not in self.columns:
@@ -422,8 +427,8 @@ class Store:
             if held:
                 raise StoreError(f"#{message_id} is already held by {held[0]}; that session answers it")
             con.execute("UPDATE messages SET delivered=? WHERE id=?", (now, message_id))
-            con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created) VALUES(NULL,?,?,?,?,?)",
-                        (target, "note", f"#{message_id}: {text}", "[]", now))
+            con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created, message_id) "
+                        "VALUES(NULL,?,?,?,?,?,?)", (target, "note", f"#{message_id}: {text}", "[]", now, message_id))
             if row["kind"] == "memo":
                 con.execute("INSERT INTO messages(target, sender, kind, item_id, text, created, delivered) "
                             "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", message_id, text, now, now))
@@ -855,12 +860,13 @@ class Store:
 
     # ---------- reports ----------
 
-    def add_report(self, task_id: int | None, lane: str, kind: str, text: str, attachments: list[str]) -> int:
+    def add_report(self, task_id: int | None, lane: str, kind: str, text: str, attachments: list[str],
+                   message_id: int | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created) "
-                                   "VALUES(?,?,?,?,?,?)",
+            return _id(con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created, message_id) "
+                                   "VALUES(?,?,?,?,?,?,?)",
                                    (task_id, lane, kind, text, json.dumps(attachments, ensure_ascii=False),
-                                    self.clock())))
+                                    self.clock(), message_id)))
 
     def reports(self, task_id: int | None = None, limit: int = 50) -> list[dict[str, Any]]:
         with self.conn() as con:
@@ -880,6 +886,7 @@ class Store:
         "closed": ("tasks WHERE state IN ('closed','cancelled')", "closed DESC, id DESC"),
     }
     MEMO_HISTORY = {"memos": INFRA, "requests": ALL_HUBS}
+    WORK = "work"
 
     def history_count(self, kind: str) -> int:
         with self.conn() as con:
@@ -887,13 +894,18 @@ class Store:
                 where, vals = _target_sql(self.MEMO_HISTORY[kind])
                 return int(con.execute(f"SELECT count(*) FROM messages WHERE {where} AND kind='memo'",
                                        vals).fetchone()[0])
+            if kind == self.WORK:
+                return worklog.count(con)
             return int(con.execute(f"SELECT count(*) FROM {self.HISTORY[kind][0]}").fetchone()[0])
 
     def history(self, kind: str, offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
         if kind in self.MEMO_HISTORY:
             return self.memos(self.MEMO_HISTORY[kind], limit, offset)
+        if kind == self.WORK:
+            with self.conn() as con:
+                return worklog.page(con, offset, limit)
         if kind not in self.HISTORY:
-            raise StoreError(f"history kind must be one of {', '.join([*self.HISTORY, *self.MEMO_HISTORY])}")
+            raise StoreError(f"history kind must be one of {', '.join([*self.HISTORY, *self.MEMO_HISTORY, self.WORK])}")
         src, order = self.HISTORY[kind]
         with self.conn() as con:
             rows = _rows(con.execute(f"SELECT * FROM {src} ORDER BY {order} LIMIT ? OFFSET ?", (limit, offset)))

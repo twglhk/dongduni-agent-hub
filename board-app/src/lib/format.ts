@@ -16,3 +16,10 @@ export function rel(L: Dict, s?: number | null) {
   if (dt < 86400) return fmt(L.time.h, { n: Math.floor(dt / 3600) });
   return fmtT(s);
 }
+
+export function took(L: Dict, from?: number | null, to?: number | null) {
+  if (!from || !to || to < from) return '';
+  const m = Math.floor((to - from) / 60);
+  if (m < 1) return L.work.sec;
+  return m < 60 ? fmt(L.work.min, { n: m }) : fmt(L.work.hr, { h: Math.floor(m / 60), m: m % 60 });
+}

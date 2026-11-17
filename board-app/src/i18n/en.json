@@ -63,7 +63,8 @@
     "reports": "Reports",
     "closed": "Closed",
     "memos": "Infra requests",
-    "requests": "Hub requests"
+    "requests": "Hub requests",
+    "work": "Work"
   },
   "memo": {
     "wait": "Waiting",
@@ -411,5 +412,42 @@
     "newestReport": "Newest report",
     "noWork": "This session has not held any work yet.",
     "hidden": "The last work of this session belongs to someone else."
+  },
+  "work": {
+    "task": "Task",
+    "memo": "Infra memo",
+    "decision": "Infra decision",
+    "report": "Report",
+    "by": "from",
+    "requester": "for",
+    "took": "took",
+    "line": "Process",
+    "stage": "stage",
+    "oldRow": "old row",
+    "brief": "Brief",
+    "reports": "Reports",
+    "replies": "Infra replies",
+    "commits": "Commits",
+    "files": "Files",
+    "cards": "Cards",
+    "cost": "Cost",
+    "corrected": "Corrected",
+    "rule": "Rule",
+    "state": {
+      "queued": "Queued",
+      "running": "Running",
+      "wrapping": "Wrapping up",
+      "done": "Done",
+      "closed": "Closed",
+      "cancelled": "Cancelled"
+    },
+    "mode": {
+      "prepare": "prepare",
+      "make": "make",
+      "fix": "fix"
+    },
+    "min": "{n} min",
+    "hr": "{h} h {m} min",
+    "sec": "under a minute"
   }
 }

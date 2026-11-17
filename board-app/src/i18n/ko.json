@@ -63,7 +63,8 @@
     "reports": "보고",
     "closed": "작업",
     "memos": "인프라 요청",
-    "requests": "허브 요청"
+    "requests": "허브 요청",
+    "work": "작업"
   },
   "memo": {
     "wait": "대기",
@@ -411,5 +412,42 @@
     "newestReport": "가장 최근 보고",
     "noWork": "이 세션이 맡은 일이 아직 없어요.",
     "hidden": "이 세션이 마지막에 한 일은 다른 사람의 것이에요."
+  },
+  "work": {
+    "task": "작업",
+    "memo": "인프라 메모",
+    "decision": "인프라 결정",
+    "report": "보고",
+    "by": "보낸 쪽",
+    "requester": "요청한 사람",
+    "took": "걸린 시간",
+    "line": "공정",
+    "stage": "단계",
+    "oldRow": "예전 행",
+    "brief": "지시",
+    "reports": "보고",
+    "replies": "인프라 답",
+    "commits": "커밋",
+    "files": "파일",
+    "cards": "카드",
+    "cost": "손실",
+    "corrected": "바로잡음",
+    "rule": "규칙",
+    "state": {
+      "queued": "대기",
+      "running": "진행 중",
+      "wrapping": "마무리 중",
+      "done": "완료",
+      "closed": "닫힘",
+      "cancelled": "취소됨"
+    },
+    "mode": {
+      "prepare": "준비",
+      "make": "제작",
+      "fix": "수정"
+    },
+    "min": "{n}분",
+    "hr": "{h}시간 {m}분",
+    "sec": "1분 미만"
   }
 }

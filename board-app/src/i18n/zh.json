@@ -63,7 +63,8 @@
     "reports": "报告",
     "closed": "任务",
     "memos": "基础设施请求",
-    "requests": "中枢请求"
+    "requests": "中枢请求",
+    "work": "工作"
   },
   "memo": {
     "wait": "等待中",
@@ -411,5 +412,42 @@
     "newestReport": "最新报告",
     "noWork": "此会话还没有承担过工作。",
     "hidden": "此会话最近的工作属于其他人。"
+  },
+  "work": {
+    "task": "任务",
+    "memo": "基础设施备忘",
+    "decision": "基础设施决定",
+    "report": "报告",
+    "by": "来自",
+    "requester": "请求人",
+    "took": "耗时",
+    "line": "工序",
+    "stage": "阶段",
+    "oldRow": "旧行",
+    "brief": "指令",
+    "reports": "报告",
+    "replies": "基础设施回复",
+    "commits": "提交",
+    "files": "文件",
+    "cards": "卡片",
+    "cost": "损耗",
+    "corrected": "已纠正",
+    "rule": "规则",
+    "state": {
+      "queued": "排队中",
+      "running": "进行中",
+      "wrapping": "收尾中",
+      "done": "已完成",
+      "closed": "已关闭",
+      "cancelled": "已取消"
+    },
+    "mode": {
+      "prepare": "准备",
+      "make": "制作",
+      "fix": "修复"
+    },
+    "min": "{n} 分钟",
+    "hr": "{h} 小时 {m} 分钟",
+    "sec": "不到 1 分钟"
   }
 }

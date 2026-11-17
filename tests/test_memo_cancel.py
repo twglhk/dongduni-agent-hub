@@ -57,6 +57,18 @@ class MemoCancelTest(unittest.TestCase):
         self.assertEqual(len(news), 1)
         self.assertIn("done in #389", news[0]["text"])
 
+    def test_infra_report_saves_the_message_the_session_held(self) -> None:
+        a = self.s.push(INFRA, HUB, "memo", "first")
+        b = self.s.push(INFRA, HUB, "memo", "second")
+        self.s.claim_inbox("infra#2", INFRA)
+        self.s.claim_inbox("infra", INFRA)
+        self.dah("report", "wrapped", f"memo #{a} was mentioned only", lane="infra")
+        with self.s.conn() as con:
+            row = con.execute("SELECT lane, message_id FROM reports ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(tuple(row), ("infra", b))
+        rows = {r["id"]: r for r in self.s.history("work")}
+        self.assertEqual((len(rows[a]["reports"]), len(rows[b]["reports"])), (0, 1))
+
     def test_refuses_held_unknown_and_non_hubs(self) -> None:
         a = self.s.push(INFRA, HUB, "memo", "taken")
         self.s.claim_inbox("infra", INFRA)

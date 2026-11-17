@@ -386,6 +386,63 @@ class FlagsOffTest(ScopeCase):
             self.assertEqual(self.get(f"/api/items/{cid}", "ana")[0], 200)
 
 
+class WorkFeedScopeTest(ScopeCase):
+    def seed(self) -> None:
+        ScopeCase.seed(self)
+        s = self.b.s
+        for w in ("bo", "cy"):
+            s.add_item("docs", self.task[w], "review", f"{w} triage 2", f"{w} secret", [], [], audience=HUB)
+        s.push(INFRA, "tower", "decision", "Decision follow-up", item_id=self.human_card["cy"])
+        s.add_report(None, "infra", "wrapped", "unlinked report", [])
+
+    def work(self, who: str, offset: int = 0) -> list[dict]:
+        return self.get(f"/api/history?kind=work&offset={offset}", who)[1]["rows"]
+
+    def titles(self, who: str) -> set[str]:
+        return {r["title"] for r in self.work(who)}
+
+    def test_a_member_sees_only_their_own_work(self) -> None:
+        self.assertEqual(self.titles("bo"), {"bo task", "bo hub tells infra"})
+        self.assertEqual(self.titles("cy"), {"cy task", "cy hub tells infra", "cy asks"})
+        self.assertNotIn("cy secret", str(self.work("bo")))
+        self.assertNotIn("unlinked report", str(self.work("bo")))
+
+    def test_the_owner_sees_every_row(self) -> None:
+        self.assertEqual(len(self.work("ana")), 7)
+        self.assertEqual(self.get("/api/state", "ana")[1]["counts"]["work"], 7)
+
+    def test_counts_and_paging_follow_the_same_rule(self) -> None:
+        self.assertEqual(self.get("/api/state", "bo")[1]["counts"]["work"], 2)
+        self.assertEqual(self.work("bo", 2), [])
+        for i in range(25):
+            self.b.s.add_task("docs", f"cy more {i}", "brief", requester="cy", hub="hub-cy")
+        self.assertEqual(len(self.work("bo")), 2)
+        self.assertEqual(len(self.work("cy")), 20)
+        self.assertEqual(len(self.work("cy", 20)), 8)
+
+    def test_cards_inside_a_row_follow_card_visibility(self) -> None:
+        row = next(r for r in self.work("bo") if r["title"] == "bo task")
+        self.assertEqual({c["title"] for c in row["cards"]}, {"bo triage", "bo triage 2"})
+        owner = next(r for r in self.work("ana") if r["title"] == "cy task")
+        self.assertEqual(len(owner["cards"]), 2)
+
+    def test_the_shared_hub_row_is_for_the_owner_only(self) -> None:
+        self.assertIn("shared hub tells infra", self.titles("ana"))
+        self.assertNotIn("shared hub tells infra", self.titles("bo"))
+
+    def test_a_task_of_my_requests_in_the_shared_hub_is_mine(self) -> None:
+        self.b.s.add_task("docs", "mine via shared hub", "brief", requester="bo")
+        self.assertIn("mine via shared hub", self.titles("bo"))
+        self.assertNotIn("mine via shared hub", self.titles("cy"))
+
+
+class WorkFeedFlagsOffTest(ScopeCase):
+    requester, person_hubs = False, False
+
+    def test_without_scoping_a_member_sees_the_feed(self) -> None:
+        self.assertEqual(len(self.get("/api/history?kind=work", "bo")[1]["rows"]), 5)
+
+
 class LocalModeSeesAllTest(unittest.TestCase):
     def test_local_owner(self) -> None:
         b = Board()
