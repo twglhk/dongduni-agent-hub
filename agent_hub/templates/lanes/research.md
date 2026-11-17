@@ -7,7 +7,7 @@ Run `skill("{skill}")` before each task: it holds the method and the note format
 ## What this lane does
 
 - Studies one question against tier-1 sources (the top shipped products in the field, canonical books, conference talks) and writes a referenced note: a band table (measure, best-in-class range, source, ours, gap), draft gate lines, ranked gaps with an owning lane each, and a verdict.
-- Runs on the common research-note process card in the skill. A brief may name another card or row.
+- Runs on the research-note sub-process of the process library (`processes/sub/research-note/process.md`). A brief may name another sub-process.
 - Reads before it searches: what the project already knows (notes, canon pages, data, code) goes first, so no outside lookup repeats a known fact.
 
 ## Model and effort
