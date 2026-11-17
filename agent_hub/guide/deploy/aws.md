@@ -42,7 +42,8 @@ Pick one:
    ```
 
    then pin people with `dah member add ana --ident <their subject id>`. Keep the instance's security group open only to the ALB.
-4. **No public endpoint**: `aws ssm start-session --target <id> --document-name AWS-StartPortForwardingSession --parameters portNumber=8787,localPortNumber=8787` and open `http://127.0.0.1:8787` locally (laptop only, not phones).
+4. **Caddy + oauth2-proxy** on the instance (Google or any OIDC, no load balancer): [oauth2-proxy.md](oauth2-proxy.md).
+5. **No public endpoint**: `aws ssm start-session --target <id> --document-name AWS-StartPortForwardingSession --parameters portNumber=8787,localPortNumber=8787` and open `http://127.0.0.1:8787` locally (laptop only, not phones).
 
 ## Backups
 
