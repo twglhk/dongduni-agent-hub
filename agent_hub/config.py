@@ -121,6 +121,7 @@ class Config:
     branch_sync: bool = False    # a worktree lane's branch takes the workspace's branch before each task (branchsync.py)
     branch_sync_seconds: int = 0  # >0: every N seconds idle worktree lane branches take main too; 0 = off
     branch_sync_push: bool = False  # after such a catch-up, push the branch to origin
+    leftover_sweep: bool = False  # stop lane processes left behind by closed sessions, Linux only (leftovers.py)
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -350,6 +351,7 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
     return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
             "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600,
+            "leftover_sweep": bool(raw.get("leftover_sweep", False)),
             "branch_sync": bool(raw.get("branch_sync", False)),
             "branch_sync_seconds": max(0, int(raw.get("branch_sync_seconds") or 0)),
             "branch_sync_push": bool(raw.get("branch_sync_push", False))}

@@ -23,9 +23,10 @@ from __future__ import annotations
 import re
 import time
 import types
+from pathlib import Path
 from typing import Any, Callable
 
-from . import engines as engines_mod, stagemodel
+from . import engines as engines_mod, leftovers, procs, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane
 from .ext import Extensions
 from .store import HUMAN, MULTI_SEP, TOWER, Store, StoreError
@@ -38,6 +39,7 @@ NUDGE_LIMIT = 2
 RESPAWN_LIMIT = 3
 HUB_ROTATE_K = 300
 HUB_STUCK_SECONDS = 900
+LEFTOVER_SECONDS = 300  # how often the tower looks for lane processes left behind by closed sessions
 USAGE_SECONDS = 60
 CHAIN_CONTEXT_K = 250  # a linked task goes into the finished task's session only while its context is under this
 STUCK_TITLE = {"en": "The hub does not go idle", "ko": "허브가 idle로 돌아오지 않음",
@@ -194,6 +196,10 @@ class Engine:
         self.api_watch: Any = None  # apierrors.EventWatch, made on the first tick
         self.sweep: Any = None  # scratch.ScratchSweep, made on the first tick
         self.waits: dict[int, str] | None = None  # why each queued task is not starting (machine.write_waits)
+        self.proc_scan: Callable[[Path], list[Any]] = leftovers.scan  # lane processes on this machine (tests swap it)
+        self.proc_stop: Callable[[int], None] = lambda pid: procs.terminate(pid, group=False)
+        self.leftover_at: float | None = None
+        self.leftover_seen: set[int] = set()  # root pids found left over at the last check (stopped at the next)
         self.sync_told: dict[int, str] = {}  # task id -> the merge conflict the hub was told about (once each)
         self.catch_up_at: float | None = None
         self.catch_up_told: dict[str, str] = {}  # lane session -> the idle-merge conflict the hub was told about
@@ -334,6 +340,10 @@ class Engine:
                     fn(statuses[name])
                 except Exception as e:
                     self.log(f"{name}: {e}")
+        try:
+            self._leftovers()
+        except Exception as e:
+            self.log(f"leftover: {e}")
         try:
             self._catch_up_branches(statuses)
         except Exception as e:
@@ -721,6 +731,41 @@ class Engine:
             from .machine import write_waits
             self.waits = waits
             write_waits(self.cfg.state_dir, waits)
+
+    def _leftovers(self) -> None:
+        """With `leftover_sweep` on, every LEFTOVER_SECONDS: lane processes still running for a session that is closed or
+        replaced (leftovers.py) are stopped once they are found on two checks in a row, and the hub is told."""
+        if not self.cfg.leftover_sweep:
+            return
+        now = self.clock()
+        if self.leftover_at is not None and now - self.leftover_at < LEFTOVER_SECONDS:
+            return
+        self.leftover_at = now
+        found = self.proc_scan(self.cfg.home)
+        if not found:
+            self.leftover_seen = set()
+            return
+        current = {lane: self.store.lane(lane).get("session") for lane in self.lanes()}
+        trees = leftovers.stale(found, current)
+        roots = {t[0].pid for t, _ in trees}
+        lines = []
+        for tree, reason in trees:
+            root = tree[0]
+            if root.pid not in self.leftover_seen:
+                continue  # first sighting: a session may be opening or closing right now
+            for p in reversed(tree):  # children first
+                try:
+                    self.proc_stop(p.pid)
+                except Exception as e:
+                    self.log(f"leftover: pid {p.pid} not stopped: {e}")
+            lines.append(f"- {root.lane}: pid {root.pid}" + (f" and {len(tree) - 1} child process(es)" if len(tree) > 1
+                         else "") + f": {reason} · `{clip(root.cmd, 120)}`")
+            roots.discard(root.pid)
+        self.leftover_seen = roots
+        if lines:
+            self.store.push(HUB, TOWER, "leftover", "Leftover lane processes stopped (their session had closed):\n"
+                            + "\n".join(lines))
+            self.log(f"leftover: stopped {len(lines)} process tree(s)")
 
     def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str]) -> bool:
         """With `branch_sync` on, a worktree lane session gets the workspace's branch (main) merged into its own before a
