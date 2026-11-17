@@ -1,26 +1,9 @@
-"""Tell the hub once when the tower.db backup fails or stops running. An example `on_tick` extension.
-
-Copy it to `<workspace>/.tower/ext/tower_db_backup_notify.py` (the tower loads every file in that folder; the
-extension contract is in `dah guide extend`). It reads the status file that tower_db_backup.py writes next to the
-database (`.tower/state/tower-db-backup.json`) and, each tick:
-
-- a failure newer than the last success that was not told yet -> one message to the hub;
-- no successful backup for STALE_HOURS (the timer did not run) -> one message for that last success.
-
-What was told is kept in `.tower/state/tower_db_backup_notify.json`, so a tower restart never repeats a notice.
-A later successful backup needs no message. Delete this file to stop the notices.
-
-Not on the stable extension list: `ctx["store"].push(...)` (a message to a lane). The stable parts are `on_tick`,
-`ctx["cfg"]`, `ctx["log"]` and `ctx["now"]`; `Store` methods beyond reading may change in a release, so check this
-file after an update. If you would rather not depend on it, replace the push with a call to your own channel
-(a webhook, mail) and keep the rest.
-"""
 import datetime
 import json
 
-TARGET = "hub"           # the lane that should hear about it: the id of your hub lane in tower.json
+TARGET = "hub"
 KIND = "backup_fail"
-STALE_HOURS = 30         # a daily timer plus some slack
+STALE_HOURS = 30
 _STATUS = "tower-db-backup.json"
 _STATE = "tower_db_backup_notify.json"
 
@@ -37,7 +20,6 @@ def _when(ts):
 
 
 def notices(status, state, now):
-    """(texts, new state) for one tick. Pure: no files, no clock."""
     state = dict(state)
     ok, fail = status.get("last_ok", 0), status.get("last_fail", 0)
     texts = []
@@ -63,6 +45,6 @@ def on_tick(ctx):
     if not texts:
         return
     for text in texts:
-        ctx["store"].push(TARGET, "infra", KIND, text)  # non-stable API, see the note at the top
+        ctx["store"].push(TARGET, "infra", KIND, text)
     (sd / _STATE).write_text(json.dumps(state), encoding="utf-8")
     ctx["log"](f"tower_db_backup_notify: {len(texts)} notice(s) to {TARGET}")

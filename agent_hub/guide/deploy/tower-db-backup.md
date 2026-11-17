@@ -11,7 +11,7 @@ agent-hub ships a standard-library script for this, `tower_db_backup.py`, plus a
 3. Uploads it as `<dest>/YYYY-MM-DD/tower-HHMM.db` (local time) with `rclone`, the `aws` CLI or a plain folder copy.
 4. Compares the uploaded size with the local size.
 5. Deletes date folders older than `--keep-days` (default 30). Folders whose name is not a date are never touched.
-6. Writes `.tower/state/tower-db-backup.json` (`last_ok`, `last_fail`, `error`, ...) and exits `0` on success, `1` on failure (`2` for a usage error).
+6. Writes `.tower/state/tower-db-backup.json` (`last_ok`, `last_fail`, `error`, `prune_error`, ...) and exits `0` on success, `1` on failure (`2` for a usage error). A pruning error does not fail a backup that was uploaded and verified; it is printed and kept in `prune_error`.
 
 It reads no credentials: `rclone` and `aws` use their own configuration or the service's environment. There is no default destination; you must give one.
 
@@ -93,7 +93,7 @@ Run it once more right before a reinstall or update (`--why restart`); a non-zer
 cp "$SRC/tower_db_backup_notify.py" .tower/ext/
 ```
 
-Read the note at the top of the file: it sends the message with `ctx["store"].push(...)`, which is not on the extension contract's stable list (`dah guide extend`, "What stays stable"), so look at it again after upgrading agent-hub. Set `TARGET` to your hub lane's id if it is not `hub`.
+It sends the message with `ctx["store"].push(...)`, which is not on the extension contract's stable list (`dah guide extend`, "What stays stable"), so look at it again after upgrading agent-hub, or replace the push with your own channel (a webhook, mail). Set `TARGET` to your hub lane's id if it is not `hub`. `STALE_HOURS` (30) is a daily timer plus some slack.
 
 ## Restore
 

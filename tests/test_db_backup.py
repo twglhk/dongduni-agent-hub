@@ -1,5 +1,3 @@
-"""The shipped tower.db backup script (agent_hub/guide/deploy/tools/tower_db_backup.py): snapshot, integrity,
-upload verification and pruning, with fake uploaders and a fake command runner. No network, no rclone, no aws."""
 from __future__ import annotations
 
 import contextlib
@@ -78,7 +76,7 @@ class Base(unittest.TestCase):
 class Snapshot(Base):
     def test_copy_has_the_rows_and_a_single_file_journal(self) -> None:
         make_db(self.db, rows=5)
-        live = sqlite3.connect(str(self.db))  # a connection kept open, as the running tower does
+        live = sqlite3.connect(str(self.db))
         live.execute("INSERT INTO messages (body) VALUES ('late')")
         live.commit()
         copy = self.tmp / "copy.db"
@@ -172,6 +170,22 @@ class Run(Base):
         self.assertIn("network down", st["error"])
         self.assertEqual(st["fail_why"], "daily")
 
+    def test_a_pruning_error_keeps_the_backup_a_success(self) -> None:
+        make_db(self.db)
+        up = FakeUploader(days=["2020-01-01"])
+
+        def broken(day):
+            raise bk.BackupError("permission denied")
+
+        up.delete_day = broken
+        code, _, err = self.run_it(up)
+        st = self.read_status()
+        self.assertEqual(code, 0)
+        self.assertGreater(st["last_ok"], 0)
+        self.assertNotIn("last_fail", st)
+        self.assertIn("permission denied", st["prune_error"])
+        self.assertIn("pruning failed", err)
+
     def test_nothing_is_pruned_when_the_upload_failed(self) -> None:
         make_db(self.db)
         up = FakeUploader(days=["2020-01-01"], lie_size=1)
@@ -211,8 +225,6 @@ class DirTarget(Base):
 
 
 class Commands(unittest.TestCase):
-    """The rclone and aws uploaders build the right command lines and read the tools' answers."""
-
     def fake(self, answers):
         calls = []
 

@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""Back up the tower's SQLite database (.tower/state/tower.db) to a place that is not this machine.
-
-Standard library only (plus `rclone` or `aws`, if you upload with them). Copy it into your workspace
-(`.tower/tools/`, so git keeps it and a package update does not replace it) and run it from a timer:
-
-    python3 .tower/tools/tower_db_backup.py --dest <where> [--why daily|restart|manual]
-
-Where to (`--dest`, or the environment variable TOWER_BACKUP_DEST; there is no default):
-    remote:path/to/folder   an rclone remote (any rclone backend)
-    s3://bucket/prefix      Amazon S3 or compatible, through the `aws` CLI (add --aws-arg=--endpoint-url=... for R2, MinIO)
-    /mnt/backups/tower      a folder (an NFS or other mounted disk)
-
-What one run does:
- 1. A consistent snapshot of the database through SQLite's online backup API. It is safe while the tower runs (one
-    snapshot, WAL included). The copy is switched to a single-file journal and checked with PRAGMA integrity_check.
- 2. The copy is uploaded as <dest>/YYYY-MM-DD/tower-HHMM.db (local time).
- 3. The uploaded size is compared with the local size (rclone lsjson, aws s3api head-object, stat).
- 4. Date folders older than --keep-days are deleted (only folders whose name is a date; nothing else is touched).
- 5. The result is written to <state dir>/tower-db-backup.json (last_ok, last_fail, error, ...). Exit code 0 means the
-    backup is uploaded and verified, 1 means it failed.
-
-It never reads or prints credentials: rclone and aws use their own configuration or the service's environment.
-Restore: see `dah guide tower-db-backup`.
-"""
 from __future__ import annotations
 
 import argparse
@@ -47,13 +23,10 @@ Runner = Callable[[Sequence[str]], "tuple[int, str, str]"]
 
 
 class BackupError(RuntimeError):
-    """A step failed; the message goes to the status file and stderr."""
+    pass
 
-
-# ---------------------------------------------------------------- snapshot
 
 def snapshot(src: Path, dest: Path) -> int:
-    """Copy `src` to `dest` through the backup API, check it, and return the number of tables in the copy."""
     if not src.is_file():
         raise BackupError(f"database not found: {src}")
     if dest.exists():
@@ -73,10 +46,6 @@ def snapshot(src: Path, dest: Path) -> int:
     finally:
         conn.close()
 
-
-# ---------------------------------------------------------------- uploaders
-# An uploader has four methods: put(local, day, name), size(day, name) -> int | None (None: absent),
-# days() -> names of the folders under the destination, delete_day(day).
 
 def run_command(argv: Sequence[str]) -> "tuple[int, str, str]":
     try:
@@ -196,10 +165,7 @@ def make_uploader(dest: str, method: str = "auto", rclone_args: Sequence[str] = 
     raise BackupError(f"unknown method {method!r} (rclone, aws, dir)")
 
 
-# ---------------------------------------------------------------- pruning and status
-
 def old_days(days: Sequence[str], today: datetime.date, keep_days: int) -> "list[str]":
-    """Date-named folders older than `keep_days` days; any other name is left alone."""
     cutoff = today - datetime.timedelta(days=keep_days)
     out = []
     for d in sorted(days):
@@ -226,8 +192,6 @@ def write_status(path: Path, update: dict) -> None:
     os.replace(tmp, path)
 
 
-# ---------------------------------------------------------------- one run
-
 def run_backup(db: Path, uploader, status: Path, keep_days: int = 30, why: str = "manual",
                now: "datetime.datetime | None" = None, out=None, err=None) -> int:
     out, err = out or sys.stdout, err or sys.stderr
@@ -246,15 +210,20 @@ def run_backup(db: Path, uploader, status: Path, keep_days: int = 30, why: str =
                 raise BackupError(f"uploaded file missing: {day}/{name}")
             if remote != size:
                 raise BackupError(f"uploaded size check failed: local {size}, remote {remote}")
-        pruned = old_days(uploader.days(), now.date(), keep_days)
-        for d in pruned:
-            uploader.delete_day(d)
-    except Exception as e:  # noqa: BLE001 - every failure is recorded, reported and turned into exit code 1
+    except Exception as e:
         write_status(status, {"last_fail": started, "fail_key": where, "fail_why": why, "error": str(e)[:400]})
         print(f"tower-db-backup: FAILED ({why}): {e}", file=err)
         return 1
+    pruned, prune_error = [], ""
+    try:
+        pruned = old_days(uploader.days(), now.date(), keep_days)
+        for d in pruned:
+            uploader.delete_day(d)
+    except BackupError as e:
+        prune_error = str(e)[:400]
+        print(f"tower-db-backup: backup ok, pruning failed: {e}", file=err)
     write_status(status, {"last_ok": started, "ok_key": where, "ok_why": why, "ok_size": size,
-                          "ok_tables": tables, "pruned": pruned})
+                          "ok_tables": tables, "pruned": pruned, "prune_error": prune_error})
     print(f"tower-db-backup: {why} -> {where} ({size} bytes, {tables} tables)"
           + (f", removed {', '.join(pruned)}" if pruned else ""), file=out)
     return 0
