@@ -27,6 +27,7 @@ Instructions for coding agents working in this repository.
 | `agent_hub/engines.py` · `rating.py` · `stats.py` | engines: pattern library, process and pattern cards, skills list, weekly snapshots; ratings and blame; the token ledger |
 | `agent_hub/branchsync.py` | opt-in: a worktree lane's branch takes the workspace's branch before each task, and while idle (`branch_sync`, `branch_sync_seconds`, `branch_sync_push`) |
 | `agent_hub/requester.py` | opt-in (`requester`): who asked for a task, who a card is for, infra news to the hub, the card visibility rule |
+| `agent_hub/fair.py` | opt-in (`fair_turns`): the order waiting tasks start in, by turns per requester |
 | `agent_hub/leftovers.py` | opt-in (`leftover_sweep`, Linux): stops lane processes left by closed sessions |
 | `agent_hub/sessinfo.py` | the model and effort a Claude Code lane session really runs with, read from its transcript (`run` in the board state) |
 | `agent_hub/memwatch.py` | renews idle sessions over a memory line |

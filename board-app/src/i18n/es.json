@@ -190,7 +190,8 @@
     "recent": "Tareas recientes",
     "engine": "Motor",
     "missing": "carpeta no encontrada",
-    "none": "Aún nada"
+    "none": "Aún nada",
+    "by": "para {who}"
   },
   "eg": {
     "engines": "Motores",

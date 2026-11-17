@@ -296,6 +296,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                     "status": row.get("status") or "closed", "doing": doing,
                     "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
+                    "requester": task["requester"] if task else None,
                     "model": task["model"] if task else None, "effort": task["effort"] if task else None,
                     "line_row": task["line_row"] if task else None, "process": proc,
                     "stage": (task["stage_now"] or task["line_stage"]) if task else None,

@@ -31,6 +31,7 @@ export interface Lane {
   doing?: string | null; task_id?: number | null; task_title?: string | null; model?: string | null; effort?: string | null;
   process?: string | null; stage?: string | number | null; fixing?: boolean; task_tokens?: Tokens | null; ctx_k?: number | null;
   usage?: Usage | null;
+  requester?: string | null;
 }
 
 export interface LaneCap { used: number; cap: number; max: number }

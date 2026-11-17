@@ -190,7 +190,8 @@
     "recent": "Recent tasks",
     "engine": "Engine",
     "missing": "folder not found",
-    "none": "Nothing yet"
+    "none": "Nothing yet",
+    "by": "for {who}"
   },
   "eg": {
     "engines": "Engines",

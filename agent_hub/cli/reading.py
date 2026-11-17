@@ -11,7 +11,8 @@ from typing import Any
 
 from .. import config as config_mod, procs, stats
 from ..config import HUB, INFRA, Config, tower_pid
-from ..engine import clip, conflict_of
+from ..engine import clip, conflict_of, team_turns
+from ..fair import task_who, waiting_by_person
 from ..store import HUMAN, Store, StoreError
 from .common import REACH_HINT, TowerError, cfg, hhmm, need, need_team, store, verdict_text, who
 
@@ -150,16 +151,18 @@ def cmd_status(_args: argparse.Namespace) -> None:
     if c.local_only and not os.environ.get("TOWER_LANE"):  # people, not the hub polling its status
         print(REACH_HINT)
     all_queued = s.tasks(("queued",), 500)
+    order = team_turns(s, {k for k, ln in c.all_lanes.items() if ln.kind == "team"}, c.fair_turns)
     for lid, ln in c.all_lanes.items():
         row = s.lane(lid)
         task = s.live_task(lid)
-        queued = sorted((t for t in all_queued if t["lane"] == lid), key=lambda t: t["id"])
+        queued = sorted((t for t in all_queued if t["lane"] == lid), key=lambda t: order.get(t["id"], (2, 0, t["id"])))
         if ln.base and not (task or queued or row.get("session")):
             continue  # a parallel session shows only while it is in use
         runtime = ln.runtime + ("" if ln.terminal == "none" else f"·{ln.terminal}") + ("·wt" if ln.worktree else "")
         line = f"{lid:<10} {runtime:<13} {row.get('status') or 'closed':<7}"
         if task:
-            line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\""
+            line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\"" + (
+                f" for {task['requester']}" if task.get("requester") else "")
         if queued:
             line += f" · {len(queued)} queued"
         opened = sum(1 for it in s.items(state="open", lane=lid))
@@ -168,8 +171,13 @@ def cmd_status(_args: argparse.Namespace) -> None:
         print(line)
         for t in queued:  # why a queued task is not starting (the engine uses the same rule)
             why = conflict_of(s, t) if not ln.base else None
-            if why:
-                print(f"  #{t['id']} waits: {why}")
+            if why or t.get("requester"):
+                print(f"  #{t['id']}" + (f" for {t['requester']}" if t.get("requester") else "")
+                      + (f" waits: {why}" if why else ""))
+    if c.fair_turns and all_queued:
+        per = waiting_by_person(all_queued, lambda t: task_who(t) or "-")
+        print("waiting tasks per person (the tower takes them in turns): "
+              + ", ".join(f"{k} {n}" for k, n in per.items()))
     terms = {ln.terminal for ln in c.lanes.values()}
     if "tmux" in terms:
         from ..runtimes import tmux_session

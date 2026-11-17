@@ -190,7 +190,8 @@
     "recent": "最近的任务",
     "engine": "引擎",
     "missing": "找不到文件夹",
-    "none": "暂无"
+    "none": "暂无",
+    "by": "{who} 的请求"
   },
   "eg": {
     "engines": "引擎",

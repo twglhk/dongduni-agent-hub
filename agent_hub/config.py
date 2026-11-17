@@ -127,6 +127,7 @@ class Config:
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
+    fair_turns: bool = False     # the next waiting task or infra memo goes round by requester instead of oldest first (fair.py)
     requester: bool = False      # cards default to the member who asked for the work, and infra's answers and wraps reach the hub (requester.py)
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
@@ -442,6 +443,7 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
             "requester": _bool(raw, "requester"),
+            "fair_turns": _bool(raw, "fair_turns"),
             "branch_sync": _bool(raw, "branch_sync"),
             "branch_sync_seconds": _int(raw, "branch_sync_seconds", 0, 0),
             "branch_sync_push": _bool(raw, "branch_sync_push")}

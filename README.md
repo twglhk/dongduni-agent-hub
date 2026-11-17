@@ -229,7 +229,8 @@ Every decision records who made it, and the hub can route an item to one person 
 
 All off by default; a single-user install behaves as before.
 
-- `"requester": true`: a task records who asked for it (`dah task LANE --request N` takes the sender of board request N, `--for ana` names the person). Cards that lanes and the hub post for that task default to that person (`dah item add --to ana`, `--to all` for everyone, `--request N` on the hub) and show on the Hub tab of that person only (everyone sees them in a local-mode board and in the history). `dah escalate` keeps the person; `--to all` widens it. The hub's reply card to a request is for the sender. Infra's answers and its `wrapped` reach the hub as news (`infra_reply`, `wrapped`).
+- `"requester": true`: a task records who asked for it (`dah task LANE --request N` takes the sender of board request N, `--for ana` names the person). Cards that lanes and the hub post for that task default to that person (`dah item add --to ana`, `--to all` for everyone, `--request N` on the hub) and show on the Hub tab of that person only (everyone sees them in a local-mode board and in the history). `dah escalate` keeps the person; `--to all` widens it. The hub's reply card to a request is for the sender. Infra's answers and its `wrapped` reach the hub as news (`infra_reply`, `wrapped`). A lane card on the board shows "for <person>" next to its task.
+- `"fair_turns": true`: when the tower picks the next waiting team task, each requester's first waiting task comes before anyone's second, so one person's long list does not fill every free session (work already running counts as that person's turn). A task whose `after:` task has finished still goes first. Off: oldest first. `dah status` then lists whose each waiting task is and how many wait per person.
 
 ## Development
 

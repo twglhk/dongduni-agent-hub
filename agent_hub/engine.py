@@ -160,6 +160,24 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
     return None
 
 
+def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tuple[int, int, float]]:
+    from .fair import task_who, turns
+    queued = [t for t in sorted(store.tasks(("queued",), limit=500), key=lambda t: t["id"]) if t["lane"] in team]
+    if not fair:
+        return {t["id"]: (1, 0, t["id"]) for t in queued}
+    running = [t for t in store.tasks(("running", "wrapping"), limit=500) if t["lane"] in team]
+
+    def chained(t: dict[str, Any]) -> bool:
+        dep = after_of(t)
+        if dep is None:
+            return False
+        try:
+            return store.task(dep)["state"] == "closed"
+        except StoreError:
+            return False
+    return turns(queued, task_who, running, chained)
+
+
 def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
     """The next task continues the one just finished: its brief says `after: <prev id>`."""
     return after_of(nxt) == prev["id"]
@@ -774,6 +792,9 @@ class Engine:
         self.log(f"{lane}: task #{task['id']} continues #{prev['id']} in the same session")
         return True
 
+    def task_turns(self) -> dict[int, tuple[int, int, float]]:
+        return team_turns(self.store, set(self.team), self.cfg.fair_turns)
+
     def _slots(self) -> tuple[Callable[[dict[str, Any]], str], int, int]:
         """(weight of a task, free heavy slots, free light slots). Without light_lanes and heavy_paths there is one pool."""
         split = self.cfg.light_lanes is not None and bool(self.cfg.heavy_paths)
@@ -801,7 +822,8 @@ class Engine:
         for lane in busy & set(self.team):
             for t in self.store.queued_for(lane):
                 waits[t["id"]] = f"lane {lane} is busy with another task"
-        for nxt in sorted(waiting, key=lambda t: t["id"]):
+        order = self.task_turns()
+        for nxt in sorted(waiting, key=lambda t: order.get(t["id"], (2, 0, t["id"]))):
             lane = nxt["lane"]
             w = wt(nxt)
             if any(t["lane"] == lane for t in started):
@@ -961,6 +983,7 @@ class Engine:
         if self.max_instances < 2 or room <= 0:
             return out
         moved: list[dict[str, Any]] = []
+        order = self.task_turns()
         for base in self._team:
             if base not in busy:
                 continue
@@ -969,11 +992,11 @@ class Engine:
                         and not self.store.queued_for(k) and self.rt.status(k) == "closed"), None)
             if key is None:
                 continue
-            for task in self.store.queued_for(base):
+            for task in sorted(self.store.queued_for(base), key=lambda t: order.get(t["id"], (2, 0, t["id"]))):
                 if not self.conflict(task, moved):
                     moved.append({**task, "lane": key})
                     break
-        for task in sorted(moved, key=lambda t: t["id"])[:room]:
+        for task in sorted(moved, key=lambda t: order.get(t["id"], (2, 0, t["id"])))[:room]:
             self.store.update_task(task["id"], lane=task["lane"])
             statuses[task["lane"]] = "closed"
             self.log(f"{task['lane']}: task #{task['id']} moved to a parallel session")
