@@ -163,7 +163,7 @@ class RuleWatch:
         before = json.loads(json.dumps(st))
         mark = st.get("head")
         if not mark or self.git("merge-base", "--is-ancestor", mark, head) is None:
-            st["head"] = head  # first look, or history was rewritten: start from here, announce nothing old
+            st["head"] = head
         elif mark != head:
             self.collect(st, mark, head, now)
             st["head"] = head
