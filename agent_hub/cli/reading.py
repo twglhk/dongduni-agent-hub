@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .. import accounthold, config as config_mod, procs, stats
+from .. import accounthold, config as config_mod, proccheck, procs, stats
 from ..config import HUB, INFRA, Config, is_infra, tower_pid
 from ..engine import block_text, clip, conflict_of, infra_waits, paths_label, team_turns
 from ..fair import task_who, waiting_by_person
@@ -171,9 +171,12 @@ def cmd_status(_args: argparse.Namespace) -> None:
         held = accounthold.lane_line(s, lid, c.lang) if c.claude_accounts and not ln.base and not is_infra(lid) else None
         if held:
             line += f" · {held}"
+        check = proccheck.lane_line(s, c.home, lid, c.lang) if c.process_verification and ln.kind == "team" and not ln.base else None
+        if check:
+            line += f" · {check}"
         print(line)
         for t in queued:
-            why = conflict_of(s, t) if not ln.base else None
+            why = conflict_of(s, t, home=c.home if c.process_verification else None, lang=c.lang) if not ln.base else None
             if why or t.get("requester"):
                 print(f"  #{t['id']}" + (f" for {t['requester']}" if t.get("requester") else "")
                       + (f" waits: {why}" if why else ""))

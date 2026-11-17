@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import engines
+from . import engines, procverify
 
 DIR = "processes"
 LANES_DIR = ".tower/lanes"
@@ -199,6 +199,7 @@ def load(home: Path, lanes: dict[str, str] | None = None) -> dict[str, Any]:
         for st in s["stages"]:
             if st["pattern"] and not st["pattern"]["exists"]:
                 problems.append(f"sub-process `{sid}` stage {st['n']}: pattern card {st['pattern']['path']} is missing")
+    procverify.mark(home, fulls, subs)
     readme = _read(root / "README.md")
     for kind, ids in (("full process", fulls), ("sub-process", subs)):
         for i in ids:
@@ -222,7 +223,8 @@ def view(home: Path, lanes: dict[str, str] | None = None, skills_dir: Path | Non
              "stages": [{**{k: st[k] for k in ("n", "name", "input", "output", "gate", "by", "pattern")},
                          "skills": [skill(n) for n in st["skills"]]} for st in s["stages"]]}
             for s in lib["sub"].values()]
-    fulls = [{**{k: f[k] for k in ("id", "title", "deliverable", "frame_exception", "file", "lanes", "status")},
+    fulls = [{**{k: f[k] for k in ("id", "title", "deliverable", "frame_exception", "file", "lanes", "status",
+                                  "verified", "reverify", "changes")},
               "steps": [{**st, "title": lib["sub"][st["sub"]]["title"] if st["known"] else None,
                          "status": lib["sub"][st["sub"]]["status"] if st["known"] else None} for st in f["steps"]]}
              for f in lib["full"].values()]

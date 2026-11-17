@@ -106,6 +106,10 @@ def cmd_report(args: argparse.Namespace) -> None:
     atts = check_paths(c, args.attach)
     if args.kind == "handoff" and not task:
         raise TowerError("no task to hand off")
+    if args.kind == "done" and task and c.process_verification:
+        from .. import proccheck
+        if why := proccheck.missing_check(s, c.home, task):
+            raise TowerError(f"done not sent: {why}")
     if args.kind == "done" and task and c.done_gate:
         from .. import donegate
         if donegate.applies(c, task, me):

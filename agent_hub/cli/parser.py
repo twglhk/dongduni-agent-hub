@@ -41,6 +41,24 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("id", type=int)
     q.add_argument("--into", type=int, required=True)
 
+    p = sub.add_parser("check", help="team lane: post the check card after a sub-process (options Next / Redo with fixes). "
+                       "With `process_verification` on, a make or fix task of a full process not verified yet needs it before done")
+    p.add_argument("--title", required=True)
+    p.add_argument("--body")
+    p.add_argument("--body-file")
+    p.add_argument("--attach", action="append", default=[], metavar="PATH")
+    p = sub.add_parser("process", help="hub: `process verify FULL --card N` records a full process as verified; "
+                       "`process status [FULL]` shows draft/confirmed/verified and the latest run")
+    psub = p.add_subparsers(dest="sub", required=True)
+    q = psub.add_parser("verify")
+    q.add_argument("full")
+    q.add_argument("--card", type=int, required=True, help="the approved card where the person said it is verified")
+    q = psub.add_parser("status")
+    q.add_argument("full", nargs="?")
+    q = psub.add_parser("check", help="hub: after a person left a check card without an option, pass it or redo it")
+    q.add_argument("card", type=int)
+    q.add_argument("how", choices=("next", "redo"))
+
     p = sub.add_parser("report", help="team lanes: done | blocked | note | handoff; everyone: wrapped")
     p.add_argument("kind", choices=("done", "blocked", "note", "handoff", "wrapped"))
     p.add_argument("text")
