@@ -25,7 +25,7 @@ Key points first, plain sentences. Sections: 1 Read this first (at most six poin
 
 ## Cards to the hub
 
-One decision per card, the most effective first, at most ten per run: `dah item add --lane <you> --kind decision --title "..." --body-file <md> --option "Apply" --option "Hold"`. Each card states a **predicted effect** in one checkable sentence ("next review: send-backs of kind X drop"). A change to instructions or agent files says so; a human approves it.
+One decision per card, the most effective first, at most ten per run: `dah item add --kind decision --title "..." --body-file <md> --option "Apply=what applying it changes" --option "Hold=leave it as it is"`. Each card states a **predicted effect** in one checkable sentence ("next review: send-backs of kind X drop"). A change to instructions or agent files says so; a human approves it.
 
 ## Self-scoring
 

@@ -1,5 +1,6 @@
 """The CLI end to end in a temp workspace, the way lanes call it."""
 
+import argparse
 import os
 import subprocess
 import sys
@@ -402,3 +403,40 @@ class ModelCheckTest(unittest.TestCase):
         self.assertFalse(self.probe(1, "Error: model 'fable' not found"))
         for msg in ("Could not resolve host: api.anthropic.com", "Please run /login", "API Error: 429 rate limit exceeded", ""):
             self.assertTrue(self.probe(1, msg), msg)
+
+
+class TemplateCommandsTest(unittest.TestCase):
+    def sub(self, parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
+        for a in parser._actions:
+            if isinstance(a, argparse._SubParsersAction):
+                return dict(a.choices)
+        return {}
+
+    def test_every_dah_command_in_a_template_names_real_commands_and_flags(self) -> None:
+        import re
+        import shlex
+        from agent_hub.cli import build_parser
+        problems = []
+        for f in sorted((ROOT / "agent_hub" / "templates").rglob("*.md")):
+            for m in re.finditer(r"`(dah [^`\n]*)`", f.read_text(encoding="utf-8")):
+                try:
+                    toks = shlex.split(m.group(1))[1:]
+                except ValueError:
+                    continue
+                parser = build_parser()
+                choices = self.sub(parser)
+                for tok in toks:
+                    tok = tok.strip("[]").rstrip(".")
+                    if tok.startswith("--"):
+                        if tok.split("=")[0] not in parser._option_string_actions:
+                            problems.append(f"{f.name}: {m.group(1)}: no flag {tok}")
+                    elif choices and re.fullmatch(r"[a-z][a-z-]*", tok):
+                        if tok in choices:
+                            parser = choices[tok]
+                            choices = self.sub(parser)
+                        else:
+                            problems.append(f"{f.name}: {m.group(1)}: no command {tok}")
+                            break
+                    else:
+                        choices = {}
+        self.assertEqual(problems, [])
