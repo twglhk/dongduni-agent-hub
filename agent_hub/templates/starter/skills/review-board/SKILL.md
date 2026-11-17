@@ -12,6 +12,7 @@ Humans steer the team from the hub and the review board, a web page they open on
 Post an item when someone else must choose or approve before part of your work can go on:
 
 - Choosing between alternatives (designs, wording, approaches, names): two or more `--option "Label=what it means"`. Add `--multi` when picking several is a real answer (which of these to keep); the answer then names every pick.
+- Recommending one: add `--recommend LABEL` (the label of one `--option`) when you have a recommendation; the board lists that option first with a Recommended badge. `dah item update ID --recommend LABEL` moves the mark without retyping the options.
 - Approving an artifact (a render, a screen, a document, a build) before it moves to the next stage: no options, `--kind review`. The human presses one button: blank means approved, text is their own answer.
 - Anything the Permissions rule in `.tower/PROTOCOL.md` or the project instructions say to confirm first: stack, new dependencies, paid calls, keys, deploys and publishes.
 

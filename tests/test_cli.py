@@ -121,6 +121,23 @@ class CliTest(unittest.TestCase):
                                                          "/etc/hosts", lane="docs", ok=False).replace(
             "attachments must be files inside", "files must be inside"))
 
+    def test_recommend_marks_one_option(self) -> None:
+        from agent_hub.store import Store
+        self.tower("task", "docs", "--title", "Write docs", "brief", lane="hub")
+        body = "## What to decide\nx\n## Options\ny"
+        self.assertIn("not an option", self.tower("item", "add", "--title", "T", "--body", body, "--option", "A=a",
+                                                  "--option", "B=b", "--recommend", "C", lane="docs", ok=False))
+        self.tower("item", "add", "--title", "T", "--body", body, "--option", "A=a", "--option", "B=b",
+                   "--recommend", "B", lane="docs")
+        s = Store(self.home / ".tower/state/tower.db")
+        self.assertEqual([o.get("recommended") for o in s.item(1)["options"]], [None, True])
+        self.assertIn("- B (recommended): b", self.tower("show", "1"))
+        self.tower("item", "update", "1", "--recommend", "A", lane="docs")
+        opts = s.item(1)["options"]
+        self.assertEqual([(o["label"], o["desc"], o.get("recommended")) for o in opts], [("A", "a", True), ("B", "b", None)])
+        self.tower("item", "update", "1", "--option", "X=x", "--option", "Y=y", "--recommend", "Y", lane="docs")
+        self.assertEqual([o.get("recommended") for o in s.item(1)["options"]], [None, True])
+
     def test_memo_reply_and_forward(self) -> None:
         from agent_hub.store import Store
         s = Store(self.home / ".tower/state/tower.db")

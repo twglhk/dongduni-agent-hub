@@ -222,7 +222,8 @@ def cmd_show(args: argparse.Namespace) -> None:
         if it.get(key):
             print(f"{key}: {it[key]}")
     for o in it["options"]:
-        print(f"  - {o['label']}" + (f": {o['desc']}" if o["desc"] else ""))
+        print(f"  - {o['label']}" + (" (recommended)" if o.get("recommended") else "")
+              + (f": {o['desc']}" if o["desc"] else ""))
     for a in it["attachments"]:
         print(f"  file: {a}")
     print("\n" + it["body"])
