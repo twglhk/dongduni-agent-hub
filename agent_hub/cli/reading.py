@@ -173,7 +173,7 @@ def cmd_status(_args: argparse.Namespace) -> None:
             line += f" · {held}"
         print(line)
         for t in queued:
-            why = conflict_of(s, t) if not ln.base else None
+            why = conflict_of(s, t, lang=c.lang) if not ln.base else None
             if why or t.get("requester"):
                 print(f"  #{t['id']}" + (f" for {t['requester']}" if t.get("requester") else "")
                       + (f" waits: {why}" if why else ""))

@@ -152,7 +152,7 @@ DECLARE_GRACE = 180
 MEMO_REF = re.compile(r"memo\s*#(\d+)", re.I)
 
 
-def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
+def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = [], lang: str = "en") -> str | None:
     dep_id = after_of(task)
     if dep_id is not None:
         try:
@@ -166,7 +166,7 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
         return overlap.held_text(hold)
     signin = accounthold.hold_of(store, f"task:{task['id']}")
     if signin:
-        return accounthold.held_text(signin["member"])
+        return accounthold.held_text(signin["member"], lang)
     b = task_block(store, task, also)
     if b is None:
         return None
@@ -547,7 +547,7 @@ class Engine:
         return ln.owner if ln and ln.owner else None
 
     def conflict(self, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
-        return conflict_of(self.store, task, also)
+        return conflict_of(self.store, task, also, self.cfg.lang)
 
     def cap_reason(self, task: dict[str, Any]) -> str | None:
         lane = self.cfg.all_lanes.get(base_lane(str(task["lane"])))

@@ -185,6 +185,15 @@ class HoldIsKeptTest(Base):
         self.assertNotIn(self.b, self.held())
 
 
+class HeldTextLanguageTest(Base):
+    def test_a_sign_in_hold_reads_in_the_workspace_language(self) -> None:
+        tid = self.s.add_task("docs", "t", "work")
+        self.s.hold_account_work(f"task:{tid}", "alice", "docs", "t")
+        from agent_hub import accounthold
+        self.assertEqual(conflict_of(self.s, self.s.task(tid), lang="ko"), accounthold.held_text("alice", "ko"))
+        self.assertNotEqual(conflict_of(self.s, self.s.task(tid), lang="ko"), conflict_of(self.s, self.s.task(tid)))
+
+
 class OwnAnswerTest(Base):
     def setUp(self) -> None:
         super().setUp()
