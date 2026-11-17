@@ -870,9 +870,9 @@ class Engine:
             if last == period:
                 continue
             try:
+                self.store.mark_schedule(sched.id, period)
                 if last is not None:
                     self._fire_schedule(sched, period)
-                self.store.mark_schedule(sched.id, period)
             except Exception as e:
                 self.log(f"schedule {sched.id}: {e}")
 
@@ -882,7 +882,7 @@ class Engine:
             self.log(f"schedule {sched.id}: request to the hub for {period}")
             return
         tid = self.store.add_task(sched.lane, sched.title, sched.text, self.cfg.lanes[sched.lane].engine)
-        self.store.update_task(tid, **engines_mod.line_fields(sched.text))
+        self.store.update_task(tid, **engines_mod.line_fields(sched.text, processes.lane_full(self.cfg, sched.lane)))
         self.log(f"schedule {sched.id}: task #{tid} for {sched.lane} ({period})")
 
 

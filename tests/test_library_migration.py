@@ -224,6 +224,20 @@ class HalfDoneTest(OldWorkspace):
         self.assertEqual(Store(self.cfg.db).task(tid)["line_row"], "anim/anim-storyboard")
 
 
+class ScheduleAfterConversionTest(OldWorkspace):
+    def test_a_scheduled_task_with_an_old_header_gets_the_converted_row(self) -> None:
+        from agent_hub.engine import Engine
+        from tests.helpers import Clock, FakeRuntime
+        raw = json.loads((self.home / ".tower/tower.json").read_text())
+        raw["schedules"] = [{"lane": "story", "every": "day", "text": "Line: #1 Storyboard · stage 2 · make\nmodel: opus\neffort: high"}]
+        (self.home / ".tower/tower.json").write_text(json.dumps(raw))
+        self.update()
+        cfg = config_mod.load(self.home)
+        s = Store(cfg.db)
+        Engine(cfg, s, FakeRuntime(s), lambda n: None, clock=Clock(), log=lambda _: None)._fire_schedule(cfg.schedules[0], "p")
+        self.assertEqual(s.tasks(None, 10)[0]["line_row"], "anim/anim-storyboard")
+
+
 class InstanceLaneTest(OldWorkspace):
     def test_a_parallel_instance_reads_the_engine_library_like_its_lane(self) -> None:
         raw = json.loads((self.home / ".tower/tower.json").read_text())
