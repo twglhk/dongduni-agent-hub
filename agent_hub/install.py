@@ -405,7 +405,7 @@ def migration_notes(cfg: Config, report: dict[str, list[str]]) -> list[str]:
 
 PATCHES_DIR = "patches"
 PYPI_JSON = "https://pypi.org/pypi/{package}/{version}/json"
-BUILTIN_BOARD = Path(__file__).resolve().parent / "board" / "index.html"
+BUILTIN_BOARD = Path(__file__).resolve().parent / "board_next" / "index.html"
 
 
 def file_hash(path: Path) -> str:

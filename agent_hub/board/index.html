@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="../manifest.webmanifest">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233182f6'/%3E%3Cpath d='M9 16.5l5 5 9-10' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>Board</title>
 <style>
@@ -458,8 +458,7 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 <div id="toast" role="status" aria-live="polite"></div>
 <script>
 'use strict';
-// The same file serves this workspace at / and other workspaces at /w/<name>/: every URL is relative to BASE.
-const BASE = location.pathname.replace(/[^/]*$/, '');
+const BASE = location.pathname.replace(/\/old\/[^/]*$/, '/').replace(/[^/]*$/, '');
 // ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {

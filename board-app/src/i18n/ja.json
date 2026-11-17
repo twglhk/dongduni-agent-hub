@@ -1,0 +1,280 @@
+{
+  "tabs": {
+    "hub": "ハブ",
+    "engine": "エンジン",
+    "lanes": "レーン",
+    "history": "履歴",
+    "info": "情報"
+  },
+  "sec": {
+    "asks": "回答待ちの質問",
+    "yours": "あなたが決めること",
+    "handling": "ハブが対応中 {n}件",
+    "lanes": "レーン",
+    "tasks": "進行中の作業",
+    "reports": "最近の報告",
+    "usage": "今日の使用量"
+  },
+  "empty": {
+    "yours": "決めることはありません",
+    "tasks": "進行中の作業はありません",
+    "reports": "まだ報告はありません",
+    "lanes": "レーンがありません",
+    "hist": "まだありません",
+    "loading": "読み込み中",
+    "end": "ここまでです"
+  },
+  "status": {
+    "busy": "作業中",
+    "asking": "質問中",
+    "idle": "待機中",
+    "closed": "停止",
+    "unknown": "応答なし"
+  },
+  "task": {
+    "queued": "待ち",
+    "running": "進行中",
+    "wrapping": "片付け中",
+    "closed": "完了",
+    "cancelled": "取り消し"
+  },
+  "report": {
+    "done": "完了",
+    "blocked": "停滞",
+    "note": "お知らせ",
+    "handoff": "引き継ぎ",
+    "wrapped": "片付け完了"
+  },
+  "kind": {
+    "decision": "決定",
+    "review": "確認",
+    "ask": "質問"
+  },
+  "verdict": {
+    "ok": "決定済み",
+    "okReview": "承認",
+    "no": "差し戻し",
+    "hold": "保留",
+    "answer": "自分で回答",
+    "merged": "統合"
+  },
+  "hist": {
+    "decided": "決定",
+    "reports": "報告",
+    "closed": "作業",
+    "memos": "インフラへの依頼",
+    "requests": "ハブへの依頼"
+  },
+  "memo": {
+    "wait": "待ち",
+    "delivered": "届いた",
+    "replied": "返信あり"
+  },
+  "chat": {
+    "title": "ハブに依頼"
+  },
+  "label": {
+    "why": "あなたに来た理由",
+    "question": "質問",
+    "options": "選択肢",
+    "pickMany": "複数選択可",
+    "note": "メモ",
+    "answer": "回答",
+    "attachments": "添付",
+    "noTask": "担当作業なし",
+    "cap": "{u}/{c} 使用中",
+    "paused": "一時停止",
+    "reply": "返信",
+    "hubSide": "ハブ",
+    "ctx": "コンテキスト"
+  },
+  "ph": {
+    "answer": "自分の回答かメモを書いてください",
+    "review": "空欄なら承認になります",
+    "token": "トークン"
+  },
+  "btn": {
+    "decide": "決定",
+    "answer": "自分で回答",
+    "hold": "保留",
+    "done": "確認完了",
+    "send": "送信",
+    "more": "もっと見る",
+    "less": "閉じる",
+    "close": "閉じる",
+    "prev": "前へ",
+    "next": "次へ",
+    "login": "ログイン",
+    "logout": "ログアウト",
+    "open": "開く"
+  },
+  "msg": {
+    "saved": "反映しました",
+    "decided": "決定しました",
+    "held": "保留しました",
+    "answered": "回答を送りました",
+    "reviewed": "確認しました",
+    "sent": "送信しました",
+    "fail": "送信できませんでした",
+    "net": "オフライン",
+    "badToken": "トークンが違います",
+    "notFound": "見つかりません",
+    "stopped": "tower 停止中"
+  },
+  "time": {
+    "now": "たった今",
+    "m": "{n}分前",
+    "h": "{n}時間前"
+  },
+  "login": {
+    "title": "ログイン"
+  },
+  "ws": {
+    "title": "ワークスペース",
+    "local": "ローカル専用",
+    "running": "稼働中",
+    "stopped": "停止中"
+  },
+  "lang": {
+    "title": "言語",
+    "note": "この端末のボタン表示だけが変わります。エージェントはワークスペースの言語で書き続けます。"
+  },
+  "reach": {
+    "title": "ボードはこのパソコンでしか開けません",
+    "body": "まだスマホからは入れません。同じ Wi-Fi でのログイン、Tailscale、Cloudflare、サーバーのうち合う方法をハブがインフラに頼んで設定できます。",
+    "ask": "ハブに設定を依頼",
+    "memo": "インフラで、スマホからボードを開けるようにしてください。このパソコンに合う方法(`dah guide lan`、`tailscale`、`cloudflare`、`aws`)を比べ、おすすめ付きで決定項目を出し、私が選んだ方法で設定してください。"
+  },
+  "lane": {
+    "add": "レーンを追加",
+    "id": "レーン ID",
+    "idPh": "例: docs",
+    "idHelp": "英数字と - _ だけ使えます。コマンドとファイル名に使われます。",
+    "idBad": "英数字と - _ だけ使えます",
+    "idDup": "この ID のレーンはすでにあります",
+    "runtime": "ランタイム",
+    "label": "表示名(任意)",
+    "labelPh": "例: ドキュメント",
+    "role": "役割",
+    "rolePh": "担当範囲、扱うファイル、完了の条件、触れてはいけないもの",
+    "model": "モデル(任意)",
+    "agent": "エージェント(任意)",
+    "optPh": "空欄なら既定値を使います",
+    "send": "ハブに追加を依頼",
+    "sent": "ハブに依頼しました",
+    "hint": "ハブがインフラに頼んでレーンを作り、役割ファイルを埋めてから確認用のカードで知らせます。",
+    "memo": "インフラへ、レーン追加の依頼: {id}\n- ランタイム: {runtime}\n- 表示名: {label}\n- モデル: {model}\n- エージェント: {agent}\n\n役割:\n{role}\n\n`dah lane add {id} --runtime {runtime}{flags}` で追加し、`.tower/lanes/{id}.md` に上の役割(担当範囲、扱うファイル、完了の条件、触れてはいけないもの)を書き込んでください。"
+  },
+  "cap": {
+    "at": "同時実行",
+    "less": "1つ減らす",
+    "more": "1つ増やす",
+    "hint": "同時に作業できるチームレーンの数です。ハブとインフラは数えません。"
+  },
+  "lv": {
+    "skills": "スキル",
+    "noSkills": "役割ファイルにスキルの記載がありません",
+    "process": "工程",
+    "stage": "ステージ",
+    "stageN": "ステージ {n}",
+    "noProc": "まだ工程がありません",
+    "fixing": "修正中",
+    "fixBy": {
+      "send-back": "差し戻し",
+      "blame": "指摘されたステージ"
+    },
+    "model": "モデル",
+    "tokens": "トークン",
+    "week": "直近7日",
+    "recent": "最近の作業",
+    "engine": "エンジン",
+    "missing": "フォルダが見つかりません",
+    "none": "まだありません"
+  },
+  "eg": {
+    "engines": "エンジン",
+    "pipes": "パイプライン",
+    "skills": "スキル",
+    "shared": "共有",
+    "tools": "ツール",
+    "exps": "実験",
+    "changes": "変更点",
+    "since": "{d} 以降",
+    "same": "それ以降の変更はありません",
+    "noSnap": "スナップショットはまだありません。タワーが1時間以内に作ります",
+    "usage": "トークン、直近7日",
+    "noLib": "パターンライブラリはまだありません",
+    "rated": "{n}件 評価",
+    "unrated": "未評価",
+    "process": "工程",
+    "noCard": "カードなし",
+    "files": "ファイル",
+    "s_new": "新規",
+    "s_best": "最適",
+    "s_good": "良好",
+    "s_fix": "要改善",
+    "s_rework": "再設計が必要",
+    "c_lane_added": "レーン {name} を追加",
+    "c_lane_removed": "レーン {name} を削除",
+    "c_skill_changed": "スキル {name} を編集",
+    "c_skill_added": "スキル {name} を追加",
+    "c_skill_removed": "スキル {name} を削除",
+    "c_row_added": "工程 {name} を追加",
+    "c_row_removed": "工程 {name} を削除",
+    "c_process": "{name}: {a} → {b}",
+    "c_card": "{name} カード: {a} → {b}",
+    "none": "なし",
+    "empty": "エンジンがありません",
+    "noRows": "ライブラリの行がありません",
+    "fixedN": "改訂 {n}回",
+    "procCard": "工程カード",
+    "stageCard": "ステージ {n} · {name}",
+    "cards": "ステージカード",
+    "model": "モデル · 工数",
+    "folder": "スキルフォルダ",
+    "noDoc": "開けるドキュメントがありません",
+    "noProcCard": "工程カードが見つかりません"
+  },
+  "use": {
+    "day": "今日",
+    "io": "{i} / {o}",
+    "task": "タスク 新規 {n} · キャッシュ {c} · 出力 {o} · {t}ターン",
+    "today": "今日 入力 {i} · 出力 {o}",
+    "hint": "入力 / 出力トークン。タワーが開いたセッションだけを集計します。コストはランタイムが報告したときだけ表示します。"
+  },
+  "mc": {
+    "title": "このマシン",
+    "load": "負荷",
+    "cpu": "CPU",
+    "mem": "メモリ",
+    "swap": "スワップ",
+    "unknown": "不明",
+    "perCore": "コアあたり {v} · {n}コア",
+    "free": "{t} GB 中 {f} GB 空き",
+    "freeOnly": "{f} GB 空き",
+    "swapUsed": "{s} GB 使用中",
+    "cpuBusy": "全コアの {v}%",
+    "waits": "タスクが待っている理由",
+    "wait": "待機: {r}",
+    "claude": "Claude",
+    "h5": "5時間",
+    "week": "週間",
+    "g": "余裕",
+    "a": "混雑",
+    "r": "逼迫",
+    "hint": "このマシンのコア数とメモリを基準に色分けしています。Claude の使用率は非公開のエンドポイントから読むため、不明になることがあります。"
+  },
+  "x": {
+    "err": "拡張機能のエラー"
+  },
+  "disk": {
+    "title": "ディスク",
+    "used": "{t} GB 中 {u} GB 使用 · 空き {f} GB",
+    "root": "システム (/)",
+    "hint": "使用率85%から黄、95%から赤で表示します。"
+  },
+  "doc": {
+    "loading": "読み込み中…",
+    "cantOpen": "ドキュメントを開けませんでした: {e}"
+  }
+}

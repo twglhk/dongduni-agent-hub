@@ -2,7 +2,7 @@
 `dah update` and lives in the workspace's git:
 
   .tower/board/index.html     replaces the built-in board (`/?builtin` still opens the built-in one)
-  .tower/board/extra.css|js   loaded by the built-in board; extra.js gets `window.dah` (sections, tabs, API calls)
+  .tower/board/extra.css|js   loaded by the built-in board (and by /old/); extra.js gets `window.dah` (sections, tabs, API calls)
   .tower/board/<file>         served at /x/<file> to signed-in people (scripts, styles, images, fonts, data)
   .tower/ext/*.py             Python run by the tower:
       routes = {("GET", "stats"): fn, ("POST", "jira/sync"): fn}   → /api/x/stats, /api/x/jira/sync

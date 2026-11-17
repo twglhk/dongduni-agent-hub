@@ -233,6 +233,8 @@ python3 -m unittest discover -s tests -t .
 bin/dah -h          # runs from the clone without installing
 ```
 
+The board is a React app: its source is `board-app/`, its build is committed under `agent_hub/board_next/` and ships in the package, so nobody needs Node to use agent-hub. Change the board with `cd board-app && npm ci && npm run build` and commit the source and the build together (CI fails when they differ). The board before the React app is still served at `/old/` (`agent_hub/board/index.html`).
+
 Releasing (from any machine with push access): [docs/RELEASING.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/docs/RELEASING.md). Tests drive the adapters against stand-in CLIs and a stand-in OpenCode server; no model is called. See [AGENTS.md](https://github.com/twglhk/dongduni-agent-hub/blob/main/AGENTS.md) for the layout and rules.
 
 ## License

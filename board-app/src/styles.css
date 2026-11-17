@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg: #f2f4f6; --surface: #ffffff; --surface-2: #f9fafb; --surface-3: #f2f4f6;
+  --line: #e5e8eb; --line-2: #d1d6db;
+  --text: #191f28; --text-2: #4e5968; --text-3: #6b7684; --text-4: #b0b8c1;
+  --blue: #3182f6; --blue-dn: #1b64da; --blue-weak: #e8f3ff; --blue-ink: #1b64da;
+  --red: #f04452; --red-weak: #ffeeee; --red-ink: #d22030;
+  --green: #03b26c; --green-weak: #f0faf6; --green-ink: #028a54;
+  --orange: #fe9800; --orange-weak: #fff3e0; --orange-ink: #c85400;
+  --teal: #18a5a5; --teal-weak: #edf8f8; --teal-ink: #0a7474;
+  --grey-weak: #f2f4f6; --grey-ink: #4e5968;
+  --press: rgba(2, 32, 71, .05); --scrim: rgba(0, 0, 0, .48);
+  --toast-bg: rgba(51, 61, 75, .96); --toast-fg: #ffffff; --surface-t: rgba(255, 255, 255, 0);
+  --media: #0f1115;
+  --shadow: 0 -8px 32px rgba(2, 32, 71, .10);
+  --nav-h: calc(60px + env(safe-area-inset-bottom));
+  --chat-h: 60px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #17171c; --surface: #202027; --surface-2: #26262e; --surface-3: #2c2c35;
+    --line: #33333d; --line-2: #4d4d59;
+    --text: #ffffff; --text-2: #c3c3c6; --text-3: #9e9ea4; --text-4: #62626d;
+    --blue: #3485fa; --blue-dn: #2272eb; --blue-weak: #202c4d; --blue-ink: #64a8ff;
+    --red: #f04251; --red-weak: rgba(240, 66, 81, .18); --red-ink: #fb8890;
+    --green: #15c47e; --green-weak: rgba(21, 196, 126, .16); --green-ink: #3fd599;
+    --orange: #ffa927; --orange-weak: rgba(255, 169, 39, .16); --orange-ink: #ffbd51;
+    --teal: #30b6b6; --teal-weak: rgba(48, 182, 182, .16); --teal-ink: #58c7c7;
+    --grey-weak: #2c2c35; --grey-ink: #b0b0b6;
+    --press: rgba(255, 255, 255, .06); --scrim: rgba(0, 0, 0, .66);
+    --toast-bg: rgba(228, 228, 229, .97); --toast-fg: #191f28; --surface-t: rgba(32, 32, 39, 0);
+    --media: #0b0b0e; --shadow: 0 -8px 32px rgba(0, 0, 0, .5);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-ink-4: var(--text-4);
+  --color-blue: var(--blue);
+  --color-blue-dn: var(--blue-dn);
+  --color-blue-weak: var(--blue-weak);
+  --color-blue-ink: var(--blue-ink);
+  --color-red: var(--red);
+  --color-red-weak: var(--red-weak);
+  --color-red-ink: var(--red-ink);
+  --color-green: var(--green);
+  --color-green-weak: var(--green-weak);
+  --color-green-ink: var(--green-ink);
+  --color-orange: var(--orange);
+  --color-orange-weak: var(--orange-weak);
+  --color-orange-ink: var(--orange-ink);
+  --color-teal: var(--teal);
+  --color-teal-weak: var(--teal-weak);
+  --color-teal-ink: var(--teal-ink);
+  --color-grey-weak: var(--grey-weak);
+  --color-grey-ink: var(--grey-ink);
+  --color-media: var(--media);
+  --color-toast: var(--toast-bg);
+  --color-toast-fg: var(--toast-fg);
+}
+
+@theme {
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+  --text-t2: 1.375rem; --text-t3: 1.25rem; --text-t4: 1.0625rem; --text-t5: .9375rem; --text-t6: .8125rem; --text-t7: .6875rem;
+  --radius-chip: 8px; --radius-tile: 12px; --radius-box: 16px; --radius-card: 20px;
+  --container-col: 720px;
+  --ease-out-soft: cubic-bezier(.2, .8, .2, 1);
+}
+
+@layer base {
+  * { -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    font-size: 1rem; line-height: 1.5; -webkit-font-smoothing: antialiased; word-break: keep-all; overflow-wrap: anywhere;
+  }
+  body.locked, body.sheet-open { overflow: hidden; }
+  body.has-use { --nav-h: calc(88px + env(safe-area-inset-bottom)); }
+  button { cursor: pointer; min-height: 44px; }
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  textarea::placeholder, input::placeholder { color: var(--text-4); }
+}
+
+@utility pressable {
+  cursor: pointer;
+  transition: transform .12s var(--ease-out-soft), background-color .12s;
+  &:active { transform: scale(.985); background-image: linear-gradient(var(--press), var(--press)); }
+}
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+@utility pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+@utility pt-safe { padding-top: env(safe-area-inset-top); }
+
+@keyframes beat { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before { transition: none !important; animation: none !important; }
+}
+
+/* markdown arrives as HTML, so its tags cannot carry utility classes */
+.prose { font-size: 1rem; line-height: 1.65; margin: 8px 0 20px; }
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: 0 0 12px; }
+.prose p:last-child { margin-bottom: 0; }
+.prose h3 { font-size: 1.0625rem; font-weight: 700; margin: 20px 0 8px; }
+.prose h4 { font-size: .9375rem; font-weight: 700; color: var(--text-2); margin: 16px 0 4px; }
+.prose ul, .prose ol { margin: 0 0 12px; padding-left: 1.3em; list-style: revert; }
+.prose li { margin: 3px 0; }
+.prose strong { font-weight: 700; }
+.prose a { color: var(--blue-ink); }
+.prose code { font: .88em ui-monospace, SFMono-Regular, Menlo, monospace; font-size: max(.8125rem, .88em); background: var(--surface-3); border-radius: 5px; padding: 1px 5px; }
+.prose pre { margin: 0 0 12px; padding: 12px 16px; background: var(--surface-3); border-radius: 12px; overflow-x: auto; line-height: 1.5; }
+.prose pre code { background: none; padding: 0; font-size: .8125rem; white-space: pre; }
+.prose blockquote { margin: 0 0 12px; padding: 12px 16px; background: var(--surface-2); border-radius: 12px; color: var(--text-2); font-size: .9375rem; }
+.prose.small { font-size: .9375rem; margin: 0; }
+
+.prose .tbl { overflow-x: auto; margin: 8px 0 12px; }
+.prose .tbl table { border-collapse: collapse; font-size: .8125rem; }
+.prose .tbl th, .prose .tbl td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; overflow-wrap: normal; word-break: keep-all; min-width: 5em; }
+.prose .tbl td code { white-space: nowrap; }

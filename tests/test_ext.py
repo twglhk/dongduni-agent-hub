@@ -15,7 +15,7 @@ from agent_hub import config as config_mod
 from agent_hub.engine import Engine
 from agent_hub.install import (backup_patches, fetch_originals, file_hash, modified_files, unrequested_patches)
 from agent_hub.store import HUB, HUMAN, INFRA, Store
-from agent_hub.web import BOARD
+from agent_hub.web import BOARD_NEXT
 from tests.helpers import Clock, FakeRuntime, make_home
 from tests.test_web import POST, Board
 
@@ -59,7 +59,7 @@ class BoardExtensionsTest(unittest.TestCase):
         for path in ("/x/hook.py", "/x/../tower.json", "/x/%2e%2e/tower.json", "/x/.secret", "/x/missing.js"):
             self.assertEqual(self.b.req("GET", path)[0], 404, path)
 
-        builtin = BOARD.read_bytes()
+        builtin = (BOARD_NEXT / "index.html").read_bytes()
         self.assertEqual(self.b.req("GET", "/")[1], builtin)
         write(self.tower / "board/index.html", "<!doctype html><p>ours</p>")
         self.assertEqual(self.b.req("GET", "/")[1], b"<!doctype html><p>ours</p>")

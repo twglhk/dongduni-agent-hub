@@ -6,7 +6,7 @@ Releases are built and published by GitHub Actions, not from a laptop. Any machi
 
 | piece | where | what it does |
 | --- | --- | --- |
-| `.github/workflows/ci.yml` | every push to `main`, every PR | unit tests on Ubuntu, macOS and Windows × Python 3.10 and 3.13, then builds the wheel, installs it in a fresh venv and runs `dah init`, `dah engine list`, `dah status` |
+| `.github/workflows/ci.yml` | every push to `main`, every PR | unit tests on Ubuntu, macOS and Windows × Python 3.10 and 3.13, then builds the wheel, installs it in a fresh venv and runs `dah init`, `dah engine list`, `dah status`; a `board` job rebuilds the React board (`board-app/`) and fails when the committed `agent_hub/board_next/` differs from a fresh build |
 | `.github/workflows/release.yml` | a pushed tag `v*` | runs `ci.yml`, checks the tag equals `agent_hub.__version__`, builds sdist + wheel, publishes to PyPI, creates a GitHub release with both files |
 | PyPI Trusted Publisher | pypi.org → `dongduni-agent-hub` → Publishing | trusts owner `twglhk`, repo `dongduni-agent-hub`, workflow `release.yml`, environment `pypi`. This is why no token exists |
 | GitHub environment `pypi` | repo Settings → Environments | created by the first release; add required reviewers there if you want a manual approval before each publish |
@@ -18,7 +18,7 @@ The package is pure Python (`py3-none-any`): one wheel serves Windows, macOS and
 1. Start from an up-to-date `main` with a green CI run (`gh run list --limit 3`).
 2. Pick the version ([semver](https://semver.org); while below 1.0, bump the minor for anything that changes commands, files or behaviour people rely on, the patch for fixes).
 3. Set it in `agent_hub/__init__.py` (`__version__ = "X.Y.Z"`). That is the only place; `pyproject.toml` reads it. Add the release's section under "Release notes" below.
-4. Run the tests: `python3 -m unittest discover -s tests -t .` must print `OK`.
+4. Run the tests: `python3 -m unittest discover -s tests -t .` must print `OK`. If the board changed, rebuild it (`cd board-app && npm ci && npm run build`) and commit `agent_hub/board_next/` with its source: the wheel ships the committed build, never a build made at release time.
 5. Commit and tag:
 
    ```sh

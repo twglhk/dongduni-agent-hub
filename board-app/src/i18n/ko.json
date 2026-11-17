@@ -1,0 +1,280 @@
+{
+  "tabs": {
+    "hub": "허브",
+    "engine": "엔진",
+    "lanes": "레인",
+    "history": "기록",
+    "info": "정보"
+  },
+  "sec": {
+    "asks": "답을 기다리는 질문",
+    "yours": "내가 정할 것",
+    "handling": "허브가 처리 중 {n}건",
+    "lanes": "레인",
+    "tasks": "진행 중인 작업",
+    "reports": "최근 보고",
+    "usage": "오늘 사용량"
+  },
+  "empty": {
+    "yours": "정할 게 없어요",
+    "tasks": "진행 중인 작업이 없어요",
+    "reports": "보고가 없어요",
+    "lanes": "레인이 없어요",
+    "hist": "아직 없어요",
+    "loading": "불러오는 중",
+    "end": "여기까지예요"
+  },
+  "status": {
+    "busy": "작업 중",
+    "asking": "질문 중",
+    "idle": "쉬는 중",
+    "closed": "닫힘",
+    "unknown": "응답 없음"
+  },
+  "task": {
+    "queued": "대기",
+    "running": "진행 중",
+    "wrapping": "정리 중",
+    "closed": "끝남",
+    "cancelled": "취소됨"
+  },
+  "report": {
+    "done": "완료",
+    "blocked": "막힘",
+    "note": "알림",
+    "handoff": "인계",
+    "wrapped": "정리 완료"
+  },
+  "kind": {
+    "decision": "결정",
+    "review": "검수",
+    "ask": "질문"
+  },
+  "verdict": {
+    "ok": "결정함",
+    "okReview": "승인",
+    "no": "반려",
+    "hold": "보류",
+    "answer": "직접 답",
+    "merged": "합침"
+  },
+  "hist": {
+    "decided": "결정",
+    "reports": "보고",
+    "closed": "작업",
+    "memos": "인프라 요청",
+    "requests": "허브 요청"
+  },
+  "memo": {
+    "wait": "대기",
+    "delivered": "전달됨",
+    "replied": "답 옴"
+  },
+  "chat": {
+    "title": "허브에 요청"
+  },
+  "label": {
+    "why": "나에게 온 이유",
+    "question": "질문",
+    "options": "선택지",
+    "pickMany": "여러 개 선택",
+    "note": "메모",
+    "answer": "내 답",
+    "attachments": "첨부",
+    "noTask": "맡은 작업 없음",
+    "cap": "{u}/{c} 사용 중",
+    "paused": "일시 정지",
+    "reply": "답",
+    "hubSide": "허브",
+    "ctx": "컨텍스트"
+  },
+  "ph": {
+    "answer": "직접 답하거나 메모를 남겨 주세요",
+    "review": "비우면 승인돼요",
+    "token": "토큰"
+  },
+  "btn": {
+    "decide": "결정",
+    "answer": "직접 답",
+    "hold": "보류",
+    "done": "검수 완료",
+    "send": "보내기",
+    "more": "더 보기",
+    "less": "접기",
+    "close": "닫기",
+    "prev": "이전",
+    "next": "다음",
+    "login": "로그인",
+    "logout": "로그아웃",
+    "open": "열기"
+  },
+  "msg": {
+    "saved": "반영했어요",
+    "decided": "결정했어요",
+    "held": "보류했어요",
+    "answered": "답을 보냈어요",
+    "reviewed": "검수를 마쳤어요",
+    "sent": "보냈어요",
+    "fail": "보내지 못했어요",
+    "net": "연결 끊김",
+    "badToken": "토큰이 맞지 않아요",
+    "notFound": "찾을 수 없어요",
+    "stopped": "tower 멈춤"
+  },
+  "time": {
+    "now": "방금",
+    "m": "{n}분 전",
+    "h": "{n}시간 전"
+  },
+  "login": {
+    "title": "로그인"
+  },
+  "ws": {
+    "title": "워크스페이스",
+    "local": "로컬 전용",
+    "running": "실행 중",
+    "stopped": "멈춤"
+  },
+  "lang": {
+    "title": "언어",
+    "note": "이 기기에서 보드 버튼 언어만 바뀌어요. 에이전트는 워크스페이스 언어로 계속 써요."
+  },
+  "reach": {
+    "title": "보드가 이 컴퓨터에서만 열려요",
+    "body": "아직 폰에서는 들어올 수 없어요. 같은 Wi-Fi 로그인, Tailscale, Cloudflare, 서버 중 맞는 방법을 허브가 인프라에 맡겨 설정해 줄 수 있어요.",
+    "ask": "허브에 설정 요청",
+    "memo": "인프라가 폰에서 보드를 열 수 있게 해 주세요. 이 컴퓨터에 맞는 방법(`dah guide lan`, `tailscale`, `cloudflare`, `aws`)을 비교해서 추천과 함께 결정 항목으로 올려 주고, 제가 고른 방법으로 설정해 주세요."
+  },
+  "lane": {
+    "add": "레인 추가",
+    "id": "레인 ID",
+    "idPh": "예: docs",
+    "idHelp": "영문, 숫자, -, _만 써요. 명령어와 파일 이름에 쓰여요.",
+    "idBad": "영문, 숫자, -, _만 쓸 수 있어요",
+    "idDup": "이미 있는 레인 ID예요",
+    "runtime": "런타임",
+    "label": "표시 이름 (선택)",
+    "labelPh": "예: 문서",
+    "role": "역할",
+    "rolePh": "맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것",
+    "model": "모델 (선택)",
+    "agent": "에이전트 (선택)",
+    "optPh": "비우면 기본값을 써요",
+    "send": "허브에 추가 요청",
+    "sent": "허브에 요청했어요",
+    "hint": "허브가 인프라에 맡겨 레인을 만들고 역할 파일을 채운 뒤 확인할 카드로 알려줘요.",
+    "memo": "인프라에 레인 추가 요청: {id}\n- 런타임: {runtime}\n- 표시 이름: {label}\n- 모델: {model}\n- 에이전트: {agent}\n\n역할:\n{role}\n\n`dah lane add {id} --runtime {runtime}{flags}` 로 추가하고, `.tower/lanes/{id}.md`에 위 역할(맡는 영역, 담당 파일, 완료 기준, 건드리지 말 것)을 채워 주세요."
+  },
+  "cap": {
+    "at": "동시 실행",
+    "less": "하나 줄이기",
+    "more": "하나 늘리기",
+    "hint": "동시에 작업할 수 있는 팀 레인 수예요. 허브와 인프라는 세지 않아요."
+  },
+  "lv": {
+    "skills": "스킬",
+    "noSkills": "역할 파일에 적힌 스킬이 없어요",
+    "process": "공정",
+    "stage": "단계",
+    "stageN": "{n}단계",
+    "noProc": "아직 공정이 없어요",
+    "fixing": "고치는 중",
+    "fixBy": {
+      "send-back": "되돌려 받음",
+      "blame": "지목된 단계"
+    },
+    "model": "모델",
+    "tokens": "토큰",
+    "week": "최근 7일",
+    "recent": "최근 작업",
+    "engine": "엔진",
+    "missing": "폴더를 찾지 못했어요",
+    "none": "아직 없어요"
+  },
+  "eg": {
+    "engines": "엔진",
+    "pipes": "파이프라인",
+    "skills": "스킬",
+    "shared": "공유",
+    "tools": "도구",
+    "exps": "실험",
+    "changes": "바뀐 것",
+    "since": "{d} 이후",
+    "same": "그 뒤로 바뀐 게 없어요",
+    "noSnap": "아직 스냅숏이 없어요. 관제가 한 시간 안에 만들어요",
+    "usage": "토큰, 최근 7일",
+    "noLib": "아직 패턴 라이브러리가 없어요",
+    "rated": "{n}건 평가",
+    "unrated": "평가 전",
+    "process": "공정",
+    "noCard": "카드 없음",
+    "files": "파일",
+    "s_new": "신규",
+    "s_best": "최적",
+    "s_good": "양호",
+    "s_fix": "보완 필요",
+    "s_rework": "리팩토링 필요",
+    "c_lane_added": "레인 {name} 추가",
+    "c_lane_removed": "레인 {name} 삭제",
+    "c_skill_changed": "스킬 {name} 수정",
+    "c_skill_added": "스킬 {name} 추가",
+    "c_skill_removed": "스킬 {name} 삭제",
+    "c_row_added": "공정 {name} 추가",
+    "c_row_removed": "공정 {name} 삭제",
+    "c_process": "{name}: {a} → {b}",
+    "c_card": "{name} 카드: {a} → {b}",
+    "none": "없음",
+    "empty": "엔진이 없어요",
+    "noRows": "라이브러리 행이 없어요",
+    "fixedN": "{n}번 고침",
+    "procCard": "공정 카드",
+    "stageCard": "{n}단계 · {name}",
+    "cards": "단계 카드",
+    "model": "모델 · 노력",
+    "folder": "스킬 폴더",
+    "noDoc": "열 문서가 없어요",
+    "noProcCard": "공정 카드를 찾지 못했어요"
+  },
+  "use": {
+    "day": "오늘",
+    "io": "{i} / {o}",
+    "task": "작업 새로 {n} · 캐시 {c} · 출력 {o} · {t}턴",
+    "today": "오늘 {i} 입력 · {o} 출력",
+    "hint": "입력 / 출력 토큰. 이 보드가 연 세션만 집계해요. 비용은 런타임이 알려줄 때만 보여요."
+  },
+  "mc": {
+    "title": "이 컴퓨터",
+    "load": "부하",
+    "cpu": "CPU",
+    "mem": "메모리",
+    "swap": "스왑",
+    "unknown": "알 수 없음",
+    "perCore": "코어당 {v} · 코어 {n}개",
+    "free": "{t} GB 중 {f} GB 남음",
+    "freeOnly": "{f} GB 남음",
+    "swapUsed": "{s} GB 사용 중",
+    "cpuBusy": "전체 코어의 {v}%",
+    "waits": "작업이 기다리는 이유",
+    "wait": "대기: {r}",
+    "claude": "Claude",
+    "h5": "5시간",
+    "week": "주간",
+    "g": "여유",
+    "a": "바쁨",
+    "r": "빠듯함",
+    "hint": "이 컴퓨터의 코어 수와 메모리에 견줘 색을 매겨요. Claude 사용률은 공개되지 않은 주소에서 읽어서 알 수 없음으로 나올 수 있어요."
+  },
+  "x": {
+    "err": "확장 기능 오류"
+  },
+  "disk": {
+    "title": "디스크",
+    "used": "{t} GB 중 {u} GB 사용 · {f} GB 남음",
+    "root": "시스템 (/)",
+    "hint": "85% 넘게 쓰면 노랑, 95% 넘으면 빨강이에요."
+  },
+  "doc": {
+    "loading": "불러오는 중…",
+    "cantOpen": "문서를 열지 못했어요: {e}"
+  }
+}

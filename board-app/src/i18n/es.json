@@ -1,0 +1,280 @@
+{
+  "tabs": {
+    "hub": "Hub",
+    "engine": "Motor",
+    "lanes": "Carriles",
+    "history": "Historial",
+    "info": "Info"
+  },
+  "sec": {
+    "asks": "Esperan tu respuesta",
+    "yours": "Para ti",
+    "handling": "El hub atiende {n}",
+    "lanes": "Carriles",
+    "tasks": "Tareas en curso",
+    "reports": "Informes recientes",
+    "usage": "Uso de hoy"
+  },
+  "empty": {
+    "yours": "Nada que decidir",
+    "tasks": "No hay tareas en curso",
+    "reports": "Aún no hay informes",
+    "lanes": "Sin carriles",
+    "hist": "Aún no hay nada",
+    "loading": "Cargando",
+    "end": "Eso es todo"
+  },
+  "status": {
+    "busy": "Trabajando",
+    "asking": "Preguntando",
+    "idle": "Libre",
+    "closed": "Cerrado",
+    "unknown": "Sin respuesta"
+  },
+  "task": {
+    "queued": "En cola",
+    "running": "En curso",
+    "wrapping": "Cerrando",
+    "closed": "Cerrada",
+    "cancelled": "Cancelada"
+  },
+  "report": {
+    "done": "Hecho",
+    "blocked": "Bloqueado",
+    "note": "Aviso",
+    "handoff": "Relevo",
+    "wrapped": "Cerrado"
+  },
+  "kind": {
+    "decision": "Decisión",
+    "review": "Revisión",
+    "ask": "Pregunta"
+  },
+  "verdict": {
+    "ok": "Decidido",
+    "okReview": "Aprobado",
+    "no": "Rechazado",
+    "hold": "En espera",
+    "answer": "Respondido",
+    "merged": "Unido"
+  },
+  "hist": {
+    "decided": "Decididos",
+    "reports": "Informes",
+    "closed": "Tareas",
+    "memos": "Peticiones a infra",
+    "requests": "Peticiones al hub"
+  },
+  "memo": {
+    "wait": "Esperando",
+    "delivered": "Entregada",
+    "replied": "Respondida"
+  },
+  "chat": {
+    "title": "Petición al hub"
+  },
+  "label": {
+    "why": "Por qué te llega",
+    "question": "Pregunta",
+    "options": "Opciones",
+    "pickMany": "Varias posibles",
+    "note": "Nota",
+    "answer": "Respuesta",
+    "attachments": "Adjuntos",
+    "noTask": "Sin tarea",
+    "cap": "{u}/{c} ocupados",
+    "paused": "En pausa",
+    "reply": "Respuesta",
+    "hubSide": "Hub",
+    "ctx": "contexto"
+  },
+  "ph": {
+    "answer": "Tu respuesta o una nota",
+    "review": "Déjalo vacío para aprobar",
+    "token": "Token de acceso"
+  },
+  "btn": {
+    "decide": "Decidir",
+    "answer": "Responder yo",
+    "hold": "Esperar",
+    "done": "Revisión hecha",
+    "send": "Enviar",
+    "more": "Más",
+    "less": "Menos",
+    "close": "Cerrar",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "login": "Entrar",
+    "logout": "Salir",
+    "open": "Abrir"
+  },
+  "msg": {
+    "saved": "Guardado",
+    "decided": "Decidido",
+    "held": "Puesto en espera",
+    "answered": "Respuesta enviada",
+    "reviewed": "Revisión hecha",
+    "sent": "Enviado",
+    "fail": "No se pudo enviar",
+    "net": "Sin conexión",
+    "badToken": "Token incorrecto",
+    "notFound": "No encontrado",
+    "stopped": "Torre detenida"
+  },
+  "time": {
+    "now": "ahora",
+    "m": "hace {n} min",
+    "h": "hace {n} h"
+  },
+  "login": {
+    "title": "Entrar"
+  },
+  "ws": {
+    "title": "Espacios de trabajo",
+    "local": "Solo local",
+    "running": "En marcha",
+    "stopped": "Detenido"
+  },
+  "lang": {
+    "title": "Idioma",
+    "note": "Cambia solo los botones del tablero en este dispositivo. Los agentes siguen escribiendo en el idioma del espacio."
+  },
+  "reach": {
+    "title": "Solo este ordenador abre el tablero",
+    "body": "Tu móvil aún no llega. El hub puede encargar a infra que te configure acceso por Wi-Fi, Tailscale, Cloudflare o un servidor.",
+    "ask": "Pedir al hub que lo configure",
+    "memo": "Que infra haga que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija."
+  },
+  "lane": {
+    "add": "Añadir un carril",
+    "id": "ID del carril",
+    "idPh": "p. ej. docs",
+    "idHelp": "Letras, números, - y _. Se usa en comandos y nombres de archivo.",
+    "idBad": "Usa solo letras, números, - y _",
+    "idDup": "Ya existe un carril con este ID",
+    "runtime": "Runtime",
+    "label": "Nombre visible (opcional)",
+    "labelPh": "p. ej. Docs",
+    "role": "Rol",
+    "rolePh": "Qué le toca, con qué archivos trabaja, cuándo está hecho, qué no debe tocar",
+    "model": "Modelo (opcional)",
+    "agent": "Agente (opcional)",
+    "optPh": "Vacío usa el valor por defecto",
+    "send": "Pedir al hub que lo añada",
+    "sent": "Enviado al hub",
+    "hint": "El hub encarga a infra crear el carril y rellenar su archivo de rol, y te avisa con una tarjeta para confirmar.",
+    "memo": "Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\nEjecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar."
+  },
+  "cap": {
+    "at": "A la vez",
+    "less": "Uno menos",
+    "more": "Uno más",
+    "hint": "Carriles del equipo que pueden trabajar a la vez. El hub e infra no cuentan."
+  },
+  "lv": {
+    "skills": "Habilidades",
+    "noSkills": "Su archivo de rol no nombra ninguna",
+    "process": "Proceso",
+    "stage": "Etapa",
+    "stageN": "etapa {n}",
+    "noProc": "Aún sin proceso",
+    "fixing": "Corrigiendo",
+    "fixBy": {
+      "send-back": "Devuelto",
+      "blame": "Etapa señalada"
+    },
+    "model": "Modelo",
+    "tokens": "Tokens",
+    "week": "Últimos 7 días",
+    "recent": "Tareas recientes",
+    "engine": "Motor",
+    "missing": "carpeta no encontrada",
+    "none": "Aún nada"
+  },
+  "eg": {
+    "engines": "Motores",
+    "pipes": "Pipelines",
+    "skills": "Habilidades",
+    "shared": "Compartidas",
+    "tools": "Herramientas",
+    "exps": "Experimentos",
+    "changes": "Qué cambió",
+    "since": "Desde {d}",
+    "same": "Nada cambió desde entonces",
+    "noSnap": "Aún no hay instantánea; la torre la escribe en una hora",
+    "usage": "Tokens, últimos 7 días",
+    "noLib": "Aún sin biblioteca de patrones",
+    "rated": "{n} valorados",
+    "unrated": "sin valorar",
+    "process": "Proceso",
+    "noCard": "sin tarjeta",
+    "files": "archivos",
+    "s_new": "nuevo",
+    "s_best": "óptimo",
+    "s_good": "bueno",
+    "s_fix": "a corregir",
+    "s_rework": "a rehacer",
+    "c_lane_added": "Carril {name} añadido",
+    "c_lane_removed": "Carril {name} eliminado",
+    "c_skill_changed": "Habilidad {name} editada",
+    "c_skill_added": "Habilidad {name} añadida",
+    "c_skill_removed": "Habilidad {name} eliminada",
+    "c_row_added": "Proceso {name} añadido",
+    "c_row_removed": "Proceso {name} eliminado",
+    "c_process": "{name}: {a} → {b}",
+    "c_card": "Tarjeta {name}: {a} → {b}",
+    "none": "ninguno",
+    "empty": "No hay motores",
+    "noRows": "Sin filas en la biblioteca",
+    "fixedN": "corregido {n} veces",
+    "procCard": "Tarjeta de proceso",
+    "stageCard": "Etapa {n} · {name}",
+    "cards": "tarjetas de etapa",
+    "model": "Modelo · esfuerzo",
+    "folder": "Carpeta de habilidades",
+    "noDoc": "No hay documento que abrir",
+    "noProcCard": "No se encontró la tarjeta de proceso"
+  },
+  "use": {
+    "day": "Hoy",
+    "io": "{i} / {o}",
+    "task": "Tarea {n} nuevos · {c} caché · {o} salida · {t} turnos",
+    "today": "Hoy {i} entrada · {o} salida",
+    "hint": "Tokens de entrada / salida. Solo cuenta las sesiones que abrió la torre. El coste aparece cuando el runtime lo informa."
+  },
+  "mc": {
+    "title": "Esta máquina",
+    "load": "Carga",
+    "cpu": "CPU",
+    "mem": "Memoria",
+    "swap": "Swap",
+    "unknown": "desconocido",
+    "perCore": "{v} por núcleo · {n} núcleos",
+    "free": "{f} GB libres de {t} GB",
+    "freeOnly": "{f} GB libres",
+    "swapUsed": "{s} GB en uso",
+    "cpuBusy": "{v}% de todos los núcleos",
+    "waits": "Por qué esperan las tareas",
+    "wait": "Espera: {r}",
+    "claude": "Claude",
+    "h5": "5 h",
+    "week": "semana",
+    "g": "Bien",
+    "a": "Ocupada",
+    "r": "Al límite",
+    "hint": "Valorado según los núcleos y la RAM de esta máquina. El porcentaje de Claude viene de un endpoint no documentado y puede salir como desconocido."
+  },
+  "x": {
+    "err": "Error de la extensión"
+  },
+  "disk": {
+    "title": "Discos",
+    "used": "{u} de {t} GB usados · {f} GB libres",
+    "root": "Sistema (/)",
+    "hint": "Ámbar desde el 85 % de uso, rojo desde el 95 %."
+  },
+  "doc": {
+    "loading": "Cargando…",
+    "cantOpen": "No se pudo abrir el documento: {e}"
+  }
+}

@@ -4,7 +4,7 @@ agent-hub is a skeleton. What a team wants beyond it (a board section, a dashboa
 
 | folder | what goes there | who runs it |
 | --- | --- | --- |
-| `.tower/board/extra.js`, `extra.css` | additions to the built-in board | each person's browser |
+| `.tower/board/extra.js`, `extra.css` | additions to the built-in board (the React app at `/`; the single-file board at `/old/` loads them too) | each person's browser |
 | `.tower/board/index.html` | a board of your own instead of the built-in one | each person's browser |
 | `.tower/board/<anything>` | files those use (scripts, styles, images, fonts, JSON) | served at `x/<path>` |
 | `.tower/ext/*.py` | API routes, tower hooks, and runtimes and terminal apps for lanes | the tower, with the tower's rights |
@@ -19,15 +19,15 @@ If `extra.css` exists the board links it; if `extra.js` exists the board loads i
 
 | | |
 | --- | --- |
-| `dah.addSection(tab, id, render)` | a section after the built-in ones on `tab` (`hub`, `infra`, `lanes`, `history`). `render(state)` returns a Node, a string (shown as text), an array of them, or null. The same `id` again replaces it. |
+| `dah.addSection(tab, id, render)` | a section after the built-in ones on `tab` (`hub`, `engine`, `lanes`, `history`, `info`; the single-file board at `/old/` has no `info` tab). `render(state)` returns a Node, a string (shown as text), an array of them, or null. The same `id` again replaces it. |
 | `dah.addTab(id, label, icon, render)` | a tab after the built-in ones in the bottom bar, opened at `#x-<id>` (`id`: letters, digits, `-`, `_`). `label` is a string or `{en, ko, ...}`; `icon` an SVG path string (optional). |
 | `dah.onState(fn)` | `fn(state)` after every state load (about every 5 s while the page is open), and once when registered |
 | `dah.get(path)`, `dah.post(path, body)` | JSON calls relative to the board, e.g. `dah.get('api/x/stats')`; they throw with the server's error |
 | `dah.refresh()` | fetch the state now |
 | `dah.h`, `dah.svg`, `dah.sec`, `dah.empty`, `dah.toast` | the board's own builders, for a matching look |
-| `dah.S`, `dah.L`, `dah.lang`, `dah.BASE`, `dah.version` | the board's state (`dah.S.data` is the server state), current UI strings, board language, path prefix (`""` or `/w/<workspace>`), agent-hub version |
+| `dah.S`, `dah.L`, `dah.lang`, `dah.BASE`, `dah.version` | the board's state (`dah.S.data` is the server state; the React board keeps nothing else on `dah.S`), current UI strings, board language, path prefix (`""` or `/w/<workspace>`), agent-hub version |
 
-`render` runs on every refresh of the visible tab, but the section is repainted only when its HTML changes, so scroll position, focus and typed text survive. A click handler should therefore read fresh data when it runs (`dah.S.data`), not rely on values captured at render time. Returning the same Node each time keeps it mounted for you to update. An extension that throws shows a small error box in its own section; the rest of the board is unaffected. Do not call `dah.refresh()` from `onState`: it would load the state in a loop.
+`render` runs on every refresh of the visible tab, but the section is repainted only when its HTML changes (the React board also calls `onState` after every state load, changed or not, as the single-file board does), so scroll position, focus and typed text survive. A click handler should therefore read fresh data when it runs (`dah.S.data`), not rely on values captured at render time. Returning the same Node each time keeps it mounted for you to update. An extension that throws shows a small error box in its own section; the rest of the board is unaffected. Do not call `dah.refresh()` from `onState`: it would load the state in a loop.
 
 A whole board of your own: put it at `.tower/board/index.html`. It can use every route in the board API (`GET api/state`, `POST api/memo`, ...; see the top of `agent_hub/web.py`) and your own `api/x/...` routes. `?builtin` on the board URL always opens the built-in board, so a broken page never locks people out. When an update changes the built-in board, `dah update` asks infra to carry the change over.
 
@@ -123,7 +123,7 @@ runtimes = {"aider": Aider}
 An update replaces the package, never `.tower/`; what can change is what an extension leans on.
 
 - Stable (changed only in a major version): the `.tower/` layout; `dah.addSection`, `addTab`, `onState`, `get`, `post`, `refresh`, `L`, `lang`, `BASE`, `version`; the top-level fields of the server state (`dah.S.data`, `GET api/state`) and the board API routes; `/api/x/<name>` with `fn(ctx, body)`; `on_event` / `on_notify` / `on_tick` with their kinds and the `ctx` keys listed above; `runtimes`, `terminals` and `caps`, with the `Adapter` and `Host` methods listed above, `Headless.resume_argv`, `_spawn`, `RuntimeFailure`, `lane_env(cfg, lane)` and `lane_cwd(cfg, lane)`. New fields and kinds may be added.
-- Internal (may change in any release): the board's DOM, CSS classes and variables, the builders (`dah.h`, `svg`, `sec`, `empty`, `toast`) and the rest of `dah.S`; `Store` methods beyond reading through `ctx["store"]`; anything in the package not listed above.
+- Internal (may change in any release): the board's DOM, CSS classes and variables (the React board styles with Tailwind utility classes, the single-file board with its own: `dah.h`, `dah.sec` and `dah.empty` build with the running board's classes, so only they match its look), the builders (`dah.h`, `svg`, `sec`, `empty`, `toast`) and the rest of `dah.S`; `Store` methods beyond reading through `ctx["store"]`; anything in the package not listed above.
 
 Prefer the stable part. When an update changes the built-in board, `dah update` asks infra to check a workspace's `extra.js` / `extra.css` (or to carry the change over to its own `index.html`).
 

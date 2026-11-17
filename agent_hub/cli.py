@@ -962,7 +962,7 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
         print("  the built-in board changed; this workspace replaces it with .tower/board/index.html")
         requests.append(("carry over the board changes", f"agent-hub was updated to {version} and its built-in board changed. This "
                          f"workspace replaces the board with `.tower/board/index.html`, so the change does not show. "
-                         f"Compare with the new built-in board (`{BUILTIN_BOARD}`, or open the board with `?builtin`), "
+                         f"Compare with the new built-in board (open the board with `?builtin`; its built files are in `{BUILTIN_BOARD.parent}`, and `/old/` is the single-file board before the React app), "
                          f"carry over what this workspace wants, and reply with what changed.", None))
     for what, text, patch_dir in requests:
         if INFRA not in c.lanes:

@@ -7,6 +7,23 @@ on:
   workflow_call:
 
 jobs:
+  board:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: board-app/package-lock.json
+      - name: Typecheck and build the board
+        working-directory: board-app
+        run: |
+          npm ci
+          npm run build
+      - name: The committed build equals a fresh build
+        run: git diff --exit-code --stat -- agent_hub/board_next && test -z "$(git status --porcelain -- agent_hub/board_next)"
+
   test:
     strategy:
       fail-fast: false
