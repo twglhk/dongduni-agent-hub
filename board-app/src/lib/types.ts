@@ -39,6 +39,8 @@ export interface Lane {
   sessions?: number | null;
   wait?: string | null;
   memo?: { id: number; kind: string; title: string } | null;
+  account?: string | null;
+  held?: string | null;
 }
 
 export interface LaneCap { used: number; cap: number; max: number; sessions_max?: number }

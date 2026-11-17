@@ -26,7 +26,7 @@ Binaries can be overridden with `TOWER_OPENCODE_BIN`, `TOWER_CLAUDE_BIN`, `TOWER
 | --- | --- |
 | `common` | `RuntimeFailure`, HTTP and port helpers, `lane_env`, `claude_base`, package paths |
 | `worktree` | lane working folder and git worktree helpers |
-| `adapter` | the `Adapter` base class |
+| `adapter` | the `Adapter` base class (`set_opts` keeps a session's model, effort and account folder; `env()` is the process environment, with the member's `CLAUDE_CONFIG_DIR` when `claude_accounts` picked one) |
 | `opencode` | `OpenCode` and `OpenCodeTerm` |
 | `headless` | `Headless`, `Claude`, `Codex` (print mode) |
 | `hosts` | `Host`, `Tmux`, `Orca` |

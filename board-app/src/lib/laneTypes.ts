@@ -8,6 +8,7 @@ export interface SessionWork {
 export interface SessionView {
   key: string; live: boolean; hidden: boolean; work: SessionWork | null;
   report: { kind: string; text: string; created: number | null } | null;
+  account?: string | null; held?: string | null; runtime?: string;
 }
 
 export interface Stage { n: string | number; name: string }

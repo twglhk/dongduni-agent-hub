@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .. import config as config_mod, procs, stats
+from .. import accounthold, config as config_mod, procs, stats
 from ..config import HUB, INFRA, Config, is_infra, tower_pid
 from ..engine import block_text, clip, conflict_of, infra_waits, paths_label, team_turns
 from ..fair import task_who, waiting_by_person
@@ -173,6 +173,9 @@ def cmd_status(_args: argparse.Namespace) -> None:
         opened = sum(1 for it in s.items(state="open", lane=lid))
         if opened:
             line += f" · {opened} open items"
+        held = accounthold.lane_line(s, lid, c.lang) if c.claude_accounts and not ln.base and not is_infra(lid) else None
+        if held:
+            line += f" · {held}"
         print(line)
         for t in queued:  # why a queued task is not starting (the engine uses the same rule)
             why = conflict_of(s, t) if not ln.base else None

@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .. import hooks as hooks_mod, procs
+from .. import accounts, hooks as hooks_mod, procs
 from ..config import TOWER_DIR, Config, Lane
 from ..store import Store
 from .common import RuntimeFailure, lane_env, pid_alive
@@ -26,15 +26,22 @@ class Adapter:
     def log_path(self) -> Path:
         return self.logs / f"{self.lane.id}.jsonl"
 
-    def set_opts(self, model: str | None, effort: str | None) -> None:
+    def set_opts(self, model: str | None, effort: str | None, account: Path | str | None = None) -> None:
         """A task's own model and effort (stagemodel.py), kept so every resume of the session runs with them."""
-        hooks_mod.write_if_changed(self.logs / f"{self.lane.id}.opts.json", json.dumps({"model": model, "effort": effort}))
+        data = {"model": model, "effort": effort, **({"account": str(account)} if account else {})}
+        hooks_mod.write_if_changed(self.logs / f"{self.lane.id}.opts.json", json.dumps(data))
 
     def opts(self) -> dict[str, str | None]:
         try:
             return json.loads((self.logs / f"{self.lane.id}.opts.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return {}
+
+    def account_dir(self) -> str | None:
+        return self.opts().get("account") or None
+
+    def env(self) -> dict[str, str]:
+        return accounts.session_env(self.account_dir(), lane_env(self.cfg, self.lane))
 
     def model_arg(self) -> list[str]:
         model = self.opts().get("model") or self.lane.model
@@ -54,7 +61,7 @@ class Adapter:
     def _spawn(self, argv: list[str]) -> int:
         cwd = lane_cwd(self.cfg, self.lane)
         with self.log_path.open("ab") as out, (self.logs / f"{self.lane.id}.err").open("ab") as err:
-            proc = subprocess.Popen(argv, cwd=cwd, env=lane_env(self.cfg, self.lane), stdout=out,
+            proc = subprocess.Popen(argv, cwd=cwd, env=self.env(), stdout=out,
                                     stderr=err, stdin=subprocess.DEVNULL, **procs.detached())
         self.procs[proc.pid] = proc
         self.store.set_lane(self.lane.id, pid=proc.pid, pid_start=procs.start_time(proc.pid))

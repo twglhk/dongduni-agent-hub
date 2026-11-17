@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .. import procs
+from .. import accounts, procs
 from ..config import TOWER_DIR, Config, Lane
 from ..store import Store
 from .common import PACKAGE_PARENT, RuntimeFailure, lane_env
@@ -71,6 +71,7 @@ class Terminal:
     cfg: Config
     store: Store
     lane: Lane
+    account_dir: Any
 
     def _host(self) -> Host:
         return host_class(self.cfg, self.lane.terminal)(self.cfg)
@@ -102,14 +103,17 @@ class Terminal:
         is) and open a window running it. The lane's own `env` values go in a private file the launcher sources
         and deletes, never in the script."""
         cwd = lane_cwd(self.cfg, self.lane)
-        env = {**lane_env(self.cfg, self.lane), **(extra_env or {})}
+        account = self.account_dir()
+        env = {**accounts.session_env(account, lane_env(self.cfg, self.lane)), **(extra_env or {})}
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(PACKAGE_PARENT), os.environ.get("PYTHONPATH", "")) if p)
-        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *(extra_env or {}), "PYTHONPATH"]
-        secrets = [k for k in self.lane.env if k not in keys]
+        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *(extra_env or {}), "PYTHONPATH", *(["CLAUDE_CONFIG_DIR"] if account else [])]
+        secrets = [k for k in self.lane.env if k not in keys and k in env]
+        drop = [k for k in accounts.SIGN_IN_VARS if k not in keys] if account else []
         secret_file = self.term_dir / (f"{self.lane.id}.env.cmd" if procs.WINDOWS else f"{self.lane.id}.env")
         if procs.WINDOWS:
             path = self.term_dir / f"{self.lane.id}.cmd"
-            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{cwd}"', *(f'set "{k}={env[k]}"' for k in keys)]
+            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{cwd}"', *(f'set "{k}="' for k in drop),
+                     *(f'set "{k}={env[k]}"' for k in keys)]
             if secrets:
                 _write_private(secret_file, "\r\n".join(f'set "{k}={env[k]}"' for k in secrets) + "\r\n", 0o600)
                 lines += [f'call "{secret_file}"', f'del "{secret_file}"']
@@ -117,7 +121,7 @@ class Terminal:
             path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
         else:
             path = self.term_dir / f"{self.lane.id}.sh"
-            lines = ["#!/bin/sh", f"cd {shlex.quote(str(cwd))} || exit 1",
+            lines = ["#!/bin/sh", f"cd {shlex.quote(str(cwd))} || exit 1", *([f"unset {' '.join(drop)}"] if drop else []),
                      *(f"export {k}={shlex.quote(env[k])}" for k in keys)]
             if secrets:
                 _write_private(secret_file, "\n".join(f"export {k}={shlex.quote(env[k])}" for k in secrets) + "\n", 0o600)

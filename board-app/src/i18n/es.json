@@ -464,6 +464,7 @@
     },
     "acct": "Cuenta de Claude",
     "sharedAcct": "Compartida",
-    "team": "Quién está conectado"
+    "team": "Quién está conectado",
+    "otherAcct": "Cuenta personal de otra persona"
   }
 }

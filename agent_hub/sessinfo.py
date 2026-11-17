@@ -122,9 +122,13 @@ def describe(runtime: str, sid: str | None = None, last_sid: str | None = None, 
 def for_lane(cfg: Any, store: Any, lane: str, runtime: str, model: str | None, session: str | None,
              projects: Path | None = None) -> dict[str, Any]:
     try:
-        opts = json.loads((cfg.state_dir / "logs" / f"{lane}.opts.json").read_text(encoding="utf-8")) if session else {}
+        saved = json.loads((cfg.state_dir / "logs" / f"{lane}.opts.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        opts = {}
+        saved = {}
+    opts = saved if session else {}
+    if projects is None and runtime == "claude" and saved.get("account"):
+        from .runtimes import claude_base
+        projects = claude_base(saved["account"]) / "projects"
     try:
         found = next((x for x in store.recent_sessions(lane) if transcript(x, projects)), None) if runtime == "claude" else None
         return describe(runtime, session, found, opts, model or None, projects)

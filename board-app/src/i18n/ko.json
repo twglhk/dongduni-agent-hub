@@ -464,6 +464,7 @@
     },
     "acct": "Claude 계정",
     "sharedAcct": "공용",
-    "team": "연결 현황"
+    "team": "연결 현황",
+    "otherAcct": "다른 사람의 개인 계정"
   }
 }

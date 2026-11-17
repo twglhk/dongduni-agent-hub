@@ -464,6 +464,7 @@
     },
     "acct": "Claude 账号",
     "sharedAcct": "共享",
-    "team": "连接情况"
+    "team": "连接情况",
+    "otherAcct": "其他人的个人账号"
   }
 }
