@@ -69,7 +69,7 @@ def _gate_line(c: Config, lane: str, brief: str) -> None:
     uses = processes.lane_uses(role)
     if (c.home / processes.DIR).is_dir() and (uses is not None or legacy is not None):
         try:
-            p = line.gate(line.translate_legacy(brief, legacy), processes.load(c.home))
+            p = line.gate(line.translate_legacy(brief, legacy), processes.load(c.home), by_old_row=bool(line.old_row(brief)))
         except ValueError as e:
             raise TowerError(str(e))
         if line.old_row(brief):

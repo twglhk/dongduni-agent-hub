@@ -195,6 +195,22 @@ class LineTest(unittest.TestCase):
         self.assertFalse(self.ok("Line: new Demo trailer / cover-making · prepare")["sub_new"])
         self.assertEqual(self.ok("Line: demo-app / article-qa · prepare")["mode"], "prepare")
 
+    def test_a_sub_process_used_twice_with_different_models_needs_a_model_line(self) -> None:
+        write_full(self.home, "twice", "Twice", [("production", "cover-making", "sonnet/medium"),
+                                                 ("production", "cover-making", "opus/high")], frame="Frame: exception — test fixture")
+        lib = processes.load(self.home)
+        with self.assertRaises(ValueError) as r:
+            line.gate("Line: twice / cover-making · stage 1 · make", lib)
+        self.assertIn("more than once", str(r.exception))
+        self.assertIn("`model:` line", str(r.exception))
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make\nmodel: opus", lib)["sub"], "cover-making")
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make", lib, by_old_row=True)["sub"], "cover-making")
+
+    def test_a_sub_process_used_twice_with_the_same_model_passes(self) -> None:
+        write_full(self.home, "twice", "Twice", [("production", "cover-making", "sonnet/medium"),
+                                                 ("production", "cover-making", "sonnet/medium")], frame="Frame: exception — test fixture")
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make", processes.load(self.home))["mode"], "make")
+
     def test_refuses(self) -> None:
         for brief, word in [("do the thing", "does not start with `Line:`"),
                             ("Line: article-publishing / article-planning · stage 1", "ends without prepare"),

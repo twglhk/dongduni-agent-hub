@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import engines
+from . import engines, stagemodel
 
 MODES = ("prepare", "make", "fix")
 FORMAT = ("Line: <full process> / <sub-process> · stage <n|n-m> · prepare|make|fix\n"
@@ -115,7 +115,7 @@ def _match(name: str, ids: dict[str, Any]) -> str | None:
     return next((i for i, v in ids.items() if key in (re.sub(r"[\s_-]+", "", i), re.sub(r"[\s_-]+", "", str(v.get("title", "")).lower()))), None)
 
 
-def gate(brief: str, lib: dict[str, Any]) -> dict[str, Any]:
+def gate(brief: str, lib: dict[str, Any], by_old_row: bool = False) -> dict[str, Any]:
     try:
         p = parse(brief)
     except ValueError as e:
@@ -134,6 +134,12 @@ def gate(brief: str, lib: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"sub-process `{p['sub']}` is not in the library (sub-processes: {', '.join(subs) or 'none'}); "
                          f"to build it write `Line: {p['full'] if not p['full_new'] else 'new ' + p['full']} / new <name> · prepare`")
     new = p["full_new"] or p["sub_new"]
+    if not new and p["sub"] and not by_old_row and not stagemodel.has_model_line(brief):
+        models = list(dict.fromkeys(s["model"] for s in fulls[p["full"]]["steps"] if s["sub"] == p["sub"]))
+        if len(models) > 1:
+            raise ValueError(f"`{p['sub']}` is a step of `{p['full']}` more than once, with different models "
+                             f"({'; '.join(models)}), and the Line header cannot say which step: add a `model:` line "
+                             f"(and `effort:`) to the brief, or name the step by its old `#` row")
     listed = not new and p["sub"] and p["sub"] in [s["sub"] for s in fulls[p["full"]]["steps"]]
     if p["mode"] != "prepare":
         if new:
