@@ -22,6 +22,10 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
+  GET  /api/me/claude             the viewer's own Claude account: {state: none|pending|connected|expired, url?, email?, plan?,
+                                  expires?, ended?}; 404 unless tower.json sets claude_accounts (accountroutes.py)
+  POST /api/me/claude             {action: start|code|cancel|disconnect, code?}: sign the viewer's account folder in or out; the
+                                  code goes straight to `claude auth login`, never stored or logged
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
   POST /api/uploads/start         {text, files: [{name, type, size}]} → {id, files: [{n, mode: chunks, chunk} |
                                   {n, mode: put, url, headers} | {n, mode: multipart, part_size, parts}]}: the request is
@@ -65,6 +69,9 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
+from . import accountroutes
+from . import accounthold
+from . import accounts as accounts_mod
 from . import config as config_mod
 from . import engines as engines_mod
 from . import processes as processes_mod
@@ -365,7 +372,16 @@ def infra_wait_line(cfg: Config, s: Store) -> str | None:
     return WAIT_HEAD[lang].format(n=len(waits), id=m["id"], why=block_text(b[0], b[1], lang, len(sessions)))
 
 
-def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def account_fields(cfg: Config, s: Store, g: vis.Gate | None, lane: str, ln: Any, session: str | None) -> dict[str, Any]:
+    if not cfg.claude_accounts:
+        return {}
+    only = None if g is None or g.owner else g.name
+    owner = s.session_account(lane, session)
+    held = accounthold.lane_line(s, lane, cfg.lang, only) if not ln.base and ln.kind != INFRA else None
+    return {"account": accounthold.shown_owner(owner, only), "held": held}
+
+
+def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Gate | None = None) -> list[dict[str, Any]]:
     out = []
     blamed = set(s.blames())
     libs: dict[str, list[dict[str, Any]]] = {}
@@ -408,7 +424,8 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                     "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid),
-                    "run": sessinfo.for_lane(cfg, s, lid, ln.runtime, ln.model, row.get("session") if live else None)})
+                    "run": sessinfo.for_lane(cfg, s, lid, ln.runtime, ln.model, row.get("session") if live else None),
+                    **account_fields(cfg, s, g, lid, ln, row.get("session") if live else None)})
     return out
 
 
@@ -494,6 +511,8 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "my_hub": my_hub,
         "my_hub_state": my_hub_view(cfg, s, me),
         "requester": cfg.requester,
+        "claude_accounts": cfg.claude_accounts,
+        "accounts": accounts_mod.overview(s) if cfg.claude_accounts and vis.sees_all(me) else None,
         "running": tower_pid(cfg) is not None,
         "version": __version__,
         "local_only": cfg.local_only,
@@ -504,7 +523,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "runtimes": list(RUNTIMES),
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
-        "lanes": lanes_view(cfg, s, used),
+        "lanes": lanes_view(cfg, s, used, g),
         "queues": queues_view(cfg, s, tasks, g, read_waits(cfg.state_dir)),
         "items": with_hubs(s, vis.mine(g, s.items(state="open", limit=500)) + vis.decided(g, 0, PREVIEW)),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
@@ -824,6 +843,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, prefs_mod.view(st, str(me["name"])))
                 except prefs_mod.PrefsError as e:
                     return self._json(403, {"error": str(e)})
+            if path == "/api/me/claude":
+                code, out = accountroutes.answer(c, st, me, {"action": "status"}, log)
+                return self._json(code, out)
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
@@ -1025,6 +1047,9 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(200, {"ok": True, "item": it})
                 if path == "/api/me/prefs":
                     return self._prefs(who, body)
+                if path == "/api/me/claude":
+                    code, out = accountroutes.answer(c, st, me, body, log)
+                    return self._json(code, out)
                 if path == "/api/memo":
                     text = str(body.get("text") or "").strip()
                     to = str(body.get("to") or HUB)

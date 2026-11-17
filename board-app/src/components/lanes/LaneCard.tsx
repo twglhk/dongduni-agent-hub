@@ -35,6 +35,7 @@ export function LaneCard({ l }: { l: Lane }) {
         : l.doing || l.memo ? null : <div className="text-t5 text-ink-3">{L.label.noTask}</div>}
       {l.memo && <div className={`text-t5 ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">{fmt(L.ln.memo, { n: l.memo.id })}</span>{l.memo.title}</div>}
       {l.doing && !l.memo && <div className={`${l.task_id ? 'text-t6 text-ink-2' : 'text-t5 font-semibold'} ${CLAMP2}`}>{l.doing}</div>}
+      {l.held && <div className="rounded-chip bg-orange-weak px-2 py-1 text-t6 leading-snug text-orange-ink">{l.held}</div>}
       {l.wait && <div className="rounded-chip bg-orange-weak px-2 py-1 text-t6 leading-snug text-orange-ink">{l.wait}</div>}
       {(proc || model || l.fixing) && (
         <div className="flex flex-wrap items-center gap-2 text-t6 text-ink-3">
@@ -43,6 +44,7 @@ export function LaneCard({ l }: { l: Lane }) {
           {l.fixing && <Chip tone="orange">{L.lv.fixing}</Chip>}
         </div>
       )}
+      {l.account && <div className="text-t6 text-ink-3">{L.ca.acct} · {l.account}</div>}
       {!!l.ctx_k && l.ctx_k > 0 && <div className="text-t6 text-ink-3">{L.label.ctx} {l.ctx_k}K</div>}
       {l.branch && <div className="flex min-w-0 items-center gap-1.5 text-t6 text-ink-3">{L.lv.branch}<code className="truncate rounded-[6px] bg-surface-3 px-1.5 py-px font-mono text-ink-2">{l.branch}</code></div>}
       <TokenLine k={l.task_tokens} />

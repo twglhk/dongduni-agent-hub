@@ -33,6 +33,7 @@ function Body({ v }: { v: SessionView }) {
   const { L } = useL();
   return (
     <>
+      {v.held && <div className="mb-3 rounded-chip bg-orange-weak px-3 py-2 text-t5 leading-snug text-orange-ink">{v.held}</div>}
       {v.hidden && <Empty>{L.ln.hidden}</Empty>}
       {!v.hidden && !v.work && <Empty>{L.ln.noWork}</Empty>}
       {v.work && <Work w={v.work} />}
@@ -42,6 +43,12 @@ function Body({ v }: { v: SessionView }) {
           <div className="rounded-box bg-surface-3 px-4 py-3 text-t5 leading-relaxed">
             <span className="mr-2 text-t6 font-semibold text-ink-3">{(L.report as Record<string, string>)[v.report.kind] || v.report.kind}</span>{v.report.text}
           </div>
+        </>
+      )}
+      {v.live && v.runtime === 'claude' && v.account !== undefined && (
+        <>
+          <Label>{L.ca.acct}</Label>
+          <div className="text-t5 font-semibold">{v.account === '' ? L.ca.otherAcct : v.account || L.ca.sharedAcct}</div>
         </>
       )}
     </>

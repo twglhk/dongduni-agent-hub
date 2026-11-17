@@ -120,6 +120,27 @@ CREATE TABLE IF NOT EXISTS member_prefs(
   data TEXT NOT NULL,
   updated REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS account_holds(
+  work TEXT PRIMARY KEY,            -- task:<id>, memo:<id> or hub:<lane>: work waiting for its person's Claude sign-in
+  member TEXT NOT NULL,
+  lane TEXT NOT NULL,
+  title TEXT,
+  since REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_asks(
+  member TEXT PRIMARY KEY,
+  item_id INTEGER NOT NULL,
+  since REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS account_seen(
+  member TEXT PRIMARY KEY,
+  since REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS session_accounts(
+  lane TEXT PRIMARY KEY,
+  session TEXT,
+  member TEXT                       -- whose Claude account the lane's session opened on; NULL = the shared one
+);
 CREATE TABLE IF NOT EXISTS lanes(
   lane TEXT PRIMARY KEY,
   session TEXT,
@@ -1199,6 +1220,8 @@ class Store:
             if con.execute("DELETE FROM members WHERE name=?", (name,)).rowcount != 1:
                 raise StoreError(f"no member {name}")
             con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
+            for table in ("account_seen", "account_asks", "account_holds"):
+                con.execute(f"DELETE FROM {table} WHERE member=?", (name,))
 
     def member_prefs(self, name: str) -> str | None:
         with self.conn() as con:
@@ -1214,6 +1237,57 @@ class Store:
     def drop_member_prefs(self, name: str) -> None:
         with self.conn() as con:
             con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
+
+    def account_seen(self, member: str) -> bool:
+        with self.conn() as con:
+            return con.execute("SELECT 1 FROM account_seen WHERE member=?", (member,)).fetchone() is not None
+
+    def mark_account_seen(self, member: str) -> None:
+        with self.conn() as con:
+            con.execute("INSERT OR IGNORE INTO account_seen(member, since) VALUES(?,?)", (member, self.clock()))
+
+    def hold_account_work(self, work: str, member: str, lane: str, title: str) -> bool:
+        with self.conn() as con:
+            return con.execute("INSERT OR IGNORE INTO account_holds(work, member, lane, title, since) VALUES(?,?,?,?,?)",
+                               (work, member, lane, title, self.clock())).rowcount == 1
+
+    def account_holds(self) -> list[dict[str, Any]]:
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM account_holds ORDER BY since, work"))
+
+    def account_hold(self, work: str) -> dict[str, Any] | None:
+        with self.conn() as con:
+            return _one(con.execute("SELECT * FROM account_holds WHERE work=?", (work,)))
+
+    def drop_account_holds(self, works: list[str]) -> None:
+        with self.conn() as con:
+            con.executemany("DELETE FROM account_holds WHERE work=?", [(w,) for w in works])
+
+    def account_ask(self, member: str) -> int | None:
+        with self.conn() as con:
+            row = con.execute("SELECT item_id FROM account_asks WHERE member=?", (member,)).fetchone()
+        return int(row[0]) if row else None
+
+    def set_account_ask(self, member: str, item_id: int) -> None:
+        with self.conn() as con:
+            con.execute("INSERT INTO account_asks(member, item_id, since) VALUES(?,?,?) ON CONFLICT(member) DO UPDATE "
+                        "SET item_id=excluded.item_id, since=excluded.since", (member, item_id, self.clock()))
+
+    def drop_account_ask(self, member: str) -> None:
+        with self.conn() as con:
+            con.execute("DELETE FROM account_asks WHERE member=?", (member,))
+
+    def set_session_account(self, lane: str, session: str | None, member: str | None) -> None:
+        with self.conn() as con:
+            con.execute("INSERT INTO session_accounts(lane, session, member) VALUES(?,?,?) ON CONFLICT(lane) DO UPDATE "
+                        "SET session=excluded.session, member=excluded.member", (lane, session, member))
+
+    def session_account(self, lane: str, session: str | None) -> str | None:
+        if not session:
+            return None
+        with self.conn() as con:
+            row = con.execute("SELECT member FROM session_accounts WHERE lane=? AND session=?", (lane, session)).fetchone()
+        return row[0] if row else None
 
     def members(self) -> list[dict[str, Any]]:
         with self.conn() as con:

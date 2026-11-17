@@ -97,7 +97,7 @@ class ClaudeTerm(TerminalSession, Claude):
         sid = self.store.lane(self.lane.id).get("session")
         if not sid:
             return ""
-        return str(claude_base() / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
+        return str(claude_base(self.account_dir()) / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
 
     def _transcript(self, whole: bool = False) -> list[dict[str, Any]]:
         path = self._transcript_path()

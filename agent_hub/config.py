@@ -230,6 +230,7 @@ class Config:
     requester: bool = False
     rule_watch: dict[str, Any] = field(default_factory=dict)  # rulewatch.parse: files, delay_minutes, cards_per_day; {} = off
     overlap_check: bool = False  # overlap.py: queued work on a shared rule file that meets another person's open work asks both first
+    claude_accounts: bool = False
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
     uploads: dict[str, Any] = field(default_factory=dict)  # chat attachments: storage.parse; {} = off (a loaded config has provider local by default)
 
@@ -501,6 +502,10 @@ def from_raw(home: Path, raw: Any) -> Config:
         raise ConfigError("auth.mode must be local, header or token")
     if mode == "header" and not auth.get("header"):
         raise ConfigError("auth.mode header needs auth.header (e.g. Cf-Access-Authenticated-User-Email)")
+    claude_accounts = _bool(raw, "claude_accounts")
+    if claude_accounts and mode == "local":
+        raise ConfigError("claude_accounts needs auth.mode header or token: each person signs in to their own Claude "
+                          "account, so the board must know who is asking (local mode trusts everyone as one owner)")
     exposed = str(web.get("host") or "127.0.0.1") not in ("127.0.0.1", "localhost", "::1") or web.get("public_url") or raw.get("tunnel")
     if mode == "local" and exposed and not auth.get("allow_exposed"):
         raise ConfigError("auth.mode local trusts everyone who reaches the board, but web.host, web.public_url or tunnel "
@@ -513,6 +518,7 @@ def from_raw(home: Path, raw: Any) -> Config:
         web_host=str(web.get("host") or "127.0.0.1"), web_port=_int(web, "port", 8787, 1, "web"),
         public_url=str(web.get("public_url") or ""),
         auth_mode=mode, auth_header=str(auth.get("header") or ""),
+        claude_accounts=claude_accounts,
         max_lanes=_int(raw, "max_lanes", 2, 1),
         opencode_port=first_port,
         notify={str(k): str(v) for k, v in (raw.get("notify") or {}).items()},

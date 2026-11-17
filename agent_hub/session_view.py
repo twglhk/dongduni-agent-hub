@@ -4,6 +4,7 @@ import re
 import sqlite3
 from typing import Any
 
+from . import accounthold
 from .config import HUB, INFRA, Config
 from .fair import message_who, task_who
 from .queues import person
@@ -82,4 +83,10 @@ def session_view(cfg: Config, s: Store, key: str, g: Gate | None = None) -> dict
         return None
     if hidden:
         work = None
-    return {"key": key, "live": live, "work": work, "report": None if hidden else _report(s, key), "hidden": hidden}
+    out = {"key": key, "live": live, "work": work, "report": None if hidden else _report(s, key), "hidden": hidden}
+    if cfg.claude_accounts:
+        only = None if g is None or g.owner else g.name
+        owner = s.session_account(key, row.get("session")) if live else None
+        held = accounthold.lane_line(s, key, cfg.lang, only) if not ln.base and ln.kind != INFRA else None
+        out |= {"account": accounthold.shown_owner(owner, only), "held": held, "runtime": ln.runtime}
+    return out

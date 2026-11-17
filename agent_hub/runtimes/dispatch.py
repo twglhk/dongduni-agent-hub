@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..config import Config, Lane
@@ -69,9 +70,10 @@ class Runtimes:
     def reply_question(self, lane: str, qid: str, answers: list[list[str]]) -> None:
         self._a(lane).reply_question(qid, answers)
 
-    def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
+    def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None,
+             account: Path | None = None) -> str:
         ln = self.cfg.all_lanes[lane]
-        self._a(lane).set_opts(model, effort)  # OpenCode lanes keep their configured model; claude and codex honour these
+        self._a(lane).set_opts(model, effort, account)  # OpenCode lanes keep their configured model; claude and codex honour these
         if ln.worktree:
             lane_cwd(self.cfg, ln)
             prompt = worktree_note(self.cfg, ln) + prompt

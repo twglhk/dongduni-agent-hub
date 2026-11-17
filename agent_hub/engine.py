@@ -28,7 +28,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel
+from . import accounthold, engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -192,6 +192,9 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
     hold = overlap.hold_of(store, f"task:{task['id']}")
     if hold:
         return overlap.held_text(hold)
+    signin = accounthold.hold_of(store, f"task:{task['id']}")
+    if signin:
+        return accounthold.held_text(signin["member"])
     b = task_block(store, task, also)
     if b is None:
         return None
@@ -280,26 +283,31 @@ BLOCK_TEXT = {
            "busy": "runs alone: waits until #{o} ({lane}) and every other infra session finish",
            "overlap": "paths overlap #{o} ({lane}): waits until it finishes", "full": "all {n} infra sessions are busy",
            "behind": "waits behind #{o}, which runs alone",
-           "overlap_hold": "overlaps another person's work: waits for the answer on card #{o}"},
+           "overlap_hold": "overlaps another person's work: waits for the answer on card #{o}",
+           "signin_hold": "waiting for {o} to sign in to Claude again"},
     "ko": {"declaring": "#{o}({lane})가 고칠 경로를 선언하는 중이라 대기", "alone": "#{o}({lane})가 혼자 실행 중이라 대기",
            "busy": "혼자 실행할 메모라 #{o}({lane}) 등 다른 인프라 세션이 끝날 때까지 대기",
            "overlap": "#{o}({lane})와 고칠 경로가 겹쳐 그것이 끝날 때까지 대기", "full": "인프라 세션 {n}개가 모두 사용 중",
            "behind": "혼자 실행할 #{o} 차례를 기다리는 중",
-           "overlap_hold": "다른 사람 일과 겹쳐 카드 #{o} 답을 기다리는 중"},
+           "overlap_hold": "다른 사람 일과 겹쳐 카드 #{o} 답을 기다리는 중",
+           "signin_hold": "{o} 님이 Claude에 다시 로그인하기를 기다리는 중"},
     "ja": {"declaring": "#{o}（{lane}）が変更するパスを宣言するのを待っています", "alone": "#{o}（{lane}）が単独で実行中のため待機",
            "busy": "単独実行のメモなので、#{o}（{lane}）ほかの infra セッションが終わるまで待機",
            "overlap": "#{o}（{lane}）と変更するパスが重なるため、それが終わるまで待機", "full": "infra セッション {n} 件がすべて使用中",
            "behind": "単独実行の #{o} の順番を待っています",
-           "overlap_hold": "他の人の作業と重なるため、カード #{o} の返答を待機"},
+           "overlap_hold": "他の人の作業と重なるため、カード #{o} の返答を待機",
+           "signin_hold": "{o} さんが Claude に再ログインするのを待っています"},
     "zh": {"declaring": "等待 #{o}（{lane}）声明它要修改的路径", "alone": "#{o}（{lane}）正在独占运行，等待",
            "busy": "此备忘需独占运行：等到 #{o}（{lane}）和其他 infra 会话都结束", "overlap": "与 #{o}（{lane}）要修改的路径重叠，等它结束",
            "full": "{n} 个 infra 会话全部在用", "behind": "排在需独占运行的 #{o} 之后",
-           "overlap_hold": "与他人的工作重叠，等待卡片 #{o} 的答复"},
+           "overlap_hold": "与他人的工作重叠，等待卡片 #{o} 的答复",
+           "signin_hold": "等待 {o} 重新登录 Claude"},
     "es": {"declaring": "espera a que #{o} ({lane}) declare sus rutas", "alone": "#{o} ({lane}) se ejecuta a solas",
            "busy": "se ejecuta a solas: espera a que #{o} ({lane}) y las demás sesiones de infra terminen",
            "overlap": "las rutas se solapan con #{o} ({lane}): espera a que termine", "full": "las {n} sesiones de infra están ocupadas",
            "behind": "espera detrás de #{o}, que se ejecuta a solas",
-           "overlap_hold": "se solapa con el trabajo de otra persona: espera la respuesta en la tarjeta #{o}"},
+           "overlap_hold": "se solapa con el trabajo de otra persona: espera la respuesta en la tarjeta #{o}",
+           "signin_hold": "esperando a que {o} inicie sesión de nuevo en Claude"},
 }
 
 
@@ -324,6 +332,10 @@ def infra_waits(store: Store, sessions: list[str], now: float, fair: bool = Fals
         hold = overlap.hold_of(store, f"memo:{m['id']}")
         if hold:
             out.append((m, ("overlap_hold", {"id": hold["items"][0], "_lane": "card"})))
+            continue
+        signin = accounthold.hold_of(store, f"memo:{m['id']}")
+        if signin:
+            out.append((m, ("signin_hold", {"id": signin["member"], "_lane": "account"})))
             continue
         b = message_block(m, live, now)
         if b is None and barrier is not None:
@@ -414,6 +426,7 @@ class Engine:
         self.overlaps = overlap.Overlaps(cfg, store, log) if cfg.overlap_check else None
         self.rules = rulewatch.RuleWatch(cfg.home, store, cfg.state_dir, cfg.rule_watch, cfg.lang, clock, log,
                                          lambda k: self.person_of(k)) if cfg.rule_watch else None
+        self.accounts = accounthold.Gate(cfg, store, log)
 
     def inherit(self, old: Engine) -> None:
         self.compacting, self.hub_asked = old.compacting, old.hub_asked
@@ -520,6 +533,10 @@ class Engine:
             return 0.0
         return now - self.idle_since.setdefault(lane, now)
 
+    @staticmethod
+    def _account_kw(la: Any) -> dict[str, Any]:
+        return {"account": la.config_dir} if la is not None and la.config_dir else {}
+
     def _send(self, lane: str, sid: str, text: str, queued: bool = False) -> None:
         (self.rt.send_queued if queued else self.rt.send)(lane, sid, text)
         self.idle_since[lane] = self.clock()
@@ -603,6 +620,10 @@ class Engine:
                 self.overlaps.scan()
         except Exception as e:
             self.log(f"overlap: {e}")
+        try:
+            self.accounts.poll()
+        except Exception as e:
+            self.log(f"accounts: {e}")
         self._start_queued(statuses)
         try:
             self._person_hubs()
@@ -1019,6 +1040,8 @@ class Engine:
                 self._hub_note(task, f"Handoff: {lane} task #{tid} \"{task['title']}\" compacted, same session{why}.")
                 self.log(f"{lane}: task #{tid} compacted ({how})")
                 return
+        if self.accounts.check(lane, task=task) is None:
+            return
         self.rt.close(lane)
         self.heavy.pop(lane, None)
         self._open_resume(lane, task, "handed off to a fresh session")
@@ -1039,6 +1062,9 @@ class Engine:
         nxt = next((t for t in self.store.queued_for(lane) if linked(prev, t) and not self.conflict(t)), None)
         limit = min(CHAIN_CONTEXT_K, self.cfg.context_limit(lane) or CHAIN_CONTEXT_K)
         if nxt is None or self.rt.context_k(lane, sid) >= limit:
+            return False
+        la = self.accounts.check(lane, task=nxt)
+        if la is None or la.owner != self.store.session_account(lane, sid):
             return False
         task = self.store.claim_task(nxt["id"])
         if task is None:
@@ -1097,6 +1123,10 @@ class Engine:
             if len([t for t in started if wt(t) == w]) >= max(0, free_h if w == "heavy" else free_l):
                 waits[nxt["id"]] = f"every {w} slot is busy" if self.cfg.light_lanes is not None else "every slot is busy"
                 continue  # full. A task skipped for a conflict takes no slot, so a later one can start (head-of-line skip)
+            signin = accounthold.hold_of(self.store, f"task:{nxt['id']}")
+            if signin:
+                waits[nxt["id"]] = accounthold.held_text(signin["member"], self.cfg.lang)
+                continue
             why = self.conflict(nxt, started) or self.cap_reason(nxt)
             if why:
                 waits[nxt["id"]] = why
@@ -1105,19 +1135,24 @@ class Engine:
             if not self._sync_branch(lane, nxt, waits, busy | {t["lane"] for t in started}, statuses):
                 continue
             try:
+                la = self.accounts.check(lane, task=nxt)
+                if la is None:
+                    waits[nxt["id"]] = accounthold.held_text(str(self.accounts.launch(lane, task=nxt).member), self.cfg.lang)
+                    continue
                 if statuses[lane] == "idle":
                     self.rt.close(lane)  # a fresh session per task
                 task = self.store.claim_task(nxt["id"])
                 if task is None:
                     continue
                 try:
-                    sid = self.rt.open(lane, self.start_prompt(task), **self._opts(task))
+                    sid = self.rt.open(lane, self.start_prompt(task), **self._opts(task), **self._account_kw(la))
                 except Exception:
                     self.store.update_task(nxt["id"], state="queued", started=None, last_prompt=None)
                     raise
             except Exception as e:
                 self.log(f"{lane}: task #{nxt['id']} failed to start: {e}")
                 continue
+            self.accounts.opened(lane, sid, la)
             started.append(nxt)
             self.heavy.pop(lane, None)
             self.store.update_task(nxt["id"], session=sid)
@@ -1270,18 +1305,24 @@ class Engine:
                 self.store.update_task(task["id"], respawns=RESPAWN_LIMIT + 1)
             return
         handed = bool(task.get("rotate_ready"))
-        self._open_resume(lane, task, "handed off to a fresh session" if handed else "the session had closed")
+        if not self._open_resume(lane, task, "handed off to a fresh session" if handed else "the session had closed"):
+            return
         self.store.update_task(task["id"], respawns=task["respawns"] + (0 if handed else 1), rotate_ready=None)
         self.compacting.pop(task["id"], None)
         if handed:
             self.store.drop_pending(lane, ("rotate",))
             self._hub_note(task, f"Handoff: {lane} task #{task['id']} \"{task['title']}\" continues in a new session.")
 
-    def _open_resume(self, lane: str, task: dict[str, Any], why: str) -> None:
-        sid = self.rt.open(lane, self.resume_prompt(task, why), **self._opts(task))
+    def _open_resume(self, lane: str, task: dict[str, Any], why: str) -> bool:
+        la = self.accounts.check(lane, task=task)
+        if la is None:
+            return False
+        sid = self.rt.open(lane, self.resume_prompt(task, why), **self._opts(task), **self._account_kw(la))
+        self.accounts.opened(lane, sid, la)
         self.store.update_task(task["id"], session=sid, last_prompt=self.clock(), nudges=0)
         self.idle_since.pop(lane, None)
         self.log(f"{lane}: task #{task['id']} new session ({why})")
+        return True
 
     # ---------- hub ----------
 
@@ -1328,9 +1369,12 @@ class Engine:
                     if now - opens[-1] < HUB_RETRY_WINDOW / 2:
                         return
                     opens.pop(0)
+                la = self.accounts.check(lane)
+                if la is None:
+                    return
                 opens.append(now)
                 handoff = str(info.get("handoff") or "")
-                self.rt.open(lane, self.hub_prompt(handoff, lane))
+                self.accounts.opened(lane, self.rt.open(lane, self.hub_prompt(handoff, lane), **self._account_kw(la)), la)
                 self.store.set_lane(lane, opened=now)
                 if handoff:
                     self.store.set_lane(lane, handoff=None, handoff_session=None)
@@ -1364,9 +1408,12 @@ class Engine:
         asked = asked if asked and asked[0] == sid else None
         if handoff or (asked and self.clock() - asked[1] >= HUB_HANDOFF_WAIT):
             why = "handed off" if handoff else f"asked to hand off {int(HUB_HANDOFF_WAIT // 60)} min ago, no handoff"
+            la = self.accounts.check(lane)
+            if la is None:
+                return
             self.heavy.pop(lane, None)
             self.rt.close(lane)
-            self.rt.open(lane, self.hub_prompt(handoff, lane))
+            self.accounts.opened(lane, self.rt.open(lane, self.hub_prompt(handoff, lane), **self._account_kw(la)), la)
             self.store.set_lane(lane, opened=self.clock(), handoff=None, handoff_session=None)
             self.hub_asked.pop(lane, None)
             self.idle_since.pop(lane, None)
@@ -1433,6 +1480,8 @@ class Engine:
         now, barrier = self.clock(), []
         held = {int(r["work"].split(":")[1]) for r in self.store.overlaps(overlap.HOLDS) if r["work"].startswith("memo:")}
 
+        held = {int(r["work"].split(":")[1]) for r in self.store.account_holds() if r["work"].startswith("memo:")}
+
         def allow(m: dict[str, Any]) -> bool:
             if barrier or m["id"] in held:
                 return False
@@ -1455,8 +1504,14 @@ class Engine:
                                     f"{RESPAWN_LIMIT} closed sessions.")
                 self.store.finish_inbox(lane)
                 return
+        la = self.accounts.check(lane, msg=msg)
+        if la is None:
+            self.store.release_inbox(lane)
+            self.store.set_lane(lane, closing=None)
+            return
         try:
-            self.rt.open(lane, self.inbox_prompt(msg, lane), **self._memo_opts(msg))
+            self.accounts.opened(lane, self.rt.open(lane, self.inbox_prompt(msg, lane), **self._memo_opts(msg),
+                                                    **self._account_kw(la)), la)
         except Exception as e:
             self.log(f"{lane}: message #{msg['id']} failed to open: {e}")
             self.store.mark_delivered([msg["id"]])

@@ -128,6 +128,12 @@ def cmd_member(args: argparse.Namespace) -> None:
     if args.sub == "remove":
         s.remove_member(args.name)
         print(f"removed {args.name}")
+        if c.claude_accounts:
+            from .. import claudelogin
+            try:
+                claudelogin.disconnect(args.name)
+            except claudelogin.LoginError as e:
+                print(f"{args.name}'s Claude sign-in folder was not removed ({e.why}): delete it from ~/.claude-accounts yourself")
     else:
         token = s.add_member(args.name, args.role, args.ident, args.token)
         print(f"member {args.name} ({args.role})" + (f" ident {args.ident}" if args.ident else ""))
