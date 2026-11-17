@@ -19,6 +19,10 @@ def missing_lines(brief: str) -> list[str]:
     return [n for n, rx in (("model: <name>", _MODEL), ("effort: low|medium|high|xhigh|max", _EFFORT)) if not rx.search(brief)]
 
 
+def has_model_line(brief: str) -> bool:
+    return bool(_MODEL.search(brief))
+
+
 def problems(model: str | None, effort: str | None) -> list[str]:
     out = []
     if model and model.lower() not in MODEL_ALIASES and not re.search(r"[-./\d]", model):

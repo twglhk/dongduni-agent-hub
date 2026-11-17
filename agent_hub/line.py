@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from . import engines
+from . import engines, stagemodel
 
 MODES = ("prepare", "make", "fix")
 FORMAT = ("Line: <full process> / <sub-process> · stage <n|n-m> · prepare|make|fix\n"
@@ -17,6 +17,11 @@ _STAGE = re.compile(r"^stage\s+(\d+(?:\s*[-–]\s*\d+)?)$", re.I)
 _OLD_ROW = re.compile(r"^#?([A-Za-z]?\d+)(?=\s|$)")
 
 
+def _row_of(head: str) -> str | None:
+    m = None if "/" in head else _OLD_ROW.match(head)
+    return m.group(1) if m else None
+
+
 def first_line(brief: str) -> str:
     return next((ln.strip() for ln in brief.splitlines() if ln.strip()), "")
 
@@ -26,7 +31,7 @@ def is_library_line(brief: str) -> bool:
     if not m:
         return False
     head = m.group(1).split("·")[0].strip()
-    return not _OLD_ROW.match(head) and ("/" in head or head.lower().startswith("new ") or bool(ID.match(head)))
+    return _row_of(head) is None and ("/" in head or head.lower().startswith("new ") or bool(ID.match(head)))
 
 
 def _name(part: str) -> tuple[str, bool]:
@@ -45,7 +50,7 @@ def parse(brief: str) -> dict[str, Any]:
         return {"chore": True, "full": None, "full_new": False, "sub": None, "sub_new": False, "stage": None, "mode": None}
     segs = [s.strip() for s in rest.split("·")]
     head = segs[0]
-    if _OLD_ROW.match(head):
+    if _row_of(head) is not None:
         raise ValueError(f"`{head}` is a row of an old pattern library, which this workspace's process library does not have "
                          f"(`dah update` converts pattern libraries): name a full process and a sub-process")
     full_part, slash, sub_part = head.partition("/")
@@ -62,6 +67,9 @@ def parse(brief: str) -> dict[str, Any]:
     for s in segs[1:]:
         if sm := _STAGE.match(s):
             stage = re.sub(r"\s+", "", sm.group(1)).replace("–", "-")
+            lo, _, hi = stage.partition("-")
+            if hi and int(hi) < int(lo):
+                raise ValueError(f"`stage {stage}` runs backwards: write `stage {hi}-{lo}`")
     modes = [s.split()[0].lower() for s in segs[1:] if s and s.split()[0].lower() in MODES]
     if not modes:
         raise ValueError("the Line header ends without prepare, make or fix")
@@ -70,8 +78,8 @@ def parse(brief: str) -> dict[str, Any]:
 
 def old_row(brief: str) -> str | None:
     m = _LINE.match(first_line(brief))
-    r = _OLD_ROW.match(m.group(1).split("·")[0].strip()) if m else None
-    return r.group(1).upper() if r else None
+    r = _row_of(m.group(1).split("·")[0].strip()) if m else None
+    return r.upper() if r else None
 
 
 def translate_legacy(brief: str, full: tuple[str, list[dict[str, Any]]] | None) -> str:
@@ -115,7 +123,7 @@ def _match(name: str, ids: dict[str, Any]) -> str | None:
     return next((i for i, v in ids.items() if key in (re.sub(r"[\s_-]+", "", i), re.sub(r"[\s_-]+", "", str(v.get("title", "")).lower()))), None)
 
 
-def gate(brief: str, lib: dict[str, Any]) -> dict[str, Any]:
+def gate(brief: str, lib: dict[str, Any], by_old_row: bool = False) -> dict[str, Any]:
     try:
         p = parse(brief)
     except ValueError as e:
@@ -134,6 +142,12 @@ def gate(brief: str, lib: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"sub-process `{p['sub']}` is not in the library (sub-processes: {', '.join(subs) or 'none'}); "
                          f"to build it write `Line: {p['full'] if not p['full_new'] else 'new ' + p['full']} / new <name> · prepare`")
     new = p["full_new"] or p["sub_new"]
+    if not new and p["sub"] and not by_old_row and not stagemodel.has_model_line(brief):
+        models = list(dict.fromkeys(s["model"] for s in fulls[p["full"]]["steps"] if s["sub"] == p["sub"]))
+        if len(models) > 1:
+            raise ValueError(f"`{p['sub']}` is a step of `{p['full']}` more than once, with different models "
+                             f"({'; '.join(models)}), and the Line header cannot say which step: add a `model:` line "
+                             f"(and `effort:`) to the brief, or name the step by its old `#` row")
     listed = not new and p["sub"] and p["sub"] in [s["sub"] for s in fulls[p["full"]]["steps"]]
     if p["mode"] != "prepare":
         if new:
@@ -148,7 +162,9 @@ def gate(brief: str, lib: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("the Line header has no stage: write `stage <n>` or `stage <n-m>` (numbers from the process card)")
         s = subs[p["sub"]]
         have = {str(st["n"]) for st in s["stages"]}
-        if have and (miss := [n for n in _stage_numbers(p["stage"]) if str(n) not in have]):
+        if not have:
+            raise ValueError(f"`{p['sub']}` has no stages yet, so `{p['mode']}` has no stage to run: prepare it first (`prepare`)")
+        if (miss := [n for n in _stage_numbers(p["stage"]) if str(n) not in have]):
             raise ValueError(f"`{p['sub']}` has no stage {', '.join(map(str, miss))} (stages: {', '.join(sorted(have, key=lambda x: (len(x), x)))})")
         if p["mode"] == "make" and not s["confirmed"]:
             raise ValueError(f"`{p['sub']}` is not confirmed: process {s['status'] or 'missing'}, pattern {s['pattern_status'] or 'missing'}. "

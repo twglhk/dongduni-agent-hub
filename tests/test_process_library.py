@@ -195,6 +195,44 @@ class LineTest(unittest.TestCase):
         self.assertFalse(self.ok("Line: new Demo trailer / cover-making · prepare")["sub_new"])
         self.assertEqual(self.ok("Line: demo-app / article-qa · prepare")["mode"], "prepare")
 
+    def test_a_sub_process_used_twice_with_different_models_needs_a_model_line(self) -> None:
+        write_full(self.home, "twice", "Twice", [("production", "cover-making", "sonnet/medium"),
+                                                 ("production", "cover-making", "opus/high")], frame="Frame: exception — test fixture")
+        lib = processes.load(self.home)
+        with self.assertRaises(ValueError) as r:
+            line.gate("Line: twice / cover-making · stage 1 · make", lib)
+        self.assertIn("more than once", str(r.exception))
+        self.assertIn("`model:` line", str(r.exception))
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make\nmodel: opus", lib)["sub"], "cover-making")
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make", lib, by_old_row=True)["sub"], "cover-making")
+
+    def test_a_sub_process_used_twice_with_the_same_model_passes(self) -> None:
+        write_full(self.home, "twice", "Twice", [("production", "cover-making", "sonnet/medium"),
+                                                 ("production", "cover-making", "sonnet/medium")], frame="Frame: exception — test fixture")
+        self.assertEqual(line.gate("Line: twice / cover-making · stage 1 · make", processes.load(self.home))["mode"], "make")
+
+    def test_a_backwards_stage_range_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as r:
+            self.ok("Line: demo-app / cover-making · stage 2-1 · make")
+        self.assertIn("backwards", str(r.exception))
+
+    def test_a_full_process_id_shaped_like_an_old_row_is_a_library_id(self) -> None:
+        write_sub(self.home, "a1-step", "A1 step", "confirmed", "confirmed")
+        write_full(self.home, "a1", "A1", [("production", "a1-step", "opus/high")], frame="Frame: exception — test fixture")
+        lib = processes.load(self.home)
+        self.assertTrue(line.is_library_line("Line: a1 / a1-step · stage 1 · make"))
+        self.assertIsNone(line.old_row("Line: a1 / a1-step · stage 1 · make"))
+        self.assertEqual(line.gate("Line: a1 / a1-step · stage 1 · make\nmodel: opus", lib)["full"], "a1")
+        self.assertEqual(line.old_row("Line: D5 Title card · stage 1 · make"), "D5")
+
+    def test_fix_on_a_sub_process_without_stages_is_refused(self) -> None:
+        write_sub(self.home, "bare", "Bare", "confirmed", "confirmed")
+        (self.home / "processes/sub/bare/process.md").write_text("# Process: Bare — v1\n\nStatus: confirmed\n", encoding="utf-8")
+        write_full(self.home, "bare-full", "Bare", [("production", "bare", "opus/high")], frame="Frame: exception — test fixture")
+        with self.assertRaises(ValueError) as r:
+            line.gate("Line: bare-full / bare · stage 7 · fix", processes.load(self.home))
+        self.assertIn("no stages", str(r.exception))
+
     def test_refuses(self) -> None:
         for brief, word in [("do the thing", "does not start with `Line:`"),
                             ("Line: article-publishing / article-planning · stage 1", "ends without prepare"),

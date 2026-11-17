@@ -155,6 +155,53 @@ class OverlapTest(Base):
         self.assertIn(a, self.held())
 
 
+class HoldIsKeptTest(Base):
+    def setUp(self) -> None:
+        super().setUp()
+        self.a = self.memo("hub-alice", "[Shared notices wording] one", ".tower/PROTOCOL.md")
+        self.e.tick()
+        self.b = self.memo("hub-bob", "[Shared notices wording] two", "AGENTS.md")
+        self.e.tick()
+        self.card = next(c for c in self.cards() if c["assignee"] == "bob")
+
+    def test_a_memo_with_other_paths_but_the_same_topic_words_waits_for_the_card(self) -> None:
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "wait")
+        self.assertEqual(self.held(), {self.a})
+        self.e.tick()
+        self.assertEqual(self.held(), {self.a})
+
+    def test_it_keeps_waiting_after_the_earlier_memo_finished(self) -> None:
+        self.s.finish_inbox("infra")
+        self.e.tick()
+        self.e.tick()
+        self.assertNotIn(self.b, self.held())
+        self.assertEqual(self.s.message(self.b)["delivered"], None)
+
+    def test_cards_closed_by_merging_them_elsewhere_release_the_hold(self) -> None:
+        other = self.s.add_item("hub", None, "decision", "Unrelated", "x", OPTIONS, [], audience=HUMAN)
+        for c in self.cards():
+            self.s.merge_item(c["id"], other, "alice")
+        self.e.tick()
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "go")
+
+    def test_a_merge_answer_does_not_start_it(self) -> None:
+        self.s.decide(self.card["id"], "ok", "bob", choice="Merge")
+        self.e.tick()
+        self.s.finish_inbox("infra")
+        self.e.tick()
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "merge")
+        self.assertNotIn(self.b, self.held())
+
+
+class HeldTextLanguageTest(Base):
+    def test_a_sign_in_hold_reads_in_the_workspace_language(self) -> None:
+        tid = self.s.add_task("docs", "t", "work")
+        self.s.hold_account_work(f"task:{tid}", "alice", "docs", "t")
+        from agent_hub import accounthold
+        self.assertEqual(conflict_of(self.s, self.s.task(tid), lang="ko"), accounthold.held_text("alice", "ko"))
+        self.assertNotEqual(conflict_of(self.s, self.s.task(tid), lang="ko"), conflict_of(self.s, self.s.task(tid)))
+
+
 class OwnAnswerTest(Base):
     def setUp(self) -> None:
         super().setUp()

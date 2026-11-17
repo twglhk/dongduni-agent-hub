@@ -70,7 +70,7 @@ def _gate_line(c: Config, lane: str, brief: str, deliverable: str | None = None)
     if (c.home / processes.DIR).is_dir() and (uses is not None or legacy is not None):
         lib = processes.load(c.home)
         try:
-            p = line.gate(line.translate_legacy(brief, legacy), lib)
+            p = line.gate(line.translate_legacy(brief, legacy), lib, by_old_row=bool(line.old_row(brief)))
         except ValueError as e:
             raise TowerError(str(e))
         if c.process_verification and (why := proccheck.run_required(lib, p, deliverable)):

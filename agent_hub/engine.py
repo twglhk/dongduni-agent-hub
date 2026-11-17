@@ -6,7 +6,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import accounthold, engines as engines_mod, leftovers, overlap, proccheck, procs, processes, rulewatch, schedules, stagemodel, uploads
+from . import accounthold, engines as engines_mod, leftovers, line as line_mod, overlap, proccheck, procs, processes, rulewatch, schedules, stagemodel, uploads
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -167,7 +167,7 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
         return overlap.held_text(hold)
     signin = accounthold.hold_of(store, f"task:{task['id']}")
     if signin:
-        return accounthold.held_text(signin["member"])
+        return accounthold.held_text(signin["member"], lang)
     check = proccheck.hold_of(store, home, task) if home is not None else None
     if check:
         return proccheck.held_text(check, lang)
@@ -239,6 +239,8 @@ def paths_label(msg: dict[str, Any]) -> str:
 def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> tuple[str, dict[str, Any]] | None:
     mine = message_paths(msg)
     for o in live:
+        if mine == [ALONE]:
+            return "busy", o
         theirs = message_paths(o)
         if theirs is None:
             opened = o.get("delivered")
@@ -247,8 +249,6 @@ def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | 
             continue
         if theirs == [ALONE]:
             return "alone", o
-        if mine == [ALONE]:
-            return "busy", o
         if mine and theirs and paths_overlap(mine, theirs):
             return "overlap", o
     return None
@@ -383,6 +383,7 @@ class Engine:
         self.hub_backoff: set[str] = set()
         self.overflow_seen: tuple[str, ...] = ()
         self.waiting: set[str] = set()
+        self.model_told: set[int] = set()
         self.stuck_for: dict[str, int] = {}
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
@@ -409,6 +410,7 @@ class Engine:
         self.hub_opens, self.hub_backoff, self.stuck_for = old.hub_opens, old.hub_backoff, old.stuck_for
         self.sync_told, self.catch_up_told = old.sync_told, old.catch_up_told
         self.rotate_asked, self.ctx_asked, self.rotate_why = old.rotate_asked, old.ctx_asked, old.rotate_why
+        self.marks, self.ext_lanes, self.waiting, self.model_told = old.marks, old.ext_lanes, old.waiting, old.model_told
 
 
     def _read_first(self, lane: str) -> str:
@@ -420,7 +422,27 @@ class Engine:
         model, effort = stagemodel.resolve(stagemodel.table_for(self.cfg, task["lane"]), task["brief"], stagemodel.library_for(self.cfg))
         if (model, effort) != (task.get("model"), task.get("effort")):
             self.store.update_task(task["id"], model=model, effort=effort, **engines_mod.line_fields(task["brief"], processes.lane_full(self.cfg, task["lane"])))
+        if (model, effort) == (None, None) and task["id"] not in self.model_told and self._names_a_step(task["brief"]):
+            self._model_unresolved(task)
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
+
+    @staticmethod
+    def _names_a_step(brief: str) -> bool:
+        if not line_mod.is_library_line(brief):
+            return False
+        try:
+            p = line_mod.parse(brief)
+        except ValueError:
+            return False
+        return bool(p["sub"]) and not (p["chore"] or p["full_new"] or p["sub_new"])
+
+    def _model_unresolved(self, task: dict[str, Any]) -> None:
+        self.model_told.add(task["id"])
+        text = (f"Task #{task['id']} ({task['lane']}): its Line header names a step the process library no longer has "
+                f"(renamed or removed), so no model or effort could be read from it and the lane's own default runs. "
+                f"Fix the header or add `model:` and `effort:` lines.")
+        self.log(f"task #{task['id']}: {text}")
+        self.store.push(self.store.hub_for_task(task["id"]), TOWER, "stalled", text)
 
     def _lock_line(self, task: dict[str, Any]) -> str:
         if self.cfg.instance_cap(base_lane(str(task["lane"]))) < 2:
@@ -857,9 +879,9 @@ class Engine:
             if last == period:
                 continue
             try:
+                self.store.mark_schedule(sched.id, period)
                 if last is not None:
                     self._fire_schedule(sched, period)
-                self.store.mark_schedule(sched.id, period)
             except Exception as e:
                 self.log(f"schedule {sched.id}: {e}")
 
@@ -869,7 +891,7 @@ class Engine:
             self.log(f"schedule {sched.id}: request to the hub for {period}")
             return
         tid = self.store.add_task(sched.lane, sched.title, sched.text, self.cfg.lanes[sched.lane].engine)
-        self.store.update_task(tid, **engines_mod.line_fields(sched.text))
+        self.store.update_task(tid, **engines_mod.line_fields(sched.text, processes.lane_full(self.cfg, sched.lane)))
         self.log(f"schedule {sched.id}: task #{tid} for {sched.lane} ({period})")
 
 
@@ -1429,9 +1451,8 @@ class Engine:
             return
         live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
         now, barrier = self.clock(), []
-        held = {int(r["work"].split(":")[1]) for r in self.store.overlaps(overlap.HOLDS) if r["work"].startswith("memo:")}
-
-        held = {int(r["work"].split(":")[1]) for r in self.store.account_holds() if r["work"].startswith("memo:")}
+        held = {int(r["work"].split(":")[1]) for r in [*self.store.overlaps(overlap.HOLDS), *self.store.account_holds()]
+                if r["work"].startswith("memo:")}
 
         def allow(m: dict[str, Any]) -> bool:
             if barrier or m["id"] in held:

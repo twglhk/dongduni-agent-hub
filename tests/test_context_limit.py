@@ -386,6 +386,15 @@ class EngineStateTest(Base):
         self.assertEqual((fresh.sync_told, fresh.catch_up_told), ({4: "conflict"}, {"wt": "conflict"}))
         self.assertEqual(fresh.ctx_asked, {(3, "sid")})
 
+    def test_a_rebuilt_engine_keeps_the_extension_marks_and_the_waiting_lanes(self) -> None:
+        self.build(max_lanes=2)
+        self.e.marks, self.e.ext_lanes = {"items": 4.0}, {"hub": "idle"}
+        self.e.waiting.add("hub")
+        self.e.model_told.add(7)
+        fresh = Engine(self.cfg, self.s, self.rt, lambda n: None, clock=self.clock, log=lambda _: None)
+        fresh.inherit(self.e)
+        self.assertEqual((fresh.marks, fresh.ext_lanes, fresh.waiting, fresh.model_told), ({"items": 4.0}, {"hub": "idle"}, {"hub"}, {7}))
+
 
 class StoreMigrationTest(unittest.TestCase):
     def test_an_older_database_gets_the_hub_handoff_columns(self) -> None:

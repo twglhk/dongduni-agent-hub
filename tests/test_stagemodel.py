@@ -76,6 +76,26 @@ class EngineOptsTest(unittest.TestCase):
         eng.tick()
         self.assertEqual(rt.opts[-1], ("opus", "high"))
 
+    def test_a_library_header_that_names_nothing_the_library_has_tells_the_hub_once(self) -> None:
+        from tests.test_process_library import make_library
+        cfg = make_home({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude"}})
+        make_library(cfg.home)
+        logs: list[str] = []
+        s = Store(cfg.db)
+        rt = FakeRuntime(s)
+        eng = Engine(cfg, s, rt, lambda _: None, clock=Clock(), log=logs.append)
+        tid = s.add_task("docs", "t", "Line: article-publishing / gone-sub · stage 1 · make\nwork")
+        rt.st["docs"] = "closed"
+        eng.tick()
+        eng._opts(s.task(tid))
+        told = [m for m in s.pending("hub") if f"#{tid}" in m["text"]]
+        self.assertEqual(len(told), 1)
+        self.assertIn("model", told[0]["text"])
+        self.assertTrue(any(f"#{tid}" in ln for ln in logs))
+        ok = s.add_task("docs", "ok", "Line: article-publishing / cover-making · stage 1 · make\nwork")
+        eng._opts(s.task(ok))
+        self.assertEqual([m for m in s.pending("hub") if f"#{ok}" in m["text"]], [])
+
 
 class ClaudeArgvTest(unittest.TestCase):
     def test_model_and_effort_survive_resume(self) -> None:

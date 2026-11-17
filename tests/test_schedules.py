@@ -135,6 +135,16 @@ class FiringTest(unittest.TestCase):
         self.at(ts(2026, 11, 25, 15, 0))
         self.assertEqual(len(self.tasks()), 2)
 
+    def test_a_period_is_marked_before_it_fires_so_a_failure_never_fires_it_twice(self) -> None:
+        from unittest import mock
+        self.build([WEEKLY], ts(2026, 11, 16, 8, 0))
+        self.e.tick()
+        with mock.patch.object(Store, "update_task", side_effect=OSError("boom")):
+            self.at(ts(2026, 11, 16, 9, 0))
+        self.assertEqual(self.s.schedule_period("docs-week-mon-0900"), "2026-11-16")
+        self.at(ts(2026, 11, 16, 9, 1))
+        self.assertEqual(len(self.tasks()), 1)
+
     def test_daily_request_to_the_hub(self) -> None:
         self.build([{"lane": "hub", "every": "day", "at": "07:30", "text": "Morning check"}], ts(2026, 11, 16, 7, 0))
         self.e.tick()

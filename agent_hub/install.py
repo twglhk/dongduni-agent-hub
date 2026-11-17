@@ -328,7 +328,12 @@ def shipped() -> dict[str, list[str]]:
     return json.loads(SHIPPED.read_text(encoding="utf-8"))
 
 
-def _template_key(lane: str) -> str:
+def _template_key(lane: str, engine: str = "") -> str | None:
+    role = lane[len(engine) + 1:] if engine and lane.startswith(engine + "-") else ""
+    if role in REQUIRED_LANES:
+        return f"lanes/{REQUIRED_LANES[role][0]}"
+    if role == REVIEW_ROLE:
+        return None
     if lane in REQUIRED_LANES:
         return f"lanes/{REQUIRED_LANES[lane][0]}"
     return {HUB: "lanes/hub.md", INFRA: "lanes/infra.md"}.get(lane, "lanes/team.md")
@@ -379,7 +384,10 @@ def refresh(cfg: Config) -> dict[str, list[str]]:
     home, versions = cfg.home, shipped()
     _refresh_file(home / TOWER_DIR / "PROTOCOL.md", versions["PROTOCOL.md"], report, home)
     for lid in cfg.lanes:
-        texts = [t.replace("{lane}", lid).replace("{skill}", lid) for t in versions[_template_key(lid)]]
+        key = _template_key(lid, cfg.lanes[lid].engine)
+        if key is None:
+            continue
+        texts = [t.replace("{lane}", lid).replace("{skill}", lid) for t in versions[key]]
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
     report["converted"] += libmigrate.migrate(cfg)

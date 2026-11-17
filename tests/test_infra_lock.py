@@ -146,6 +146,11 @@ class InfraLockTest(unittest.TestCase):
         self.assertEqual(message_paths(got[old]), ["src/board", "tests"])
         self.assertIsNone(message_block(got[items["result"]["id"]], [{"id": 9, "paths": "x"}]))
 
+    def test_an_alone_memo_waits_for_a_session_that_never_declared_even_after_the_grace(self) -> None:
+        undeclared = {"id": 7, "paths": "", "text": "no paths here", "delivered": 0.0}
+        alone = {"id": 8, "paths": ALONE, "text": "x"}
+        self.assertEqual(message_block(alone, [undeclared], now=DECLARE_GRACE + 1000)[0], "busy")
+
     def test_board_line(self) -> None:
         self.clock.t = time.time()
         a, b = self.memo("a"), self.memo("b")
