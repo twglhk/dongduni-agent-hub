@@ -3,6 +3,7 @@ Claude Code lanes get it."""
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -92,6 +93,25 @@ class Pretool(unittest.TestCase):
         log = (hooks.root(self.home) / "gate-errors.log").read_text(encoding="utf-8")
         self.assertIn("RuntimeError: boom", log)
         self.assertIn("docs Bash", log)
+
+    def test_gate_errors_are_counted(self) -> None:
+        self.assertEqual(hooks.gate_errors(self.home), 0)
+        with mock.patch.object(gates, "check", side_effect=RuntimeError("boom")):
+            for _ in range(3):
+                hooks.pretool(self.call(command="ls"), self.home, "docs")
+        self.assertEqual(hooks.gate_errors(self.home), 3)
+
+    def test_a_failing_urgent_read_is_logged_not_swallowed(self) -> None:
+        with mock.patch.object(hooks, "take_urgent", side_effect=RuntimeError("no urgent")):
+            self.assertEqual(hooks.pretool(self.call(), self.home, "docs")[0], 0)
+        self.assertIn("RuntimeError: no urgent", (hooks.root(self.home) / "gate-errors.log").read_text(encoding="utf-8"))
+
+    def test_an_unexpected_hook_failure_is_logged(self) -> None:
+        env = {"TOWER_HOME": str(self.home), "TOWER_LANE": "docs"}
+        with mock.patch.dict(os.environ, env), mock.patch.object(hooks, "handle", side_effect=ValueError("odd")), \
+                mock.patch.object(sys, "stdin", io.TextIOWrapper(io.BytesIO(b""))):
+            self.assertEqual(hooks.main([]), 0)
+        self.assertEqual(hooks.gate_errors(self.home), 1)
 
     def test_a_deny_carries_a_waiting_urgent_message_too(self) -> None:
         hooks.post_urgent(self.home, "docs", "stop")
@@ -197,10 +217,25 @@ class Wiring(unittest.TestCase):
 
     def test_opencode_plugin_calls_this_hook(self) -> None:
         text = hooks.opencode_plugin()
-        self.assertIn(json.dumps(str(hooks.HOOK_FILE)), text)
+        self.assertIn(json.dumps([str(hooks.HOOK_FILE)]), text)
         self.assertIn('"tool.execute.before"', text)
         self.assertIn("r.status === 2", text)
-        self.assertNotIn("__HOOK__", text)
+        self.assertNotIn("__ARGS__", text)
+
+    def test_opencode_plugin_runs_an_installed_package_as_a_module(self) -> None:
+        with mock.patch.object(sys, "prefix", str(hooks.HOOK_FILE.parents[2])):
+            text = hooks.opencode_plugin()
+        self.assertIn(json.dumps(["-m", "agent_hub.hooks"]), text)
+        self.assertNotIn(str(hooks.HOOK_FILE), text)
+
+    def test_settings_file_is_not_rewritten_when_nothing_changed(self) -> None:
+        home = Path(tempfile.mkdtemp())
+        path = hooks.settings_file(home, "docs")
+        before = path.stat().st_mtime_ns
+        with mock.patch.object(Path, "write_text", side_effect=AssertionError("rewritten")):
+            self.assertEqual(hooks.settings_file(home, "docs"), path)
+        self.assertEqual(path.stat().st_mtime_ns, before)
+        self.assertEqual(list(path.parent.glob("*.tmp")), [])
 
 
 class HookCommand(unittest.TestCase):

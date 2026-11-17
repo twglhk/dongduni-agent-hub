@@ -158,7 +158,7 @@ class Adapter:
 
     def set_opts(self, model: str | None, effort: str | None) -> None:
         """A task's own model and effort (stagemodel.py), kept so every resume of the session runs with them."""
-        (self.logs / f"{self.lane.id}.opts.json").write_text(json.dumps({"model": model, "effort": effort}), encoding="utf-8")
+        hooks_mod.write_if_changed(self.logs / f"{self.lane.id}.opts.json", json.dumps({"model": model, "effort": effort}))
 
     def opts(self) -> dict[str, str | None]:
         try:
@@ -899,8 +899,9 @@ class ClaudeTerm(TerminalSession, Claude):
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]
         hook = [{"hooks": [{"type": "command", "command": self._hook_command()}]}]
         settings = self.term_dir / f"{self.lane.id}.settings.json"
-        settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
-                                                  "Notification": hook, **hooks_mod.claude_hooks()}}), encoding="utf-8")
+        hooks_mod.write_if_changed(settings, json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook,
+                                                                   "Stop": hook, "Notification": hook,
+                                                                   **hooks_mod.claude_hooks()}}))
         return [*argv, "--settings", str(settings), *extra]
 
     def compact(self, sid: str, focus: str, then: str) -> str | None:

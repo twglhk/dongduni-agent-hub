@@ -575,6 +575,10 @@ def cmd_status(_args: argparse.Namespace) -> None:
         print(f"lane windows: tmux attach -t {tmux_session(c)}")
     if "orca" in terms:
         print("lane windows: Orca terminal tabs in this workspace")
+    from .hooks import gate_errors
+    errors = gate_errors(c.home)
+    if errors:
+        print(f"gate errors: {errors} (a gate crashed and let the call through; see .tower/state/hooks/gate-errors.log)")
     hub_items = s.items(state="open", audience=HUB)
     print(f"\nopen for the hub: {len(hub_items)} · for humans: {len(s.items(state='open', audience=HUMAN))}")
     for it in hub_items[:20]:

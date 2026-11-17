@@ -33,7 +33,19 @@ from typing import Any
 
 SEPS = ";&|\n()`"
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
-PREFIX = {"sudo", "command", "exec", "nohup", "time", "env", "nice", "timeout"}
+PREFIX_VALUE_OPTS = {
+    "sudo": {"-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-r", "-t", "-U"},
+    "env": {"-u", "-C", "-S"},
+    "nice": {"-n"},
+    "timeout": {"-s", "-k"},
+    "time": {"-f", "-o"},
+    "exec": {"-a"},
+    "xargs": {"-a", "-d", "-E", "-I", "-L", "-l", "-n", "-P", "-s"},
+    "command": set(),
+    "nohup": set(),
+}
+PREFIX = set(PREFIX_VALUE_OPTS)
+PREFIX_POSITIONALS = {"timeout": 1}
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 MAX_DEPTH = 3  # nested `bash -c` / heredoc-to-shell levels that are still checked
 
@@ -168,11 +180,34 @@ def commands(cmd: str) -> list[list[str]]:
     return [c.words for c in parse(cmd) if c.words]
 
 
+def _skip_prefix(words: list[str], k: int) -> int:
+    prefix = words[k]
+    takes, positionals = PREFIX_VALUE_OPTS[prefix], PREFIX_POSITIONALS.get(prefix, 0)
+    k += 1
+    while k < len(words):
+        w = words[k]
+        if w == "--":
+            return k + 1
+        if w.startswith("-") and len(w) > 1:
+            k += 2 if w in takes else 1
+        elif positionals:
+            positionals -= 1
+            k += 1
+        else:
+            break
+    return k
+
+
 def _head(words: list[str]) -> tuple[str, list[str]]:
     """The program name (prefixes such as sudo and VAR=x skipped, path dropped) and its arguments."""
     k = 0
-    while k < len(words) and (words[k] in PREFIX or _ASSIGN.match(words[k])):
-        k += 1
+    while k < len(words):
+        if _ASSIGN.match(words[k]):
+            k += 1
+        elif words[k] in PREFIX:
+            k = _skip_prefix(words, k)
+        else:
+            break
     name = (words[k] if k < len(words) else "").replace("\\", "/").split("/")[-1].lower()
     if name.endswith(".exe"):
         name = name[:-4]
@@ -219,7 +254,7 @@ def shared_pattern(pattern: str, user: str, home: str) -> str | None:
     p = pattern.lower()
     if p.endswith(".exe"):
         p = p[:-4]
-    if p in BARE:
+    if p in BARE or any(alt.strip() in BARE for alt in re.sub(r"[\^$.*+?()\[\]{}\\]", "", p).split("|")):
         return f'bare name "{pattern}" matches every lane\'s helpers'
     if len(re.sub(r"[\s.*^$]", "", p)) < 3:
         return f'pattern "{pattern}" is too short'
@@ -288,16 +323,24 @@ def kill_gate(cmd: str, user: str | None = None, home: str | None = None) -> lis
     user = user if user is not None else _user()
     home = home if home is not None else str(Path.home())
     out: list[str] = []
+    lookups: list[list[str]] = []
+    kills = False
     for c in _walk(cmd):
         name, args = _head(c.words)
         if name == "pkill":
             out += pkill_problems(args, user, home)
+        elif name == "pgrep":
+            lookups.append(args)
         elif name == "killall":
             out += killall_problems(args, user, home)
         elif name == "kill":
+            kills = True
             out += kill_problems(args)
         elif name == "taskkill":
             out += taskkill_problems(args, user, home)
+    if kills:
+        for args in lookups:
+            out += pkill_problems(args, user, home)
     return out
 
 

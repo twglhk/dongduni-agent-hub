@@ -37,6 +37,13 @@ class CliTest(unittest.TestCase):
             self.fail(f"tower {' '.join(args)} failed: {p.stderr}")
         return p.stdout + p.stderr
 
+    def test_status_counts_gate_errors(self) -> None:
+        self.assertNotIn("gate errors", self.tower("status"))
+        log = self.home / ".tower" / "state" / "hooks" / "gate-errors.log"
+        log.parent.mkdir(parents=True)
+        log.write_text("2026-01-01T00:00:00 docs Bash\nTraceback\n\n2026-01-01T00:00:01 docs Bash\nTraceback\n\n")
+        self.assertIn("gate errors: 2", self.tower("status"))
+
     def test_files_written(self) -> None:
         for rel in (".tower/tower.json", ".tower/PROTOCOL.md", ".tower/lanes/hub.md", ".tower/lanes/infra.md",
                     ".tower/lanes/docs.md", ".opencode/command/dah-hub.md", ".claude/commands/dah-infra.md"):
