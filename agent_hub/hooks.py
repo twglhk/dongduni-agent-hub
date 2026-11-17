@@ -91,11 +91,11 @@ def gate_errors(home: Path) -> int:
 
 # ---------------------------------------------------------------- urgent tells
 
-def post_urgent(home: Path, lane: str, text: str, now: float | None = None) -> Path:
+def post_urgent(home: Path, lane: str, text: str, now: float | None = None, source: str = "") -> Path:
     d = lane_dir(home, lane) / "urgent"
     d.mkdir(parents=True, exist_ok=True)
     t = time.time() if now is None else now
-    p = d / f"{int(t * 1000):015d}-{uuid.uuid4().hex[:6]}.txt"
+    p = d / f"{int(t * 1000):015d}-{uuid.uuid4().hex[:6]}{'.' + source if source else ''}.txt"
     tmp = p.with_suffix(".tmp")
     tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, p)  # a hook reading at the same moment sees the whole message or none
@@ -129,6 +129,22 @@ def take_urgent(home: Path, lane: str, now: float | None = None) -> list[str]:
         if stamp is not None and t - stamp <= URGENT_MAX_AGE_S and text.strip():
             out.append(text.strip())
     return out
+
+
+def drop_urgent(home: Path, lane: str, source: str) -> int:
+    d = lane_dir(home, lane) / "urgent"
+    dropped = 0
+    try:
+        files = sorted(d.glob(f"*.{source}.txt"))
+    except OSError:
+        return dropped
+    for f in files:
+        try:
+            f.unlink()
+        except OSError:
+            continue
+        dropped += 1
+    return dropped
 
 
 def urgent_tell(cfg: Any, lane: str, text: str) -> str:

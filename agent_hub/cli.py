@@ -716,7 +716,9 @@ def cmd_run(args: argparse.Namespace) -> None:
                         tunnel = None
                     close_changed(engine.rt, c, c2, say)
                     c = c2
-                    engine = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+                    rebuilt = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
+                    rebuilt.inherit(engine)
+                    engine = rebuilt
                     memwatch = MemWatch(c.memory_limit_mb, lambda: lane_markers(c, s), say)
                     say("tower.json reloaded")
             except (ConfigError, OSError) as e:

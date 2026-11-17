@@ -314,6 +314,21 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.assertEqual(self.s.items(state="open"), [])
 
+    def test_a_failed_question_lookup_does_not_close_the_ask_on_the_board(self) -> None:
+        self.rt.st[HUB] = "idle"
+        self.rt.qs[HUB] = [{"id": "q1", "questions": [{"question": "?", "options": []}]}]
+        self.e.tick()
+        self.rt.question_down.add(HUB)
+        self.e.tick()
+        [it] = self.s.items(state="open")
+        self.assertEqual(it["state"], "open")
+        self.rt.question_down.clear()
+        self.e.tick()
+        self.assertEqual(len(self.s.items(state="open")), 1)
+        self.rt.qs[HUB] = []
+        self.e.tick()
+        self.assertEqual(self.s.items(state="open"), [])
+
     def test_team_ask_is_bounced(self) -> None:
         self.s.add_task("docs", "A", "b")
         self.e.tick()
