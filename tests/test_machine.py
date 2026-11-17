@@ -158,5 +158,29 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(html.count("    mc: { title:"), 5)  # every language
 
 
+class FailureIsVisibleTest(unittest.TestCase):
+    def test_a_failed_reading_is_logged_and_everything_is_unknown(self) -> None:
+        def boom() -> dict:
+            raise RuntimeError("no /proc")
+        seen: list[str] = []
+        v = machine.Machine(read=boom, log=seen.append).view()
+        self.assertIsNone(v["lv"])
+        self.assertEqual(len(seen), 1)
+        self.assertIn("RuntimeError", seen[0])
+
+    @unittest.skipIf(os.name == "nt", "WinDLL exists on Windows")
+    def test_windows_memory_without_windows_is_unknown_not_a_crash(self) -> None:
+        got = machine.read_windows()
+        self.assertEqual((got["ram_gb"], got["free_gb"]), (None, None))
+
+    def test_write_waits_says_when_it_could_not_write(self) -> None:
+        import tempfile
+        from pathlib import Path
+        blocker = Path(tempfile.mkdtemp()) / "file"
+        blocker.write_text("x", encoding="utf-8")
+        self.assertFalse(machine.write_waits(blocker / "state", {1: "w"}))
+        self.assertTrue(machine.write_waits(Path(tempfile.mkdtemp()), {1: "w"}))
+
+
 if __name__ == "__main__":
     unittest.main()

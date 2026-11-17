@@ -182,6 +182,7 @@ def read_windows() -> dict[str, Any]:
     out: dict[str, Any] = {"ram_gb": None, "free_gb": None, "swap_gb": None, "cpu": None, "pressure": None}
     try:
         import ctypes
+        from ctypes import wintypes
 
         class MEMORYSTATUSEX(ctypes.Structure):
             _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
@@ -192,11 +193,14 @@ def read_windows() -> dict[str, Any]:
 
         st = MEMORYSTATUSEX()
         st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):  # type: ignore[attr-defined]
+        kernel = getattr(ctypes, "WinDLL")("kernel32")
+        kernel.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(MEMORYSTATUSEX)]
+        kernel.GlobalMemoryStatusEx.restype = wintypes.BOOL
+        if kernel.GlobalMemoryStatusEx(ctypes.byref(st)):
             out["ram_gb"] = st.ullTotalPhys / 1024 ** 3
             out["free_gb"] = st.ullAvailPhys / 1024 ** 3
-    except Exception:
-        pass
+    except (AttributeError, OSError, ImportError, ValueError):
+        return out
     return out
 
 
@@ -250,8 +254,9 @@ class Machine:
     """A few seconds' cache so every board poll does not run `ps` and friends."""
 
     def __init__(self, read: Callable[[], dict[str, Any]] = read_raw, ttl: float = TTL,
-                 clock: Callable[[], float] = time.monotonic):
-        self.read, self.ttl, self.clock = read, ttl, clock
+                 clock: Callable[[], float] = time.monotonic,
+                 log: Callable[[str], None] = lambda line: print(line, file=sys.stderr)):
+        self.read, self.ttl, self.clock, self.log = read, ttl, clock, log
         self.lock = threading.Lock()
         self.cached: dict[str, Any] | None = None
         self.at = 0.0
@@ -261,7 +266,8 @@ class Machine:
             if self.cached is None or self.clock() - self.at > self.ttl:
                 try:
                     self.cached = grade(self.read())
-                except Exception:  # never a fake number: everything unknown
+                except Exception as e:  # never a fake number: everything unknown
+                    self.log(f"machine: reading the system failed: {type(e).__name__}: {e}")
                     self.cached = grade({"cores": os.cpu_count() or 1})
                 self.at = self.clock()
             return self.cached
@@ -269,14 +275,15 @@ class Machine:
 
 # ---------------------------------------------------------------- why queued tasks wait (engine -> board)
 
-def write_waits(state_dir: Path, waits: dict[int, str]) -> None:
+def write_waits(state_dir: Path, waits: dict[int, str]) -> bool:
     try:
         state_dir.mkdir(parents=True, exist_ok=True)
         tmp = state_dir / (WAITS + ".tmp")
         tmp.write_text(json.dumps({str(k): v for k, v in waits.items()}), encoding="utf-8")
         os.replace(tmp, state_dir / WAITS)
     except OSError:
-        pass
+        return False
+    return True
 
 
 def read_waits(state_dir: Path) -> dict[str, str]:

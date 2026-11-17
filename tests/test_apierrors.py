@@ -44,7 +44,9 @@ class Classify(unittest.TestCase):
         self.assertIsNone(A.classify("prompt is too long"))
 
     def test_login_expired_says_what_to_do(self) -> None:
-        msg = A.classify("authentication_failed")[1]  # type: ignore[index]
+        hit = A.classify("authentication_failed")
+        assert hit is not None
+        msg = hit[1]
         self.assertIn("login expired", msg)
         self.assertIn("run `claude`", msg)
         self.assertIn("log in again", msg)
