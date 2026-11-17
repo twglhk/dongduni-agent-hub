@@ -32,7 +32,7 @@ You are one lane in a team of AI agent sessions run by **the tower**. Humans ste
 
 ## Engines
 
-When a task's work type has a row in an engine's `pattern-library.md`, check that row's process card and the stage's pattern card. Both confirmed: follow them. Either not: do not improvise; prepare it first (research, write the card, evaluate) or tell the hub with `dah report note`.
+When the workspace has a process library (`processes/`: a full process in `full/<id>.md` runs sub-processes in order; a sub-process in `sub/<id>/process.md` is a process card of stages, each with its pattern card), the brief's `Line:` header names the full process, the sub-process and the stage: read that sub-process card and the pattern card of each stage you run. Without one, a task whose work type has a row in an engine's `pattern-library.md` reads that row's process card and the stage's pattern card. Both confirmed: follow them. Either not: do not improvise; prepare it first (research, write the card, evaluate) or tell the hub with `dah report note`.
 
 ## Shared checkout
 

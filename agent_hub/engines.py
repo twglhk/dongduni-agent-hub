@@ -1,6 +1,8 @@
-"""Process cards, pattern cards and the pattern library of an engine; the `Line:` header of a brief. No LLM, standard library only.
+"""Process cards, pattern cards and an engine's rows; the old `Line:` header of a brief. No LLM, standard library only.
 
-An engine's library is one markdown table (`engine.library`), a row per kind of deliverable:
+An engine's `library` is a full process of the process library (`processes/full/<id>.md`, read by processes.py: each of
+its sub-processes is one row, `n` = `<full>/<sub>`), or an older pattern library (a workspace `dah update` has not
+converted yet): one markdown table, a row per kind of deliverable:
 
     | # | Type | Lane · skill | Process | Pattern | Model · effort |
     | 1 | Storyboard | story · layout | confirmed v2 (process/storyboard.md) | confirmed | 1 sonnet/medium; 2-3 opus/high |
@@ -19,7 +21,9 @@ A brief starts with a `Line:` header that says which row and stage the task work
 
 Modes: `prepare` (build or fix the method itself), `make` (run it), `fix` (send-back of earlier work). `make` is refused
 while the row's process is not confirmed or its pattern is neither confirmed nor tuned. `config.require_line` turns the
-gate on for `dah task`; without it the header is read when it is there and nothing is refused.
+gate on for `dah task`; without it the header is read when it is there and nothing is refused. Headers that name the
+process library (`Line: <full> / <sub> · …`) are line.py's; `line_fields` reads both shapes, and an old `#<row>` header
+of a converted library maps through the full process's `Old #` column.
 """
 
 from __future__ import annotations
@@ -66,6 +70,7 @@ def skills_root(home: Path, configured: str = "") -> Path:
 
 
 def repo_file(start: Path, text: str) -> Path | None:
+    start = Path(os.path.normpath(start))
     for tok in _MD_PATH.findall(text or ""):
         if ".." in tok.split("/"):
             continue
@@ -83,7 +88,7 @@ def _rel(root: Path, f: Path) -> str:
 
 def _read(path: Path) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        return Path(os.path.normpath(path)).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ""
 
@@ -102,8 +107,19 @@ def _version(title: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _full_home(path: Path) -> Path | None:
+    from . import processes
+    if path.parent.name == "full" and path.parent.parent.name == processes.DIR and processes.is_full(_read(path)):
+        return path.parents[2]
+    return None
+
+
 def library(path: Path) -> list[dict[str, str]]:
     """Rows of the library table: {n, type, lane, skill, process_text, pattern_text, model_text}. Missing file -> []."""
+    if home := _full_home(path):
+        from . import processes
+        keep = ("n", "old", "type", "lane", "lanes", "skill", "process_text", "pattern_text", "model_text")
+        return [{k: r[k] for k in keep} for r in processes.engine_rows(home, path.stem, skills_root(home))]
     return library_rows(_read(path))
 
 
@@ -181,6 +197,9 @@ def parse_process(root: Path, skill: str, rel: str) -> dict[str, Any] | None:
 def build(library_path: Path, skills: Path) -> list[dict[str, Any]]:
     """Every library row with its process card read in. `status` fields are the card's word when a card is found, else the
     table cell's first word; `process` is the parsed card or None."""
+    if home := _full_home(library_path):
+        from . import processes
+        return processes.engine_rows(home, library_path.stem, skills)
     out = []
     for r in library(library_path):
         m = _CARD.search(r["process_text"])
@@ -219,7 +238,7 @@ def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None 
     `found` says whether a folder of that name exists in the skills directory."""
     names = list(dict.fromkeys(_SKILL_CALL.findall(role_text)))
     for r in rows or []:
-        if r["lane"] == lane and r["skill"] and r["skill"] not in names:
+        if lane in (r.get("lanes") or [r["lane"]]) and r["skill"] and r["skill"] not in names:
             names.append(r["skill"])
     return [{"name": n, "found": (home / n).is_file() if home and n.endswith(".md") else (skills / n).is_dir()} for n in names]
 
@@ -227,7 +246,7 @@ def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None 
 def row_view(rows: list[dict[str, Any]], row: str | None, stage: str | None) -> dict[str, Any] | None:
     """The process a task runs: {row, type, version, status, stages: [{n, name}], now} for library row `row`; None when unknown.
     `now` is the stage the lane named with `dah stage`, else the one the Line header names."""
-    hit = next((r for r in rows if row and r["n"] == str(row).upper()), None)
+    hit = next((r for r in rows if row and r["n"].upper() == str(row).upper()), None)
     if hit is None:
         return None
     p = hit["process"]
@@ -266,8 +285,16 @@ def parse_line(brief: str) -> tuple[str | None, str | None, str | None]:
     return m.group(1).upper(), words[-1], None
 
 
-def line_fields(brief: str) -> dict[str, str | None]:
-    """What the task row keeps of the header: line_row, line_stage, line_mode. All None when the brief has no valid header."""
+def line_fields(brief: str, legacy: tuple[str, list[dict[str, Any]]] | None = None) -> dict[str, str | None]:
+    """What the task row keeps of the header: line_row, line_stage, line_mode. All None when the brief has no valid header.
+    `legacy` is the converted full process of the lane's engine (processes.full_file), to read an old `#<row>` header."""
+    from . import line
+    try:
+        brief = line.translate_legacy(brief, legacy)
+    except ValueError:
+        return {"line_row": None, "line_stage": None, "line_mode": None}
+    if line.is_library_line(brief):
+        return line.fields(brief)
     row, mode, err = parse_line(brief)
     if err or row is None:
         return {"line_row": None, "line_stage": None, "line_mode": None}
@@ -303,7 +330,7 @@ def pipelines(rows: list[dict[str, Any]]) -> str:
     out = []
     for r in rows:
         p = r["process"]
-        out.append(f"  #{r['n']} {r['type']}  [{r['lane'] or '-'}"
+        out.append(f"  {'#' + r['n'] if '/' not in r['n'] else r['n']} {r['type']}  [{r['lane'] or '-'}"
                    + (f" · {r['skill']}" if r["skill"] else "") + f"]  process {r['process_status'] or 'missing'}"
                    + (f" v{p['version']}" if p and p["version"] else "") + f" · pattern {r['pattern_status'] or 'missing'}"
                    + (f" · model {r['model_text']}" if r["model_text"] else ""))

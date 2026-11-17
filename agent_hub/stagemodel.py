@@ -14,6 +14,10 @@ effort win. Model names: `fable`, `opus`, `sonnet`, `haiku`, or any full id the 
 `problems()` flags a bare word that is none of the four aliases (a typo) and an effort outside the five levels.
 The rank tables only order the aliases they know. `guide/MODELS.md` says which to pick.
 
+In a workspace with a process library (`processes/`), `Line: <full> / <sub> · stage 2` reads the Model · effort cell of
+that sub-process in the full process file (processes.py). An old `Line: #4 stage 2` of a converted pattern library reads
+the step whose `Old #` cell is 4 in the lane's engine's full process.
+
 No table, no cell, or no line gives (None, None) and the lane's own configured model applies.
 """
 
@@ -82,7 +86,10 @@ def _table(path: Path) -> dict[str, list[tuple[int, int, str, str]]]:
 
 
 def from_table(path: Path, row: int | str, first: int | None, last: int | None) -> tuple[str | None, str | None]:
-    ents = _table(path).get(str(row).upper())
+    return _pick(_table(path).get(str(row).upper()) or [], first, last)
+
+
+def _pick(ents: list[tuple[int, int, str, str]], first: int | None, last: int | None) -> tuple[str | None, str | None]:
     if not ents:
         return None, None
     lo, hi = (first, last) if first is not None and last is not None else (0, 99)
@@ -101,11 +108,46 @@ def table_for(cfg: Config, lane: str) -> Path | None:
     return cfg.home / rel if rel else None
 
 
-def resolve(table: Path | None, brief: str) -> tuple[str | None, str | None]:
-    """(model, effort) for a brief: explicit lines first, then the table row the `Line:` line names."""
+def _is_old_table(table: Path) -> bool:
+    from . import processes
+    try:
+        return table.is_file() and not processes.is_full(table.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def library_for(cfg: Config) -> Path | None:
+    from . import processes
+    return cfg.home / processes.DIR if (cfg.home / processes.DIR).is_dir() else None
+
+
+def _from_library(library: Path, brief: str, table: Path | None) -> tuple[str | None, str | None]:
+    from . import line, processes
+    home = library.parent
+    head = next((ln for ln in brief.splitlines() if ln.strip().lower().startswith("line:")), "")
+    legacy = processes.full_file(home, table.relative_to(home).as_posix()) if table and table.is_relative_to(home) else None
+    try:
+        p = line.parse(line.translate_legacy(head, legacy))
+    except ValueError:
+        return None, None
+    if not p["sub"] or p["full_new"] or p["sub_new"]:
+        return None, None
+    a, _, b = (p["stage"] or "").partition("-")
+    first = int(a) if a else None
+    return _pick(_entries(processes.step_model(home, p["full"], p["sub"])), first, int(b) if b else first)
+
+
+def resolve(table: Path | None, brief: str, library: Path | None = None) -> tuple[str | None, str | None]:
+    """(model, effort) for a brief: explicit lines first, then the row the `Line:` line names, in the process library
+    when there is one, else in the table."""
     em, ee = _MODEL.search(brief), _EFFORT.search(brief)
     model, effort = (em[1] if em else None), (ee[1].lower() if ee else None)
-    if table and (model is None or effort is None):
+    if model is not None and effort is not None:
+        return model, effort
+    if library is not None:
+        tm, te = _from_library(library, brief, table)
+        model, effort = model or tm, effort or te
+    if table and _is_old_table(table) and (model is None or effort is None):
         m = _LINE.search(brief)
         if m:
             first = int(m[2])

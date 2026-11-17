@@ -16,9 +16,10 @@ import { HttpError } from './lib/api';
 import { forHuman } from './lib/items';
 import { useBoard } from './state/board';
 import { closeDoc, useDoc } from './state/docSheet';
-import { closeItem, useRoute } from './state/route';
+import { closeItem, sheetOpen, useRoute } from './state/route';
 import { useToast } from './state/toast';
 import { useLaneSheet } from './state/useLaneSheet';
+import { useProcSheet } from './state/useProcSheet';
 import { EngineView } from './views/EngineView';
 import { HistoryView } from './views/HistoryView';
 import { HubView } from './views/HubView';
@@ -51,13 +52,14 @@ export function App() {
   const openMenu = (m: Menu) => { if (m === 'ws') loadWs(); setMenu(m); };
   const closeMenu = () => setMenu(null);
   const lane = useLaneSheet(r.lane);
+  const proc = useProcSheet(r.full, r.sub);
   const doc = useDoc();
-  const content: SheetContent | null = menu ? menuSheet(menu, L, closeMenu) : it ? itemSheet(it, onImage) : lane;
+  const content: SheetContent | null = menu ? menuSheet(menu, L, closeMenu) : it ? itemSheet(it, onImage) : lane || proc;
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const typing = /TEXTAREA|INPUT/.test(document.activeElement?.tagName || '');
-      if (e.key === 'Escape' && !typing) { if (doc) return; if (menu) closeMenu(); else if (r.item !== null || r.lane) closeItem(); }
+      if (e.key === 'Escape' && !typing) { if (doc) return; if (menu) closeMenu(); else if (sheetOpen(r)) closeItem(); }
     };
     document.addEventListener('keydown', key);
     return () => document.removeEventListener('keydown', key);

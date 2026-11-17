@@ -5,4 +5,4 @@ description: "Storyboards for the {label}: beats first, then frames, then review
 
 # Storyboard
 
-Follow [references/process/storyboard.md](references/process/storyboard.md).
+Follow `processes/sub/ENGINE-storyboard/process.md`.

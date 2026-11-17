@@ -112,7 +112,7 @@ def update_workspace(c: Config, version: str, no_restart: bool) -> None:
     mark.write_text(version, encoding="utf-8")
     print(f"{c.name} ({c.home}): agent-hub " + (f"{before} → {version}" if before and before != version else version))
     for key, what in (("created", "created"), ("updated", "updated to the new template, workspace parts kept"),
-                      ("config", "tower.json"), ("shortcuts", "added")):
+                      ("config", "tower.json"), ("converted", "converted"), ("shortcuts", "added")):
         for line in report[key]:
             print(f"  {what}: {line}")
     if before and before != version or not before and report["updated"]:

@@ -15,26 +15,21 @@ def cmd_task(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
     need_team(c, args.lane)
-    from ..stagemodel import missing_lines, problems, resolve, table_for
+    from ..stagemodel import library_for, missing_lines, problems, resolve, table_for
     if gap := missing_lines(args.brief):
         if c.require_model_lines:
             raise TowerError("the brief needs these lines (one per line): " + " · ".join(gap))
-        if resolve(table_for(c, args.lane), args.brief) != (None, None) and len(gap) == 2:
+        if resolve(table_for(c, args.lane), args.brief, library_for(c)) != (None, None) and len(gap) == 2:
             gap = []  # a `Line:` header that names a library row sets both
         if gap:
             print("warning: the brief has no " + " and no ".join(g.split(":")[0] for g in gap) + " line; the lane's own default runs. "
                   "Pick one on purpose (`dah guide models`).", file=sys.stderr)
-    m, e = resolve(table_for(c, args.lane), args.brief)
+    m, e = resolve(table_for(c, args.lane), args.brief, library_for(c))
     for bad in problems(m, e):
         print(f"warning: {bad}", file=sys.stderr)
-    from .. import engines as engines_mod
+    from .. import engines as engines_mod, processes
     if c.require_line:
-        eng = c.engines.get(c.lanes[args.lane].engine)
-        if eng and eng.library:
-            try:
-                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, engines_mod.skills_root(c.home, eng.skills)))
-            except ValueError as e:
-                raise TowerError(str(e))
+        _gate_line(c, args.lane, args.brief)
     s = store(c)
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
@@ -42,10 +37,38 @@ def cmd_task(args: argparse.Namespace) -> None:
         tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable)
     except StoreError as e:
         raise TowerError(str(e))
-    s.update_task(tid, **engines_mod.line_fields(args.brief))
+    s.update_task(tid, **engines_mod.line_fields(args.brief, processes.lane_full(c, args.lane)))
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}"
           + (f" (after task #{live['id']} wraps)" if live else ""))
+
+
+def _gate_line(c: Config, lane: str, brief: str) -> None:
+    from .. import engines as engines_mod, line, processes
+    legacy = processes.lane_full(c, lane)
+    try:
+        role = c.instructions(lane).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        role = ""
+    uses = processes.lane_uses(role)
+    if (c.home / processes.DIR).is_dir() and (uses is not None or legacy is not None):
+        try:
+            p = line.gate(line.translate_legacy(brief, legacy), processes.load(c.home))
+        except ValueError as e:
+            raise TowerError(str(e))
+        if line.old_row(brief):
+            print(f"notice: `#{line.old_row(brief)}` is an old pattern-library row; it was read as `{p['full']} / {p['sub']}`. "
+                  f"Write the process library form from now on.", file=sys.stderr)
+        if uses is not None and p["full"] and not p["full_new"] and p["full"] not in uses:
+            print(f"warning: {lane}'s lane file does not list `{p['full']}` under `## Processes used` "
+                  f"(it lists: {', '.join(uses) or 'none'}); add it there if this lane now runs it", file=sys.stderr)
+        return
+    eng = c.engines.get(c.lanes[lane].engine)
+    if eng and eng.library:
+        try:
+            engines_mod.gate(brief, engines_mod.build(c.home / eng.library, engines_mod.skills_root(c.home, eng.skills)))
+        except ValueError as e:
+            raise TowerError(str(e))
 
 
 def cmd_stage(args: argparse.Namespace) -> None:

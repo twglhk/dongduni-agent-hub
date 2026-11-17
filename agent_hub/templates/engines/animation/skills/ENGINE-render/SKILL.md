@@ -5,4 +5,4 @@ description: "Shot rendering for the {label}: setup, render, check. Use before r
 
 # Shot render
 
-Follow [references/process/shot-render.md](references/process/shot-render.md).
+Follow `processes/sub/ENGINE-shot-render/process.md`.

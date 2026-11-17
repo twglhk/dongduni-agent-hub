@@ -24,7 +24,8 @@ Instructions for coding agents working in this repository.
 | `agent_hub/templates/` | protocol and lane instruction templates copied into workspaces |
 | `agent_hub/guide/` | the setup playbook, the extension guide and the guides for reaching the board (`dah guide`); shipped in the package |
 | `agent_hub/stagemodel.py` | per-task model and effort from brief lines, a library's `model · effort` column or an optional table |
-| `agent_hub/engines.py` · `rating.py` · `stats.py` | engines: pattern library, process and pattern cards, skills list, weekly snapshots; ratings and blame; the token ledger |
+| `agent_hub/engines.py` · `rating.py` · `stats.py` | engines: process and pattern cards, an engine's rows (a full process, or an old pattern library), skills list, weekly snapshots; ratings and blame; the token ledger |
+| `agent_hub/processes.py` · `line.py` · `libmigrate.py` | the process library (`processes/full/`, `processes/sub/`, which lanes use what, `view()` for the board); the `Line: <full> / <sub> · stage <n> · mode` header, its gate and the old `#<row>` form; `dah update`'s conversion of pattern libraries |
 | `agent_hub/branchsync.py` | opt-in: a worktree lane's branch takes the workspace's branch before each task, and while idle (`branch_sync`, `branch_sync_seconds`, `branch_sync_push`) |
 | `agent_hub/leftovers.py` | opt-in (`leftover_sweep`, Linux): stops lane processes left by closed sessions |
 | `agent_hub/sessinfo.py` | the model and effort a Claude Code lane session really runs with, read from its transcript (`run` in the board state) |
