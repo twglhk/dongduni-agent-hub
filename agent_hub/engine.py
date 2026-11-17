@@ -6,7 +6,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import accounthold, engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel
+from . import accounthold, engines as engines_mod, leftovers, line as line_mod, overlap, procs, processes, rulewatch, schedules, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -379,6 +379,7 @@ class Engine:
         self.hub_backoff: set[str] = set()
         self.overflow_seen: tuple[str, ...] = ()
         self.waiting: set[str] = set()
+        self.model_told: set[int] = set()
         self.stuck_for: dict[str, int] = {}
         self.last_status: dict[str, str] = {}
         self.usage_at: dict[str, float] = {}
@@ -404,6 +405,7 @@ class Engine:
         self.hub_opens, self.hub_backoff, self.stuck_for = old.hub_opens, old.hub_backoff, old.stuck_for
         self.sync_told, self.catch_up_told = old.sync_told, old.catch_up_told
         self.rotate_asked, self.ctx_asked, self.rotate_why = old.rotate_asked, old.ctx_asked, old.rotate_why
+        self.marks, self.ext_lanes, self.waiting, self.model_told = old.marks, old.ext_lanes, old.waiting, old.model_told
 
 
     def _read_first(self, lane: str) -> str:
@@ -415,7 +417,27 @@ class Engine:
         model, effort = stagemodel.resolve(stagemodel.table_for(self.cfg, task["lane"]), task["brief"], stagemodel.library_for(self.cfg))
         if (model, effort) != (task.get("model"), task.get("effort")):
             self.store.update_task(task["id"], model=model, effort=effort, **engines_mod.line_fields(task["brief"], processes.lane_full(self.cfg, task["lane"])))
+        if (model, effort) == (None, None) and task["id"] not in self.model_told and self._names_a_step(task["brief"]):
+            self._model_unresolved(task)
         return {k: v for k, v in (("model", model), ("effort", effort)) if v}
+
+    @staticmethod
+    def _names_a_step(brief: str) -> bool:
+        if not line_mod.is_library_line(brief):
+            return False
+        try:
+            p = line_mod.parse(brief)
+        except ValueError:
+            return False
+        return bool(p["sub"]) and not (p["chore"] or p["full_new"] or p["sub_new"])
+
+    def _model_unresolved(self, task: dict[str, Any]) -> None:
+        self.model_told.add(task["id"])
+        text = (f"Task #{task['id']} ({task['lane']}): its Line header names a step the process library no longer has "
+                f"(renamed or removed), so no model or effort could be read from it and the lane's own default runs. "
+                f"Fix the header or add `model:` and `effort:` lines.")
+        self.log(f"task #{task['id']}: {text}")
+        self.store.push(self.store.hub_for_task(task["id"]), TOWER, "stalled", text)
 
     def _lock_line(self, task: dict[str, Any]) -> str:
         if self.cfg.instance_cap(base_lane(str(task["lane"]))) < 2:
