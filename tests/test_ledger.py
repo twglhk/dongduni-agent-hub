@@ -1,5 +1,3 @@
-"""Task ledger: model/effort per task, tokens and turns from stand-in readings, retros, `dah stats` golden output."""
-
 import io
 import json
 import unittest
@@ -39,7 +37,7 @@ class LedgerTest(unittest.TestCase):
         self.tick()
         got = self.s.task(t)
         self.assertEqual((got["tok_new"], got["tok_cache"], got["tok_out"], got["turns"]), (1000, 40000, 300, 4))
-        self.rt.ledger_use["docs"] = {"new": 10, "cache": 10, "out": 10, "turns": 1}  # a transcript that lost its head
+        self.rt.ledger_use["docs"] = {"new": 10, "cache": 10, "out": 10, "turns": 1}
         self.tick()
         self.assertEqual(self.s.task(t)["tok_new"], 1000)
         self.rt.ledger_use["docs"] = {"new": 1500, "cache": 50000, "out": 400, "turns": 6}
@@ -61,7 +59,7 @@ class LedgerTest(unittest.TestCase):
         a = self.s.add_task("docs", "A", "x")
         b = self.s.add_task("docs", "B", "y")
         self.s.record_task_usage(a, "s1", 100, 1000, 10, 2)
-        self.s.record_task_usage(b, "s1", 130, 1900, 25, 5)  # the session total after B ran too
+        self.s.record_task_usage(b, "s1", 130, 1900, 25, 5)
         self.assertEqual((self.s.task(a)["tok_new"], self.s.task(b)["tok_new"], self.s.task(b)["tok_cache"]), (100, 30, 900))
         self.assertEqual(self.s.task(b)["turns"], 3)
 
@@ -86,7 +84,6 @@ class LedgerTest(unittest.TestCase):
         row = s.task(1)
         self.assertEqual((row["title"], row["tok_new"], row["turns"], row["model"]), ("old", 0, 0, None))
 
-    # ----- retros -----
 
     def test_split_retro(self) -> None:
         line, r = stats.split_retro("Docs done || retro: cost=the setup guide | corrected=none | rule=docs-skill: link check")
@@ -113,7 +110,6 @@ class LedgerTest(unittest.TestCase):
         self.assertEqual((r["task_id"], r["lane"], r["summary"], r["cost"]), (1, "docs", "All done", "the links"))
         self.assertIn("docs task #1 - All done", stats.render_retros(self.s.retros()).replace("[", "", 1).split("] ", 1)[1])
 
-    # ----- stats -----
 
     def seed(self) -> None:
         for lane, brief, tok, state in (("docs", "model: opus\neffort: high", (1_200_000, 90_000_000, 300_000, 120), "closed"),
@@ -147,7 +143,7 @@ class LedgerTest(unittest.TestCase):
         by = {g["group"]: g for g in stats.summarize(stats.collect(self.s), "model")["rows"]}
         self.assertEqual((by["opus"]["tasks"], by["opus"]["new"]), (1, 1_200_000))
         self.assertEqual((by["sonnet"]["tasks"], by["sonnet"]["turns"]), (2, 11))
-        self.assertEqual(by["-"]["cancelled_early"], 1)  # the cancelled task has no model line and never ran
+        self.assertEqual(by["-"]["cancelled_early"], 1)
         self.assertEqual([g["group"] for g in stats.summarize(stats.collect(self.s, "web"), "lane")["rows"]], ["web"])
         self.assertEqual(stats.collect(self.s, since=self.clock() + 1), [])
         self.assertEqual(stats.summarize(stats.collect(self.s), "week")["rows"][0]["group"], "1970-W03")

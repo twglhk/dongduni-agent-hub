@@ -1,5 +1,3 @@
-"""0.9.1: the pointer block in CLAUDE.md / AGENTS.md, skills where Claude Code reads them, model fallback."""
-
 import tempfile
 import unittest
 from pathlib import Path

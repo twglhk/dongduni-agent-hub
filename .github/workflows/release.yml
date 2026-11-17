@@ -1,10 +1,5 @@
 name: release
 
-# Push a tag like v0.2.0 (it must match agent_hub/__version__). Tests run on Linux, macOS and Windows; then the
-# package is built once (pure Python, one wheel for every OS), published to PyPI and attached to a GitHub release.
-# PyPI side, once: add a Trusted Publisher for project dongduni-agent-hub, repository twglhk/dongduni-agent-hub,
-# workflow release.yml, environment pypi. No token is stored anywhere.
-
 on:
   push:
     tags: ["v*"]

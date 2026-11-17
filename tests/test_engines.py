@@ -37,7 +37,6 @@ class EngineConfigTest(unittest.TestCase):
         self.assertEqual(c.engines["animation"].library, "engines/animation/pattern-library.md")
         self.assertEqual(c.engines["animation"].lanes, ["story"])
         self.assertEqual(c.lanes["story"].engine, "animation")
-        # lanes that name no engine fall into the implicit default, which sits beside the declared ones
         self.assertEqual(c.engines["default"].lanes, ["render", "post"])
         self.assertTrue(c.engines["default"].implicit)
         self.assertEqual(c.engines["marketing"].lanes, [])
@@ -67,7 +66,7 @@ class EngineConfigTest(unittest.TestCase):
 class EngineStoreTest(unittest.TestCase):
     def test_db_upgrade_keeps_rows_and_adds_engine_columns(self) -> None:
         path = Path(tempfile.mkdtemp()) / "old.db"
-        con = sqlite3.connect(path)  # a 0.7.0 database: no engine column on tasks or lanes
+        con = sqlite3.connect(path)
         con.executescript("""
             CREATE TABLE tasks(id INTEGER PRIMARY KEY, lane TEXT NOT NULL, title TEXT NOT NULL, brief TEXT NOT NULL,
               state TEXT NOT NULL, session TEXT, created REAL NOT NULL, started REAL, closed REAL, last_prompt REAL,
@@ -88,7 +87,7 @@ class EngineStoreTest(unittest.TestCase):
         self.assertIsNone(s.task(1)["engine"])
         with s.conn() as c:
             self.assertEqual(c.execute("SELECT doing FROM lanes WHERE lane='docs'").fetchone()[0], "writing")
-        Store(path)  # opening twice must not fail on the existing column
+        Store(path)
         self.assertEqual(s.task(s.add_task("docs", "new", "b", engine="default"))["engine"], "default")
 
     def test_task_takes_the_engine_of_its_lane(self) -> None:
@@ -134,9 +133,9 @@ class EngineCliTest(unittest.TestCase):
         data = json.loads((self.home / ".tower" / "tower.json").read_text())
         self.assertEqual(data["engines"]["audio"], {"label": "Audio", "dir": "engines/audio"})
         self.assertIn("exists", self.dah("engine", "add", "audio", ok=False))
-        self.dah("engine", "add", "bad", "--dir", "../x", ok=False)  # refused by validation...
+        self.dah("engine", "add", "bad", "--dir", "../x", ok=False)
         data = json.loads((self.home / ".tower" / "tower.json").read_text())
-        self.assertNotIn("bad", data["engines"])  # ...and still loadable
+        self.assertNotIn("bad", data["engines"])
         config_mod.load(self.home)
 
     def test_lane_add_engine(self) -> None:

@@ -72,7 +72,7 @@ class DiscoverTest(unittest.TestCase):
         self.assertEqual(g["codex"]["profiles"], ["fast"])
         p = out["project"]["agents"]
         self.assertEqual(p["claude"]["mcp_servers"], ["mem0", "notion"])
-        self.assertEqual(p["claude"]["mcp_not_approved"], ["mem0"])  # headless Claude lanes would run without it
+        self.assertEqual(p["claude"]["mcp_not_approved"], ["mem0"])
         self.assertEqual(p["claude"]["hooks"], ["PostToolUse"])
         self.assertEqual(p["opencode"]["mcp_servers"], ["memory"])
         self.assertEqual(p["opencode"]["agents"], ["reviewer"])

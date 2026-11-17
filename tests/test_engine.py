@@ -25,7 +25,7 @@ class EngineTest(unittest.TestCase):
 
     def test_a_hub_that_keeps_closing_backs_off_and_says_so(self) -> None:
         self.s.set_lane("hub", enabled=1)
-        for _ in range(12):  # the hub's session dies right after every open
+        for _ in range(12):
             self.e.tick()
             self.rt.st["hub"] = "closed"
             self.clock.tick(5)
@@ -34,7 +34,7 @@ class EngineTest(unittest.TestCase):
         self.assertTrue(any(n[0].get("alert") and "hub closed 3 times" in n[0]["title"] for n in self.notes))
         self.clock.tick(300)
         self.e.tick()
-        self.assertEqual(len([o for o in self.rt.opened if o[0] == "hub"]), 4)  # tries again, slowly
+        self.assertEqual(len([o for o in self.rt.opened if o[0] == "hub"]), 4)
 
     def test_a_lane_held_by_a_menu_in_its_window_is_announced_once(self) -> None:
         cfg = make_home({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude"}}, terminal="tmux")
@@ -50,9 +50,8 @@ class EngineTest(unittest.TestCase):
         e.tick()
         rt.st["docs"] = "asking"
         e.tick()
-        self.assertEqual(len(notes), 2)  # a new menu is news again
+        self.assertEqual(len(notes), 2)
 
-    # ----- hub -----
 
     def test_hub_opens_only_when_enabled(self) -> None:
         self.e.tick()
@@ -69,7 +68,7 @@ class EngineTest(unittest.TestCase):
         self.s.push(HUB, "ana", "memo", "ship the docs")
         self.s.push(HUB, "docs", "done", "Done: docs")
         self.run_ticks(1)
-        self.assertEqual(self.rt.sent, [])  # still inside the batch window
+        self.assertEqual(self.rt.sent, [])
         self.clock.tick(BATCH_SECONDS)
         self.run_ticks(2)
         self.assertEqual(len(self.rt.sent), 1)
@@ -95,7 +94,7 @@ class EngineTest(unittest.TestCase):
 
     def test_busy_hub_with_waiting_news_is_raised_once(self) -> None:
         self.s.set_lane(HUB, enabled=1)
-        self.e.tick()  # opens: busy, and stays busy (a hook keeps it working)
+        self.e.tick()
         self.s.push(HUB, "ana", "memo", "ship it")
         self.clock.tick(HUB_STUCK_SECONDS - 10)
         self.e.tick()
@@ -106,17 +105,17 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(len(alerts), 1)
         self.assertIn("idle", alerts[0]["title"])
         self.assertEqual(len(self.notes), 1)
-        self.s.decide(alerts[0]["id"], "ok", "ana")  # seen: no new alert for the same waiting news
+        self.s.decide(alerts[0]["id"], "ok", "ana")
         self.run_ticks(3)
         self.assertEqual(self.s.items(state="open", audience=HUMAN), [])
-        self.assertEqual(self.rt.sent, [])  # nothing was forced into the busy session
+        self.assertEqual(self.rt.sent, [])
 
     def test_idle_hub_is_never_prompted_without_news(self) -> None:
         self.s.set_lane(HUB, enabled=1)
         self.e.tick()
         self.rt.st[HUB] = "idle"
         self.run_ticks(5, step=60)
-        self.assertEqual(self.rt.sent, [])  # nothing queued, nothing to say: the hub is left alone
+        self.assertEqual(self.rt.sent, [])
 
     def test_follow_up_task_is_queued_without_goal_state(self) -> None:
         t = self.s.add_task("docs", "A", "b")
@@ -126,7 +125,6 @@ class EngineTest(unittest.TestCase):
         follow = [x for x in self.s.tasks() if x["id"] != t][0]
         self.assertIsNone(follow["goal_id"])
 
-    # ----- team lanes -----
 
     def test_tasks_respect_max_lanes_and_fresh_session(self) -> None:
         a = self.s.add_task("docs", "A", "brief A")
@@ -136,7 +134,6 @@ class EngineTest(unittest.TestCase):
         self.assertIn("task #%d" % a, self.rt.opened[0][1])
         self.assertEqual(self.s.task(a)["state"], "running")
         self.assertEqual(self.s.task(b)["state"], "queued")
-        # docs wraps -> its slot frees -> web starts
         self.s.update_task(a, state="closed")
         self.s.set_lane("docs", closing=1)
         self.rt.st["docs"] = "idle"
@@ -147,7 +144,7 @@ class EngineTest(unittest.TestCase):
     def test_a_cancelled_task_held_at_a_prompt_still_closes(self) -> None:
         t = self.s.add_task("docs", "A", "brief")
         self.e.tick()
-        self.rt.st["docs"] = "asking"  # its window waits at a permission prompt
+        self.rt.st["docs"] = "asking"
         self.s.update_task(t, state="cancelled")
         self.s.set_lane("docs", closing=1)
         self.e.tick()
@@ -158,7 +155,7 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.s.push("docs", HUB, "tell", "fix the typo", t)
         self.e.tick()
-        self.assertEqual(self.rt.sent, [])  # busy
+        self.assertEqual(self.rt.sent, [])
         self.rt.st["docs"] = "idle"
         self.run_ticks(3)
         self.assertEqual(self.rt.sent[0][2], "[tower]\nfix the typo")
@@ -167,13 +164,13 @@ class EngineTest(unittest.TestCase):
         self.s.add_task("docs", "A", "b")
         self.e.tick()
         self.rt.st["docs"] = "idle"
-        self.e.tick()  # first idle sighting starts the idle clock
+        self.e.tick()
         for _ in range(NUDGE_LIMIT + 1):
             self.clock.tick(NUDGE_AFTER + 1)
             self.e.tick()
             self.rt.st["docs"] = "idle"
             self.clock.tick(5)
-            self.e.tick()  # delivers the nudge
+            self.e.tick()
             self.rt.st["docs"] = "idle"
         kinds = [m["kind"] for m in self.s.pending(HUB)]
         self.assertIn("stalled", kinds)
@@ -197,18 +194,17 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.rt.use["docs"] = {"tokens_in": 5000, "tokens_out": 50, "cost": 0.05, "ctx_k": 5}
         self.clock.tick(5)
-        self.e.tick()  # busy and sampled under a minute ago: not read again
+        self.e.tick()
         self.assertEqual(self.s.usage(self.s.day())["docs"]["tokens_in"], 1000)
         self.s.update_task(t, state="closed")
         self.s.set_lane("docs", closing=1)
         self.rt.st["docs"] = "idle"
-        self.e.tick()  # the turn ended: read once more, then the wrapped lane closes
+        self.e.tick()
         self.assertIn("docs", self.rt.closed)
         self.assertEqual(self.s.usage(self.s.day())["docs"],
                          {"tokens_in": 5000, "tokens_out": 50, "cost": 0.05, "sessions": 1})
         self.assertEqual(self.s.session_ctx("docs", sid), 5)
 
-    # ----- decisions -----
 
     def item(self, lane: str, task_id: int | None, audience: str = HUB) -> int:
         return self.s.add_item(lane, task_id, "review", "Check", "## a\nb", [], [], audience=audience)
@@ -268,7 +264,6 @@ class EngineTest(unittest.TestCase):
         self.e.tick()
         self.assertEqual(len(self.notes), 1)
 
-    # ----- infra inbox -----
 
     def test_infra_one_memo_per_session(self) -> None:
         self.s.push(INFRA, "ana", "memo", "first")
@@ -278,10 +273,10 @@ class EngineTest(unittest.TestCase):
         self.assertIn("first", self.rt.opened[0][1])
         self.rt.st[INFRA] = "idle"
         self.e.tick()
-        self.assertEqual(len(self.rt.opened), 1)  # idle but not wrapped: no second memo
+        self.assertEqual(len(self.rt.opened), 1)
         self.s.set_lane(INFRA, closing=1)
-        self.e.tick()  # closes
-        self.e.tick()  # opens for the next memo
+        self.e.tick()
+        self.e.tick()
         self.assertIn("second", self.rt.opened[-1][1])
 
     def test_infra_gives_up_after_repeated_closes(self) -> None:
@@ -293,7 +288,6 @@ class EngineTest(unittest.TestCase):
         self.assertIsNone(self.s.lane(INFRA)["active_message"])
         self.assertTrue(any(n[0].get("alert") for n in self.notes))
 
-    # ----- live asks -----
 
     def test_hub_ask_round_trips_through_the_board(self) -> None:
         self.rt.st[HUB] = "idle"
@@ -338,8 +332,6 @@ class EngineTest(unittest.TestCase):
         self.assertIn("dah item add", self.rt.replies[0][2][0][0])
 
 
-# ----- P4: scheduler -----
-
 LANES = {"hub": {"runtime": "opencode"}, "infra": {"runtime": "opencode"},
          "docs": {"runtime": "claude"}, "web": {"runtime": "claude"}}
 
@@ -381,7 +373,7 @@ class ConflictTest(Base):
         self.assertIsNone(conflict_of(self.s, ok))
         self.assertIn("overlap", conflict_of(self.s, {"id": 91, "lane": "docs", "brief": "paths: src/a/x"}) or "")
         self.assertIsNone(conflict_of(self.s, {"id": 92, "lane": "docs", "brief": "no line"}))
-        self.assertIsNone(conflict_of(self.s, {"id": 93, "lane": "web", "brief": "no line"}))  # another lane
+        self.assertIsNone(conflict_of(self.s, {"id": 93, "lane": "web", "brief": "no line"}))
 
     def test_after_waits_for_the_named_task_unless_it_does_not_exist(self) -> None:
         self.build()
@@ -394,8 +386,8 @@ class ConflictTest(Base):
     def test_blocked_task_stays_queued_and_a_later_one_starts_on_a_parallel_session(self) -> None:
         self.build(max_lanes=3, max_instances=2)
         a = self.s.add_task("docs", "A", "paths: src/a")
-        b = self.s.add_task("docs", "B", "paths: src/a/deep")  # overlaps A
-        c = self.s.add_task("docs", "C", "paths: src/c")       # does not
+        b = self.s.add_task("docs", "B", "paths: src/a/deep")
+        c = self.s.add_task("docs", "C", "paths: src/c")
         self.tick()
         self.assertEqual(self.started(), ["docs"])
         self.assertEqual(self.s.task(a)["state"], "running")
@@ -404,12 +396,12 @@ class ConflictTest(Base):
         self.assertEqual((self.s.task(b)["state"], self.s.task(b)["lane"]), ("queued", "docs"))
         self.assertEqual((self.s.task(c)["state"], self.s.task(c)["lane"]), ("running", "docs#2"))
         self.tick(3)
-        self.assertEqual(len(self.started()), 2)  # B keeps waiting while A runs
+        self.assertEqual(len(self.started()), 2)
         self.s.update_task(a, state="closed")
         self.s.set_lane("docs", closing=1)
         self.rt.st["docs"] = "idle"
         self.tick(2)
-        self.assertEqual(self.s.task(b)["state"], "running")  # A finished, the overlap is gone
+        self.assertEqual(self.s.task(b)["state"], "running")
 
     def test_without_max_instances_nothing_runs_beside_a_lane(self) -> None:
         self.build(max_lanes=3)
@@ -431,8 +423,8 @@ class ConflictTest(Base):
         first = self.s.add_task("docs", "first", f"after: {dep}")
         second = self.s.add_task("docs", "second", "x")
         self.tick()
-        self.assertEqual(self.s.task(first)["state"], "queued")  # still waiting for dep
-        self.assertEqual(self.s.task(second)["state"], "running")  # ... and does not hold the lane up
+        self.assertEqual(self.s.task(first)["state"], "queued")
+        self.assertEqual(self.s.task(second)["state"], "running")
 
     def test_a_lane_sets_its_own_max_instances(self) -> None:
         self.build(max_lanes=5, max_instances=2, lanes={**LANES, "docs": {"runtime": "claude", "max_instances": 3},
@@ -482,7 +474,7 @@ class SlotTest(Base):
         light = self.s.add_task("web", "l", "paths: notes")
         self.s.update_task(h2, state="cancelled")
         self.tick()
-        self.assertEqual(self.s.task(light)["state"], "running")  # the light slot, while the heavy one is full
+        self.assertEqual(self.s.task(light)["state"], "running")
 
     def test_without_light_lanes_one_pool(self) -> None:
         self.build(max_lanes=1, heavy_paths=["game"])
@@ -537,7 +529,7 @@ class MemoryGuardTest(Base):
         self.assertEqual(len(asks), 1)
         self.rt.st["docs"] = "idle"
         self.tick(2, step=SETTLE_SECONDS + 1)
-        self.assertEqual(len([x for x in self.rt.sent if "2048 MB" in x[2]]), 1)  # asked once
+        self.assertEqual(len([x for x in self.rt.sent if "2048 MB" in x[2]]), 1)
         self.s.update_task(t, handoff="[now] x", rotate_ready=self.clock())
         self.rt.st["docs"] = "idle"
         self.tick()
@@ -587,12 +579,12 @@ class MemWatchTest(unittest.TestCase):
         self.assertEqual(w.heavy, {"docs": 5000, "hub": 4000})
         self.assertEqual(len(logs), 2)
         w.poll()
-        self.assertEqual(len(calls), 1)  # inside the minute: no second read
+        self.assertEqual(len(calls), 1)
         table[0] = Proc(1, 10, "claude --session-id s-docs")
         clock.t += POLL_SECONDS
         w.poll()
         self.assertEqual(w.heavy, {"hub": 4000})
-        self.assertEqual(len(logs), 2)  # hub was already announced
+        self.assertEqual(len(logs), 2)
 
     def test_limit_zero_is_off(self) -> None:
         w = MemWatch(0, lambda: {"docs": ["s"]}, ps=lambda: [Proc(1, 9999, "s")])

@@ -1,5 +1,3 @@
-"""Scratch sweep: only what the tower made (manifest entries under its root, leftover lane worktrees), after a grace."""
-
 import json
 import os
 import shutil
@@ -67,10 +65,10 @@ class ScratchTest(unittest.TestCase):
         wt = scratch.make(self.cfg, tid, self.cfg.home, worktree=True, clock=self.clock)
         (d / "big.bin").write_bytes(b"x" * 10)
         self.assertTrue((wt / "a.txt").exists())
-        self.assertEqual(self.sweep.sweep(self.clock()), [])  # task still running
+        self.assertEqual(self.sweep.sweep(self.clock()), [])
         self.close(tid)
         self.clock.tick(scratch.DEFAULT_GRACE - 1)
-        self.assertEqual(self.sweep.sweep(self.clock()), [])  # inside the grace
+        self.assertEqual(self.sweep.sweep(self.clock()), [])
         self.clock.tick(2)
         removed = self.sweep.sweep(self.clock())
         self.assertEqual(sorted(p for p, _ in removed), sorted([str(d), str(wt)]))
@@ -79,7 +77,7 @@ class ScratchTest(unittest.TestCase):
         self.assertEqual(scratch.read_manifest(dah_root(self.cfg)), [])
         log = (self.cfg.state_dir / "scratch.log").read_text(encoding="utf-8")
         self.assertIn(f"task #{tid}", log)
-        self.assertIn("12 MB", log)  # sizes are logged
+        self.assertIn("12 MB", log)
 
     def test_a_cancelled_task_counts_and_other_tasks_stay(self) -> None:
         a, b = self.task(), self.task()
@@ -96,10 +94,10 @@ class ScratchTest(unittest.TestCase):
         tid = self.task()
         root = dah_root(self.cfg)
         root.mkdir(parents=True, exist_ok=True)
-        mine = root / "scratch" / f"t{tid}-by-hand"  # named like task scratch, but not in the manifest
+        mine = root / "scratch" / f"t{tid}-by-hand"
         mine.mkdir(parents=True)
         outside = Path(tempfile.mkdtemp(prefix="user-"))
-        scratch.write_manifest(root, [{"path": str(outside), "task": tid, "kind": "dir", "made": 0}])  # a bad entry
+        scratch.write_manifest(root, [{"path": str(outside), "task": tid, "kind": "dir", "made": 0}])
         gate = root / "done-gate"
         gate.mkdir()
         self.close(tid)
@@ -127,7 +125,7 @@ class LaneWorktreeTest(unittest.TestCase):
             git(cfg.home, "worktree", "add", "-q", "-b", f"dah/{lid}", str(base / lid))
         (base / "api" / "a.txt").write_text("uncommitted\n", encoding="utf-8")
         raw = json.loads((cfg.home / ".tower/tower.json").read_text(encoding="utf-8"))
-        del raw["lanes"]["web"], raw["lanes"]["api"]  # lanes removed; their worktrees are leftovers
+        del raw["lanes"]["web"], raw["lanes"]["api"]
         (cfg.home / ".tower/tower.json").write_text(json.dumps(raw), encoding="utf-8")
         cfg = config_mod.load(cfg.home)
         log: list[str] = []
@@ -135,12 +133,12 @@ class LaneWorktreeTest(unittest.TestCase):
         removed = sweep.sweep(0)
         self.assertEqual([Path(p).name for p, _ in removed], ["web"])
         self.assertFalse((base / "web").exists())
-        self.assertTrue((base / "docs").exists())  # its lane still works there
-        self.assertTrue((base / "api").exists())  # uncommitted work is never removed
-        self.assertIn("dah/web", git(cfg.home, "branch"))  # the branch keeps the commits
+        self.assertTrue((base / "docs").exists())
+        self.assertTrue((base / "api").exists())
+        self.assertIn("dah/web", git(cfg.home, "branch"))
         self.assertTrue(any("kept lane worktree" in ln for ln in log))
         sweep.sweep(0)
-        self.assertEqual(len([ln for ln in log if "kept lane worktree" in ln]), 1)  # said once
+        self.assertEqual(len([ln for ln in log if "kept lane worktree" in ln]), 1)
 
     def test_instance_worktrees_stay_while_the_lane_may_run_them(self) -> None:
         cfg = workspace({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude", "worktree": True,

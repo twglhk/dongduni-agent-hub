@@ -1,5 +1,3 @@
-"""Cross-platform process handling: liveness, stopping a group, npm shims on Windows."""
-
 import subprocess
 import sys
 import tempfile
@@ -81,7 +79,7 @@ class ProcsTest(unittest.TestCase):
         child = subprocess.Popen([sys.executable, "-c", "pass"])
         child.wait()
         time.sleep(0.1)
-        procs.terminate(child.pid)  # no error
+        procs.terminate(child.pid)
         procs.terminate(None)
 
     def test_npm_shim_runs_its_node_script(self) -> None:

@@ -5,7 +5,7 @@ import { DocText } from '../DocText';
 
 const SLIDE_MS = 300;
 
-// Pushes a history entry without touching the hash, so the phone back button closes the sheet and the router never sees it.
+// a history entry without a hash change: phone back closes the sheet and the router never sees it
 export function DocReader({ title, path, url, onClose }: { title: string; path: string; url: string; onClose: () => void }) {
   const { L } = useL();
   const [open, setOpen] = useState(false);

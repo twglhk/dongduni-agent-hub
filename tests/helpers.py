@@ -31,7 +31,6 @@ def make_home(lanes: dict[str, Any] | None = None, **extra: Any) -> config_mod.C
 
 
 class FakeRuntime:
-    """Same surface as runtimes.Runtimes; status is whatever the test sets."""
 
     def __init__(self, store: Store):
         self.store = store
@@ -44,7 +43,7 @@ class FakeRuntime:
         self.replies: list[tuple[str, str, list[list[str]]]] = []
         self.ctx: dict[str, int] = {}
         self.use: dict[str, dict[str, Any]] = {}
-        self.ledger_use: dict[str, dict[str, Any]] = {}  # lane -> {"new", "cache", "out", "turns"}
+        self.ledger_use: dict[str, dict[str, Any]] = {}
         self.not_owned: set[str] = set()
         self.compacts: list[tuple[str, str, str]] = []
         self.compact_how: str | None = "sent"

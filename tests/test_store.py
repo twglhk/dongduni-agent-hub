@@ -106,11 +106,11 @@ class StoreTest(unittest.TestCase):
         con.commit()
         con.close()
         s = Store(path)
-        self.assertEqual(s.task(1)["title"], "old")  # the old row reads fine, its goal_id is just ignored
+        self.assertEqual(s.task(1)["title"], "old")
         self.assertEqual(s.task(s.add_task("docs", "t", "b"))["title"], "t")
         self.assertFalse(hasattr(s, "add_goal") or hasattr(s, "goals"))
-        s.changes(None)  # extension events no longer look at goals
-        with s.conn() as c:  # the table is left as it was: a downgrade to 0.7.x still finds its goals
+        s.changes(None)
+        with s.conn() as c:
             self.assertEqual(c.execute("SELECT title FROM goals").fetchone()[0], "old")
 
     def test_hub_reply_to_a_human_request_becomes_a_review_card(self) -> None:
@@ -121,8 +121,8 @@ class StoreTest(unittest.TestCase):
                          ("review", HUMAN, HUB, None, mid, "open"))
         self.assertEqual(it["title"], "make the docs shorter")
         self.assertEqual(it["body"], "Done in docs/a.md.\n\n> make the   docs\n> shorter")
-        self.assertEqual([it["id"]], [x["id"] for x in self.s.unnotified()])  # push notification pending
-        self.assertEqual(self.s.memos(HUB)[0]["replies"][0]["text"], "Done in docs/a.md.")  # history kept
+        self.assertEqual([it["id"]], [x["id"] for x in self.s.unnotified()])
+        self.assertEqual(self.s.memos(HUB)[0]["replies"][0]["text"], "Done in docs/a.md.")
 
     def test_long_request_title_is_clipped(self) -> None:
         mid = self.s.push(HUB, "ana", "memo", "word " * 60)
@@ -158,7 +158,7 @@ class StoreTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         from agent_hub.store import SCHEMA
         con = sqlite3.connect(path)
-        con.executescript(SCHEMA)  # the schema as 0.9.3 made it: items has no memo_id
+        con.executescript(SCHEMA)
         con.execute("INSERT INTO items(lane, kind, title, body, audience, state, created) "
                     "VALUES('hub', 'review', 'old', 'b', 'human', 'open', 1)")
         con.commit()

@@ -1,5 +1,3 @@
-"""Adapters against stand-in CLIs and a stand-in OpenCode server (no real agent runs, no tokens spent)."""
-
 import json
 import os
 import stat
@@ -55,7 +53,6 @@ time.sleep(60)
 
 
 def script(dirpath: Path, name: str, body: str) -> Path:
-    """A stand-in CLI: an executable Python script, or on Windows a .cmd that runs one."""
     if os.name == "nt":
         (dirpath / f"{name}.py").write_text(body.replace("#!PY", ""), encoding="utf-8")
         p = dirpath / f"{name}.cmd"
@@ -102,12 +99,12 @@ class HeadlessTest(unittest.TestCase):
         first = self.calls()[0]
         self.assertIn("--session-id", first["argv"])
         self.assertIn("bypassPermissions", first["argv"])
-        self.assertIn("Bash(dah:*)", config_mod.SAFE_ARGS["claude"])  # a safe lane must still be able to run dah
+        self.assertIn("Bash(dah:*)", config_mod.SAFE_ARGS["claude"])
         self.assertEqual(first["argv"][first["argv"].index("--model") + 1], "opus")
-        self.assertNotIn("--agent", first["argv"])  # no agent set: the runtime's default
+        self.assertNotIn("--agent", first["argv"])
         self.assertEqual(first["lane"], "hub")
         self.assertEqual(first["home"], str(self.cfg.home))
-        self.assertNotIn("--add-dir", first["argv"])  # .tower/ is inside the folder it works in
+        self.assertNotIn("--add-dir", first["argv"])
         self.assertEqual(self.rt.last_text("hub"), ["said: hello there"])
         self.assertEqual(self.rt.context_k("hub", sid), 42)
         self.rt.send("hub", sid, "second")
@@ -177,7 +174,7 @@ class HeadlessTest(unittest.TestCase):
         cfg = config_mod.load(home)
         rt = Runtimes(cfg, self.s)
         tree = (home / ".tower/state/worktrees/wt").resolve()
-        for prompt in ("build it", "again"):  # the second session reuses the worktree and its branch
+        for prompt in ("build it", "again"):
             rt.open("wt", prompt)
             wait_for(lambda: rt.status("wt") == "idle")
             call = self.calls()[-1]
@@ -190,7 +187,7 @@ class HeadlessTest(unittest.TestCase):
             rt.close("wt")
         self.assertTrue((tree / "app.txt").is_file())
         self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))
-        self.assertEqual(cfg.lane_dir("hub"), home)  # other lanes stay in the workspace
+        self.assertEqual(cfg.lane_dir("hub"), home)
         data["max_instances"] = 2
         (home / ".tower/tower.json").write_text(json.dumps(data))
         cfg = config_mod.load(home)
@@ -208,12 +205,12 @@ class HeadlessTest(unittest.TestCase):
         from agent_hub.install import detach
         (tree / "draft.txt").write_text("not committed")
         out = detach(cfg, purge=True)
-        self.assertTrue((home / ".tower/tower.json").exists(), out)  # uncommitted work: .tower/ is kept
+        self.assertTrue((home / ".tower/tower.json").exists(), out)
         self.assertTrue((tree / "draft.txt").exists())
         (tree / "draft.txt").unlink()
         out = detach(cfg, purge=True)
         self.assertFalse((home / ".tower").exists(), out)
-        self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))  # the lane's branch stays
+        self.assertIn("dah/wt", git("branch", "--list", "dah/wt"))
         self.assertIn("dah/wt-2", git("branch", "--list", "dah/wt-2"))
         with self.assertRaises(ConfigError):
             make_home({"hub": {"runtime": "claude", "worktree": True}})
@@ -313,7 +310,7 @@ class OpenCodeTest(unittest.TestCase):
         sid = self.rt.open("hub", "hi")
         self.assertEqual(sid, "ses_1")
         self.assertEqual(FakeOpenCode.prompts[0]["model"], {"providerID": "anthropic", "modelID": "claude-x"})
-        self.assertNotIn("agent", FakeOpenCode.prompts[0])  # no agent set: the server's default agent
+        self.assertNotIn("agent", FakeOpenCode.prompts[0])
         self.assertFalse(self.rt.owned("hub"))
         self.assertEqual(self.rt.status("hub"), "idle")
         FakeOpenCode.busy = {"ses_1": {"type": "busy"}}
@@ -326,7 +323,7 @@ class OpenCodeTest(unittest.TestCase):
         self.assertEqual(self.rt.usage("hub", sid), {"tokens_in": 100000, "tokens_out": 40, "cost": 0.1, "ctx_k": 100})
         self.assertEqual(self.rt.last_text("hub"), ["done here"])
         FakeOpenCode.busy = {}
-        self.rt.close("hub")  # not owned: clears the session, leaves the server up
+        self.rt.close("hub")
         self.assertEqual(self.rt.status("hub"), "idle")
 
     def test_a_failed_question_lookup_is_not_an_empty_list(self) -> None:

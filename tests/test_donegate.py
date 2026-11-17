@@ -1,5 +1,3 @@
-"""Done gate: report done is held until the project's command passes on one persistent, serial, clean gate worktree."""
-
 import io
 import json
 import os
@@ -33,7 +31,6 @@ OLD = {"GIT_AUTHOR_DATE": "2020-01-01T00:00:00", "GIT_COMMITTER_DATE": "2020-01-
 
 
 def workspace(gate: dict | None = None, **extra) -> config_mod.Config:
-    """A git repo that is also the tower home; the gate root lives in its own temp dir, outside the repo."""
     home = Path(tempfile.mkdtemp(prefix="gate-ws-"))
     git(home, "init", "-q")
     (home / ".gitignore").write_text(".tower/\ncache/\n", encoding="utf-8")
@@ -42,7 +39,7 @@ def workspace(gate: dict | None = None, **extra) -> config_mod.Config:
     (home / "docs").mkdir()
     (home / "docs" / "d.md").write_text("d\n", encoding="utf-8")
     git(home, "add", ".")
-    git(home, "commit", "-qm", "base", env=OLD)  # before any task started
+    git(home, "commit", "-qm", "base", env=OLD)
     (home / ".tower").mkdir()
     data = {"name": "T", "lanes": {"hub": {"runtime": "claude"}, "docs": {"runtime": "claude"}},
             "scratch_root": tempfile.mkdtemp(prefix="gate-root-"), **extra}
@@ -83,7 +80,7 @@ class ParseTest(unittest.TestCase):
             workspace({"paths": ["src"]})
         cfg = workspace({"command": "x"})
         raw = json.loads((cfg.home / ".tower/tower.json").read_text(encoding="utf-8"))
-        raw["scratch_root"] = str(cfg.home / "tmp")  # the gate worktree must live outside the project
+        raw["scratch_root"] = str(cfg.home / "tmp")
         (cfg.home / ".tower/tower.json").write_text(json.dumps(raw), encoding="utf-8")
         with self.assertRaises(ConfigError):
             config_mod.load(cfg.home)
@@ -95,12 +92,12 @@ class AppliesTest(unittest.TestCase):
         task = {"id": 1, "started": time.time() - 30}
         self.assertFalse(donegate.applies(cfg, task, "docs"))
         commit(cfg, "docs/d.md", "changed\n")
-        self.assertFalse(donegate.applies(cfg, task, "docs"))  # docs/ is not gated
+        self.assertFalse(donegate.applies(cfg, task, "docs"))
         commit(cfg, "src/a.txt", "two\n")
         self.assertTrue(donegate.applies(cfg, task, "docs"))
         self.assertFalse(donegate.applies(cfg, {"id": 1, "started": time.time() + 3600}, "docs"))
         self.assertFalse(donegate.applies(cfg, {"id": 1, "started": None}, "docs"))
-        self.assertFalse(donegate.applies(workspace(), task, "docs"))  # no done_gate configured
+        self.assertFalse(donegate.applies(workspace(), task, "docs"))
 
 
 class RunGateTest(unittest.TestCase):
@@ -111,12 +108,12 @@ class RunGateTest(unittest.TestCase):
 
     def test_pass_on_a_clean_checkout_of_head_in_one_persistent_worktree(self) -> None:
         cfg = workspace({"command": check("import pathlib,sys; sys.exit(0 if pathlib.Path('src/a.txt').read_text()=='one\\n' else 5)")})
-        (cfg.home / "src" / "a.txt").write_text("uncommitted\n", encoding="utf-8")  # not what the gate sees
+        (cfg.home / "src" / "a.txt").write_text("uncommitted\n", encoding="utf-8")
         r = self.run_gate(cfg)
         self.assertEqual(r["state"], "pass", r)
         wt = dah_root(cfg) / "done-gate"
         self.assertTrue((wt / ".git").exists())
-        self.assertNotIn(cfg.home.resolve(), wt.resolve().parents)  # outside the project
+        self.assertNotIn(cfg.home.resolve(), wt.resolve().parents)
         (wt / "stray.txt").write_text("left by the last gate", encoding="utf-8")
         (wt / "cache").mkdir()
         (wt / "cache" / "kept").write_text("ignored build cache", encoding="utf-8")
@@ -124,13 +121,13 @@ class RunGateTest(unittest.TestCase):
         commit(cfg, "src/b.txt", "new\n")
         r = self.run_gate(cfg)
         self.assertEqual(r["state"], "pass", r)
-        self.assertTrue((wt / "src" / "b.txt").exists())  # moved to the new HEAD, same tree
-        self.assertFalse((wt / "stray.txt").exists())  # untracked leftovers cleaned
-        self.assertTrue((wt / "cache" / "kept").exists())  # ignored caches stay (no full re-setup per gate)
+        self.assertTrue((wt / "src" / "b.txt").exists())
+        self.assertFalse((wt / "stray.txt").exists())
+        self.assertTrue((wt / "cache" / "kept").exists())
         gates = [ln for ln in git(cfg.home, "worktree", "list", "--porcelain").splitlines()
                  if ln.startswith("worktree ") and "done-gate" in ln]
         self.assertEqual(len(gates), 1)
-        self.assertFalse((dah_root(cfg) / "done-gate.lock").exists())  # released
+        self.assertFalse((dah_root(cfg) / "done-gate.lock").exists())
 
     def test_fail_reports_last_lines_and_exit_code(self) -> None:
         cfg = workspace({"command": check("print('assertion failed in test_x'); raise SystemExit(3)")})
@@ -200,7 +197,7 @@ class LockTest(unittest.TestCase):
 
         def sleep(s: float) -> None:
             waited.append(s)
-            alive["v"] = False  # the holder dies while we wait
+            alive["v"] = False
 
         said: list[str] = []
         lock = donegate.Lock(path, alive=lambda pid: alive["v"], sleep=sleep)
@@ -224,7 +221,7 @@ class PendingTest(unittest.TestCase):
         self.assertTrue(donegate.running(self.cfg, 7))
         again = donegate.start(self.cfg, self.task, "docs", "did it", [], spawn=lambda argv, cwd: self.fail("spawned twice"))
         self.assertIn("already running", again)
-        self.assertEqual(donegate.poll(self.cfg, alive=lambda pid: True), [])  # still running
+        self.assertEqual(donegate.poll(self.cfg, alive=lambda pid: True), [])
         pend = donegate.pending(self.cfg, 7)[0]
         pend.with_suffix(".json").write_text(json.dumps({"state": "pass", "log": "/l", "tail": []}), encoding="utf-8")
         got = donegate.poll(self.cfg, alive=lambda pid: True)
@@ -378,9 +375,8 @@ class ReportAndEngineTest(unittest.TestCase):
     def test_report_done_is_held_then_delivered_on_pass(self) -> None:
         out = self.report("fixed a")
         self.assertIn("done gate", out)
-        self.assertEqual(self.s.reports(self.tid), [])  # not reported yet
+        self.assertEqual(self.s.reports(self.tid), [])
         self.assertEqual([m for m in self.s.pending(HUB) if m["kind"] == "done"], [])
-        # the lane goes idle while the gate runs: no nudge
         self.rt.st["docs"] = "idle"
         with mock.patch("agent_hub.procs.alive", return_value=True):
             for _ in range(5):
@@ -418,7 +414,7 @@ class ReportAndEngineTest(unittest.TestCase):
         self.assertTrue(tell and "E boom" in tell[0]["text"] and "/tmp/x.log" in tell[0]["text"])
         self.assertEqual(self.s.reports(self.tid), [])
         self.assertEqual([m for m in self.s.pending(HUB) if m["kind"] == "done"], [])
-        self.assertIn("done gate", self.report("fixed for real"))  # resend starts a new gate
+        self.assertIn("done gate", self.report("fixed for real"))
         self.assertTrue(donegate.running(self.cfg, self.tid))
 
     def test_no_gated_change_reports_at_once(self) -> None:

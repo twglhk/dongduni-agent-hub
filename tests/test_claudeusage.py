@@ -1,5 +1,3 @@
-"""Optional Claude usage percent: off by default, read-only token, unknown (never 0) on any failure."""
-
 import json
 import tempfile
 import os
@@ -24,7 +22,7 @@ class TokenTest(unittest.TestCase):
         kc = json.dumps({"claudeAiOauth": {"accessToken": "from-keychain"}})
         self.assertEqual(claudeusage.token(home, "darwin", lambda: kc), "from-keychain")
         self.assertEqual(claudeusage.token(home, "darwin", lambda: ""), "from-file")
-        self.assertEqual(claudeusage.token(home, "linux", lambda: kc), "from-file")  # no keychain off macOS
+        self.assertEqual(claudeusage.token(home, "linux", lambda: kc), "from-file")
         self.assertEqual(claudeusage.token(Path(tempfile.mkdtemp()), "linux"), "")
         (home / ".credentials.json").write_text("not json", encoding="utf-8")
         self.assertEqual(claudeusage.token(home, "linux"), "")

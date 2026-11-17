@@ -1,6 +1,3 @@
-"""The lane hook (agent_hub/hooks.py): the PreToolUse runner, urgent tells, the event log, and how tower-opened
-Claude Code lanes get it."""
-
 from __future__ import annotations
 
 import io
@@ -28,7 +25,6 @@ def events(home: Path, lane: str) -> list[dict]:
 
 
 class HookProcess(unittest.TestCase):
-    """The hook as Claude Code runs it: the file by path, JSON on stdin, no PYTHONPATH."""
 
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp())
@@ -76,7 +72,7 @@ class HookProcess(unittest.TestCase):
         self.assertEqual(ctx["hookEventName"], "PreToolUse")
         self.assertIn("URGENT", ctx["additionalContext"])
         self.assertIn("stop now and report blocked", ctx["additionalContext"])
-        self.assertEqual(self.run_hook(call).stdout, "")  # delivered once
+        self.assertEqual(self.run_hook(call).stdout, "")
 
 
 class Pretool(unittest.TestCase):
@@ -157,7 +153,7 @@ class Urgent(unittest.TestCase):
         hooks.post_urgent(self.home, "docs", "second", now=now - 5)
         hooks.post_urgent(self.home, "docs", "   ", now=now)
         self.assertEqual(hooks.take_urgent(self.home, "docs", now=now), ["first", "second"])
-        self.assertEqual(hooks.pending_urgent(self.home, "docs"), 0)  # the stale and the blank are gone too
+        self.assertEqual(hooks.pending_urgent(self.home, "docs"), 0)
         self.assertEqual(hooks.take_urgent(self.home, "other", now=now), [])
 
     def test_two_posts_in_one_millisecond_both_arrive(self) -> None:
@@ -189,11 +185,10 @@ class TellUrgentCli(unittest.TestCase):
     def test_warns_for_a_lane_that_cannot_read_it_and_refuses_unknown_lanes(self) -> None:
         self.assertIn("only Claude Code lanes", self.tower("tell", "--urgent", "web", "stop").stdout)
         self.assertNotEqual(self.tower("tell", "--urgent", "nope", "stop").returncode, 0)
-        self.assertNotEqual(self.tower("tell", "--urgent", "docs", "stop", lane="docs").returncode, 0)  # hub only
+        self.assertNotEqual(self.tower("tell", "--urgent", "docs", "stop", lane="docs").returncode, 0)
 
 
 class Wiring(unittest.TestCase):
-    """Lanes the tower opens get the hook in their --settings."""
 
     def setUp(self) -> None:
         self.cfg = make_home({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude", "terminal": "tmux"}})

@@ -13,7 +13,6 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233182f6'/%3E%3Cpath d='M9 16.5l5 5 9-10' fill='none' stroke='%23fff' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <title>Board</title>
 <style>
-/* ---- tokens (light) ---- */
 :root{
   color-scheme:light;
   --bg:#f2f4f6; --surface:#ffffff; --surface-2:#f9fafb; --surface-3:#f2f4f6;
@@ -38,7 +37,6 @@
   --island:0 6px 24px rgba(2,32,71,.16),0 0 0 1px var(--line);
   --ease:cubic-bezier(.2,.8,.2,1);
 }
-/* ---- tokens (dark) ---- */
 @media (prefers-color-scheme:dark){:root{
   color-scheme:dark;
   --bg:#17171c; --surface:#202027; --surface-2:#26262e; --surface-3:#2c2c35;
@@ -68,7 +66,6 @@ h1,h2,h3,h4,p{margin:0}
 .pressable{cursor:pointer;transition:transform .12s var(--ease),background-color .12s}
 .pressable:active{transform:scale(.985);background-image:linear-gradient(var(--press),var(--press))}
 
-/* ---- header ---- */
 #top{position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top)}
 #top .in{max-width:var(--col);margin:0 auto;padding:4px var(--s5) 10px}
 #top .r1{display:flex;align-items:center;gap:var(--s2);min-height:var(--tap)}
@@ -88,9 +85,7 @@ h1,h2,h3,h4,p{margin:0}
 .dot.unknown{background:transparent;box-shadow:inset 0 0 0 1.5px var(--red)}
 @keyframes beat{50%{opacity:.35}}
 
-/* ---- layout ---- */
 main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--nav-h) + var(--chat-h) + var(--s7))}
-/* ---- pinned chat: the same request box on every tab, a floating island over the page (no band of its own) ---- */
 #chat{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + var(--s2));z-index:19;pointer-events:none}
 #chat .in{max-width:var(--col);margin:0 auto;padding:0 var(--s4)}
 #chat .row{pointer-events:auto;display:flex;gap:var(--s1);align-items:flex-end;background:var(--surface);border-radius:26px;padding:4px;box-shadow:var(--island)}
@@ -109,7 +104,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 #nav button.on{color:var(--text)}
 .badge{position:absolute;top:6px;left:calc(50% + 5px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
 
-/* ---- sections ---- */
 .sec{margin-bottom:var(--s7)}
 .sec-h{display:flex;align-items:center;gap:var(--s2);margin:0 0 var(--s3);padding:0 var(--s1);font-size:var(--t3);font-weight:700;letter-spacing:-.01em;line-height:1.4}
 .sec-h h2{font:inherit}
@@ -122,7 +116,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .stack>*,.grid>*{min-width:0}
 @media (min-width:600px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
-/* ---- chips ---- */
 .chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:var(--r-xs);font-size:var(--t6);font-weight:600;background:var(--grey-weak);color:var(--grey-ink);white-space:nowrap;line-height:1;flex:none}
 .chip.lane{background:var(--blue-weak);color:var(--blue-ink)}
 .chip.ask,.chip.st-asking,.chip.v-hold,.chip.m-wait,.chip.paused{background:var(--orange-weak);color:var(--orange-ink)}
@@ -134,7 +127,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .meta{display:flex;align-items:center;gap:var(--s2);font-size:var(--t6);color:var(--text-3);flex-wrap:wrap;line-height:1.4;min-width:0}
 .meta .t{margin-left:auto;font-variant-numeric:tabular-nums}
 
-/* ---- cards ---- */
 .card{display:block;width:100%;text-align:left;background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);overflow:hidden}
 .card .title{font-size:var(--t4);font-weight:700;line-height:1.4;margin:var(--s2) 0 2px;letter-spacing:-.01em}
 .card .esc{color:var(--text-2);font-size:var(--t5);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:2px}
@@ -154,7 +146,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .doing .tx{font-size:var(--t5);font-weight:600;line-height:1.5}
 .doing .tx.none{font-weight:500;color:var(--text-3)}
 
-/* ---- rows ---- */
 .list{background:var(--surface);border-radius:var(--r-l);overflow:hidden}
 .row{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;padding:var(--s3) var(--s5);min-height:64px;position:relative}
 .row+.row::before{content:"";position:absolute;left:var(--s5);right:var(--s5);top:0;border-top:1px solid var(--line)}
@@ -172,7 +163,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .see-all{display:flex;align-items:center;justify-content:center;width:100%;margin-top:var(--s3);min-height:48px;border-radius:var(--r);background:var(--surface);color:var(--text-2);font-size:var(--t5);font-weight:600}
 .see-all:disabled{color:var(--text-4);cursor:default}
 
-/* ---- lanes / reports / memos ---- */
 .kvs{display:grid;gap:4px;margin:var(--s2) 0}
 .kv{display:flex;gap:var(--s3);font-size:var(--t5);line-height:1.5}
 .kv .k{color:var(--text-3);min-width:64px;flex:none}
@@ -252,7 +242,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .quote .prose{margin:0;font-size:var(--t5)}
 .quote .prose p:last-child{margin-bottom:0}
 
-/* ---- markdown ---- */
 .prose{font-size:var(--fs);line-height:1.65;margin:var(--s2) 0 var(--s5)}
 .prose>:first-child{margin-top:0}
 .prose p{margin:0 0 var(--s3)}
@@ -267,7 +256,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .prose blockquote{margin:0 0 var(--s3);padding:var(--s3) var(--s4);background:var(--surface-2);border-radius:var(--r-s);color:var(--text-2);font-size:var(--t5)}
 .box .prose,.quote .prose{white-space:normal}
 
-/* ---- attachments ---- */
 .gal{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
 @media (min-width:600px){.gal{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .gal.one{grid-template-columns:1fr}
@@ -282,7 +270,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .file .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t5);font-weight:500}
 .file .ext{font-size:var(--t6);color:var(--text-3);text-transform:uppercase}
 
-/* ---- options + note + buttons ---- */
 .opts{display:grid;gap:var(--s2)}
 .opt{display:flex;gap:var(--s3);align-items:center;text-align:left;width:100%;background:var(--surface-3);border-radius:var(--r);padding:var(--s3) var(--s4) var(--s3) var(--s5);min-height:60px;transition:background-color .15s}
 .opt .tx{flex:1;min-width:0}
@@ -310,7 +297,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .btn-text{grid-column:1 / -1;height:var(--tap);color:var(--text-3);font-size:var(--t5);font-weight:600;border-radius:var(--r-s)}
 .btn-text:disabled{opacity:.4}
 
-/* ---- lightbox ---- */
 #lb{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.96);display:none;flex-direction:column;color:#fff;touch-action:pan-y}
 #lb.open{display:flex}
 #lb .lh{display:flex;align-items:center;padding:calc(env(safe-area-inset-top) + 4px) var(--s2) 4px var(--s5);font-size:var(--t5)}
@@ -326,7 +312,6 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 #lb .lf .nm{flex:1;color:rgba(255,255,255,.6);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #lb .lf a{color:#fff;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;min-height:var(--tap)}
 
-/* ---- login ---- */
 #login{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:var(--s5)}
 .login-card{width:100%;max-width:360px;background:var(--surface);border-radius:var(--r-l);padding:var(--s7) var(--s6) var(--s6);display:grid;gap:var(--s3)}
 .login-card .logo{width:48px;height:48px;border-radius:14px;background:var(--blue-weak);color:var(--blue);display:flex;align-items:center;justify-content:center}
@@ -335,14 +320,12 @@ main{max-width:var(--col);margin:0 auto;padding:var(--s5) var(--s5) calc(var(--n
 .field{height:56px;border-radius:var(--r);background:var(--surface-3);border:1.5px solid transparent;padding:0 var(--s4);font-size:var(--fs);outline:none;width:100%}
 .field:focus{border-color:var(--blue);background:var(--surface)}
 
-/* ---- toast ---- */
 #toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--chat-h) + 16px);transform:translateX(-50%) translateY(8px);z-index:60;background:var(--toast-bg);color:var(--toast-fg);padding:14px 20px;border-radius:var(--r);font-size:var(--t5);font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.18);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s var(--ease);max-width:calc(100vw - 40px);width:max-content;text-align:center;line-height:1.4}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 #toast.err{background:var(--red);color:#fff}
 body.sheet-open #toast{bottom:calc(150px + env(safe-area-inset-bottom))}
 body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 
-/* ---- header extras ---- */
 #brand-btn{display:inline-flex;align-items:center;gap:2px;max-width:100%;min-width:0;font:inherit;border-radius:var(--r-xs);padding:0 2px 0 0}
 #brand-btn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #brand-btn svg{width:18px;height:18px;stroke:var(--text-3);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -352,7 +335,6 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 .hint{font-size:var(--t6);color:var(--text-3);padding:var(--s2) var(--s1) 0;line-height:1.5}
 .btn-text.warn{color:var(--red-ink)}
 
-/* ---- menus (language, workspaces) ---- */
 .sh .ttl{flex:1;font-size:var(--t4);font-weight:700}
 .menu{display:grid;gap:var(--s2)}
 .mrow{display:flex;align-items:center;gap:var(--s3);width:100%;text-align:left;background:var(--surface-3);border-radius:var(--r);padding:var(--s3) var(--s4);min-height:60px}
@@ -371,7 +353,6 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 .reach .tx{font-size:var(--t5);color:var(--text-2);line-height:1.55}
 .reach .bar{display:flex;justify-content:flex-end}
 
-/* ---- lane cap stepper ---- */
 .sec-h.wrap{flex-wrap:wrap;row-gap:var(--s2)}
 .sec-h.wrap .ext{flex-wrap:wrap;justify-content:flex-end;row-gap:var(--s2)}
 .step{display:inline-flex;align-items:center;gap:var(--s2)}
@@ -383,7 +364,6 @@ body.locked #toast{bottom:calc(24px + env(safe-area-inset-bottom))}
 .step button:active:not(:disabled) svg{transform:scale(.8)}
 .step b{min-width:20px;text-align:center;font-size:var(--t5);font-weight:700;font-variant-numeric:tabular-nums}
 
-/* ---- usage strip ---- */
 #use{display:none;max-width:var(--col);margin:0 auto;height:26px;padding:0 var(--s5);align-items:center;gap:var(--s3);overflow-x:auto;scrollbar-width:none;white-space:nowrap;font-size:11px;color:var(--text-3);font-variant-numeric:tabular-nums;border-bottom:1px solid var(--line)}
 #use::-webkit-scrollbar{display:none}
 body.has-use #use{display:flex}
@@ -391,7 +371,6 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 #use .k{font-weight:700;color:var(--text-2)}
 #use .r b{font-weight:600;color:var(--text-2);margin-right:4px}
 
-/* ---- machine card (machine.py via api/machine) ---- */
 .mc{background:var(--surface);border-radius:var(--r-l);padding:var(--s4) var(--s5);display:grid;gap:var(--s2)}
 .mc .mr{display:flex;align-items:center;gap:var(--s3);font-size:var(--t5);min-width:0}
 .mc .mr .k{width:72px;flex:none;color:var(--text-2);font-weight:600}
@@ -403,7 +382,6 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 #use .lv-a b,#use b.lv-a{color:var(--orange-ink)} #use .lv-r b,#use b.lv-r{color:var(--red-ink)}
 .row .sub.wait{color:var(--orange-ink)}
 
-/* ---- lane add ---- */
 .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .fold.add{color:var(--blue-ink)}
 .la-wrap{margin-top:var(--s4)}
@@ -421,7 +399,6 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 .la .bar{display:flex;justify-content:flex-end}
 .la .hint{padding:0 var(--s1)}
 
-/* ---- workspace extensions (window.dah) ---- */
 #nav .in.x{overflow-x:auto;scrollbar-width:none}
 #nav .in.x::-webkit-scrollbar{display:none}
 #nav .in.x button{min-width:56px}
@@ -459,7 +436,6 @@ body.has-use{--nav-h:calc(86px + env(safe-area-inset-bottom))}
 <script>
 'use strict';
 const BASE = location.pathname.replace(/\/old\/[^/]*$/, '/').replace(/[^/]*$/, '');
-// ---------- screen text (UI uses only these) ----------
 const UI = {
   en: {
     tabs: { hub: 'Hub', engine: 'Engine', lanes: 'Lanes', history: 'History' },
@@ -685,7 +661,6 @@ const UI = {
   },
 };
 const LANGS = { en: 'English', ko: '한국어', ja: '日本語', zh: '中文', es: 'Español' };
-// Product names stay as they are in every language.
 const RUNTIMES = { opencode: 'OpenCode', claude: 'Claude Code', codex: 'Codex' };
 const LANE_ID = /^[A-Za-z0-9_-]+$/;
 const TABS = ['hub', 'engine', 'lanes', 'history'];
@@ -708,7 +683,6 @@ const ICON = {
   warn: 'M12 9v4.5M12 17v.01M10.3 4.2L2.6 17.5A2 2 0 004.3 20.5h15.4a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z',
 };
 
-// ---------- language ----------
 let L = UI.en, LANG = '';
 function merge(a, b) {
   const o = { ...a };
@@ -722,7 +696,6 @@ function setLang(code) {
 }
 const baseLang = code => String(code || '').toLowerCase().split(/[-_]/)[0];
 function savedLang() { try { return localStorage.getItem('tower.lang') || ''; } catch (e) { return ''; } }
-// This device's pick, then the workspace language, then the browser's.
 function pickLang(server) { return [savedLang(), baseLang(server), baseLang(navigator.language)].find(c => UI[c]) || 'en'; }
 function chooseLang(c) {
   try { localStorage.setItem('tower.lang', c); } catch (e) { toast(L.msg.fail, true); }
@@ -730,7 +703,6 @@ function chooseLang(c) {
 }
 function fmt(s, v) { return String(s).replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? '')); }
 
-// ---------- state ----------
 const S = {
   data: null, raw: '', ok: null, loading: false, auth: false,
   view: 'hub', eng: null, engs: null, engsRaw: '', maps: {}, engBusy: false, item: null, lane: null, laneData: {}, menu: null, pushed: false, sheetKey: '', sheetId: null,
@@ -738,10 +710,8 @@ const S = {
   hist: { kind: 'decided', rows: [], more: false, loading: false, loaded: false },
   lb: { list: [], i: 0 },
 };
-// What a workspace's extra.js registered through window.dah (see "extensions" below).
 const X = { started: false, ready: false, queued: false, gen: 0, secs: {}, tabs: new Map(), states: [], fresh: [], wait: null };
 
-// ---------- DOM helpers ----------
 const $ = s => document.querySelector(s);
 function h(tag, attrs, ...kids) {
   const e = document.createElement(tag);
@@ -764,13 +734,11 @@ function svg(d, cls) {
   const p = document.createElementNS(ns, 'path'); p.setAttribute('d', d); s.append(p);
   return s;
 }
-// Rebuild a container only when its key changes (keeps horizontal scroll, focus and playing media).
 function paint(el, key, build) {
   if (!el || el._k === key) return;
   el._k = key;
   el.replaceChildren(...[build()].flat(Infinity).filter(x => x !== null && x !== undefined && x !== false && x !== ''));
 }
-// Build a view's fixed skeleton once per language (composers live here, so typed text survives polling).
 function shell(v, build) {
   if (v._lang === LANG) return;
   v._lang = LANG; v._k = null;
@@ -785,7 +753,6 @@ function toast(msg, err) {
   clearTimeout(toast.tm); toast.tm = setTimeout(() => { t.className = ''; }, 2600);
 }
 
-// ---------- formatting ----------
 function fmtT(s) {
   if (!s) return '';
   const d = new Date(s * 1000), p = n => String(n).padStart(2, '0');
@@ -813,7 +780,6 @@ function fmtTok(n) {
 function fmtCost(c) { return c > 0 && c < 0.01 ? '<$0.01' : '$' + c.toFixed(2); }
 const rtName = r => RUNTIMES[r] || r;
 
-// ---------- data helpers ----------
 const D = () => S.data;
 const lanes = () => (S.data && S.data.lanes) || [];
 function laneLabel(id) { const l = lanes().find(x => x.lane === id); return l ? (l.label || l.lane) : id; }
@@ -834,7 +800,6 @@ function normalize(j) {
   return j;
 }
 
-// ---------- server ----------
 class HttpError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 async function req(url, opt) {
   let r;
@@ -868,7 +833,6 @@ async function load() {
   if (S.again) load();
 }
 function refresh() { S.raw = ''; return load(); }
-// machine card and footer: api/machine at most every MACH_MS (an older tower without it answers 404: nothing shown)
 const MACH_MS = 10000;
 async function loadMachine() {
   if (S.auth || S.machBusy || (S.machAt && Date.now() - S.machAt < MACH_MS)) return;
@@ -891,7 +855,6 @@ async function loadWs() {
   renderTop();
   if (S.menu === 'ws') renderSheet(true);
 }
-// ---------- routing ----------
 function route() {
   const hs = location.hash.replace(/^#/, '');
   const mi = /^item-(\d+)$/.exec(hs), ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs), me = /^engine-([A-Za-z0-9_-]+)$/.exec(hs), m = mi || ml, prev = S.view;
@@ -914,10 +877,9 @@ function closeSheet() {
   else location.hash = S.view;
 }
 
-// ---------- render ----------
 function render() {
   const xt = xTab(S.view), builtin = TABS.includes(S.view);
-  if (!builtin && !xt && X.ready) S.view = 'hub';  // an extension tab this workspace no longer has
+  if (!builtin && !xt && X.ready) S.view = 'hub';
   renderTop(); renderNav(); renderChat();
   const v = viewEl(S.view);
   for (const el of [...TABS.map(t => $('#v-' + t)), ...[...X.tabs.values()].map(t => t.el), X.wait]) if (el) el.classList.toggle('hidden', el !== v);
@@ -966,7 +928,6 @@ function renderNav() {
     xt.map(t => btn('x-' + t.id, xIcon(t.icon), xLabel(t.label, t.id), 0))]);
 }
 
-// ---------- shared blocks ----------
 function sec(title, n, body, ext) {
   return h('section', { class: 'sec' },
     h('div', { class: 'sec-h' }, h('h2', null, title), n !== null && n !== undefined ? h('span', { class: 'n' }, n) : null,
@@ -1002,8 +963,6 @@ function cardList(list, emptyText) {
   return list.length ? h('div', { class: 'stack' }, list.map(itemCard)) : empty(emptyText);
 }
 
-// ---------- pinned chat ----------
-// One request box fixed above the nav on every tab; it writes to the hub. The textarea lives in the page, not in a view, so typing survives repaints.
 function renderChat() {
   const box = $('#chat'), ta = $('#chat-ta');
   box.classList.toggle('hidden', !S.data);
@@ -1042,7 +1001,6 @@ function memoRow(m) {
     reps.map((r, i) => h('div', { class: 'reply' }, h('div', { class: 'meta' }, h('span', null, L.label.reply), when(r.created)),
       clampToggle(`r${m.id}.${i}`, md(r.text)))));
 }
-// ---------- hub tab ----------
 function viewHub() {
   const v = $('#v-hub'), d = D(), K = tick();
   shell(v, () => [h('div', { id: 'hub-doing' }), h('div', { id: 'hub-asks' }), h('div', { id: 'hub-items' }), h('div', { id: 'hub-handling' }),
@@ -1057,7 +1015,6 @@ function viewHub() {
   paint($('#hub-handling'), K + S.hubOpen + JSON.stringify(side), () => side.length ? handling(side) : null);
   paint($('#hub-reach'), LANG + d.local_only + !!S.busy.reach, () => d.local_only ? reachCard() : null);
 }
-// ---------- menus ----------
 function menuHead(title) {
   return h('div', { class: 'sh' }, h('span', { class: 'grab' }), h('span', { class: 'ttl' }, title),
     h('button', { class: 'x', type: 'button', 'aria-label': L.btn.close, onclick: closeSheet }, svg(ICON.close)));
@@ -1100,7 +1057,6 @@ function reachCard() {
     h('div', { class: 'tx' }, L.reach.body), h('div', { class: 'bar' }, btn)));
 }
 
-// ---------- lanes tab ----------
 function viewLanes() {
   const v = $('#v-lanes'), d = D(), K = tick();
   // The lane form sits outside every painted container, so typed values survive polling.
@@ -1134,7 +1090,6 @@ function laneCard(l) {
     taskTokLine(l.task_tokens),
     useLine(l.usage));
 }
-// ---------- AI Engine tab ----------
 function curEng() { const l = S.engs || []; return (l.find(e => e.id === S.eng) || l[0] || {}).id || null; }
 function pickEngine(id) { S.eng = id; location.hash = 'engine-' + id; }
 async function loadEngine() {
@@ -1246,7 +1201,6 @@ function useLine(u) {
   if (!u || !((u.tokens_in || 0) + (u.tokens_out || 0))) return null;
   return h('div', { class: 'meta' }, fmt(L.use.today, { i: fmtTok(u.tokens_in), o: fmtTok(u.tokens_out) }) + (isNum(u.cost) ? ' · ' + fmtCost(u.cost) : ''));
 }
-// ---------- machine (api/machine: machine.py graded against this machine, why tasks wait, optional Claude percent) ----------
 const LV = { g: 'rt-green', a: 'rt-amber', r: 'rt-red' };
 function lvChip(lv) { return lv ? rtChip(LV[lv] ? LV[lv].slice(3) : null, L.mc[lv]) : rtChip(null, L.mc.unknown); }
 function num(v, nd) { return isNum(v) ? (nd ? v.toFixed(nd) : String(Math.round(v))) : null; }
@@ -1281,7 +1235,6 @@ function useMachine() {
   }
   return out;
 }
-// ---------- usage (a thin line under every tab, above the nav) ----------
 function renderUse() {
   const d = D(), list = d && d.usage && Array.isArray(d.usage.runtimes) ? d.usage.runtimes : [];
   const shown = list.filter(r => (r.tokens_in || 0) + (r.tokens_out || 0) > 0);
@@ -1293,7 +1246,6 @@ function renderUse() {
   $('#use').setAttribute('title', L.use.hint);
   $('#use').setAttribute('aria-label', L.sec.usage);
 }
-// ---------- lane cap ----------
 function capStepper(cap) {
   const max = cap.max > 0 ? cap.max : 10, n = Math.max(1, Math.min(max, cap.cap || 1)), busy = !!S.busy.cap;
   const b = (dir, icon, label, off) => h('button', { type: 'button', 'aria-label': label, disabled: busy || off, onclick: () => setCap(n + dir, dir) }, svg(icon));
@@ -1314,7 +1266,6 @@ async function setCap(n, dir) {
   catch (e) { if (e.status !== 401) toast(e.message, true); }
   S.busy.cap = false; refresh();
 }
-// ---------- lane add ----------
 function laneAdd() {
   const d = D(), rts = Array.isArray(d.runtimes) && d.runtimes.length ? d.runtimes : Object.keys(RUNTIMES);
   const def = rts.includes(d.default_runtime) ? d.default_runtime : rts[0], st = { rt: def, busy: false };
@@ -1354,7 +1305,7 @@ function laneAdd() {
     idMsg.classList.toggle('err', !!err);
     if (err) id.setAttribute('aria-invalid', 'true'); else id.removeAttribute('aria-invalid');
     rtBtns.forEach((b, i) => { b.classList.toggle('on', rts[i] === st.rt); b.setAttribute('aria-pressed', String(rts[i] === st.rt)); });
-    agentRow.classList.toggle('hidden', st.rt === 'codex');  // codex has no agents
+    agentRow.classList.toggle('hidden', st.rt === 'codex');
     btn.disabled = st.busy || !id.value.trim() || !!err || !role.value.trim();
   }
   function memoText() {
@@ -1362,7 +1313,6 @@ function laneAdd() {
       agent: st.rt === 'codex' ? '' : agent.value.trim(), role: role.value.trim() };
     const arg = s => /^[\w./:@+-]+$/.test(s) ? s : JSON.stringify(s);
     v.flags = (v.label ? ` --label ${JSON.stringify(v.label)}` : '') + (v.model ? ` --model ${arg(v.model)}` : '') + (v.agent ? ` --agent ${arg(v.agent)}` : '');
-    // Drop the line of every optional field left empty.
     return L.lane.memo.split('\n').filter(ln => !['label', 'model', 'agent'].some(k => !v[k] && ln.includes(`{${k}}`))).map(ln => fmt(ln, v)).join('\n');
   }
   btn.addEventListener('click', async () => {
@@ -1401,7 +1351,6 @@ function fileChip(p) {
   const txt = TXT.test(p) || VID.test(p);
   return h('a', { href: fileUrl(p), target: txt ? '_blank' : null, rel: txt ? 'noopener' : null, download: txt ? null : fname(p) }, fname(p));
 }
-// ---------- markdown (escape first, then a small safe subset) ----------
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
 function inl(s) {
   return esc(s).split(/(`[^`]+`)/).map((p, i) => i % 2 ? '<code>' + p.slice(1, -1) + '</code>'
@@ -1436,7 +1385,6 @@ function md(text) {
   return el;
 }
 
-// ---------- item sheet ----------
 function draft(it) { return S.drafts[it.id] || (S.drafts[it.id] = { choice: null, picks: [], note: '' }); }
 function picks(it, d) { return it.multi ? d.picks : d.choice ? [d.choice] : []; }
 function canAct(it) { return it.state === 'open' && it.audience === 'human'; }
@@ -1602,7 +1550,6 @@ async function decide(it, verdict) {
     renderSheet(true);
   }
 }
-// ---------- history tab ----------
 function resetHist(kind) { S.hist = { kind, rows: [], more: false, loading: false, loaded: false }; }
 function viewHistory() {
   const v = $('#v-history'), d = D();
@@ -1638,7 +1585,7 @@ async function loadHist() {
   H.loading = true; paintHist();
   try {
     const j = await get(BASE + `api/history?kind=${encodeURIComponent(H.kind)}&offset=${H.rows.length}`);
-    if (S.hist !== H) return;  // switched kind meanwhile
+    if (S.hist !== H) return;
     const rows = (j && j.rows) || [];
     if (H.kind === 'decided') for (const it of rows) S.extra[it.id] = it;
     H.rows.push(...rows); H.more = !!(j && j.more); H.loaded = true;
@@ -1657,7 +1604,6 @@ function decidedRow(it) {
     svg(ICON.chev, 'chev'));
 }
 
-// ---------- login ----------
 function needLogin() {
   if (S.auth) return;
   S.auth = true;
@@ -1691,7 +1637,6 @@ async function logout() {
   needLogin();
 }
 
-// ---------- attachment viewer ----------
 function openLb(list, i) { S.lb = { list, i: Math.max(0, i) }; paintLb(); $('#lb').classList.add('open'); }
 function closeLb() { $('#lb').classList.remove('open'); $('#lb').replaceChildren(); }
 function lbStep(n) { const len = S.lb.list.length; if (len < 2) return; S.lb.i = (S.lb.i + n + len) % len; paintLb(); }
@@ -1707,17 +1652,6 @@ function paintLb() {
     h('div', { class: 'lf' }, h('span', { class: 'nm' }, fname(p)), h('a', { href: fileUrl(p), target: '_blank', rel: 'noopener' }, L.btn.open)));
 }
 
-// ---------- extensions ----------
-// A workspace extends this board from .tower/: the server reports extensions.{css,js} in api/state and serves the
-// files at x/<path>, its routes at api/x/<name>. After the first state load the board adds x/extra.css and
-// x/extra.js (once); extra.js talks to the board only through window.dah:
-//   dah.addSection(tab, id, render)  tab: 'hub' | 'lanes' | 'history'; painted after that tab's own sections
-//   dah.addTab(id, label, icon, render)  a nav tab after the built-in ones, opened at #x-<id>
-//   dah.onState(fn)  fn(state) after every state load (and once right after registering)
-// render(state) returns a Node, a string (shown as text), an array of those, or null. The board calls it on every
-// render of a visible tab and repaints only when its output changed, so an unchanged section keeps its scroll, focus
-// and typed text. Return the same Node again to keep it mounted and update it yourself. A callback that throws gets
-// a small error box there; the rest of the board carries on.
 const X_ID = /^[A-Za-z0-9_-]+$/, X_VIEW = /^x-[A-Za-z0-9_-]+$/;
 function xTab(view) { return X_VIEW.test(view) ? X.tabs.get(view.slice(2)) || null : null; }
 function xBad(msg) { console.error('[dah] ' + msg); return false; }
@@ -1730,7 +1664,6 @@ function xIcon(icon) {
   if (icon && icon.nodeType) return icon.cloneNode(true);
   return svg(typeof icon === 'string' && icon.trim() ? icon : ICON.ext);
 }
-// What a render returned, as text: equal text means equal output, so the painted DOM can stay.
 function xKey(x) {
   if (x === null || x === undefined || x === false || x === '') return '';
   if (Array.isArray(x)) return x.map(xKey).join('\u0001');
@@ -1746,12 +1679,12 @@ function xErr(name, msg) {
 function xPaint(el, name, fn) {
   try {
     const out = fn(S.data);
-    if (out && out.nodeType && el.childNodes.length === 1 && el.firstChild === out) el._k = null;  // kept mounted by the extension
+    if (out && out.nodeType && el.childNodes.length === 1 && el.firstChild === out) el._k = null;
     else paint(el, '=' + xKey(out), () => out);
     el._xe = '';
   } catch (e) {
     const msg = String((e && e.message) || e || 'Error');
-    if (el._xe !== msg) { el._xe = msg; console.error(`[dah] extension "${name}" failed:`, e); }  // once per new error, not every poll
+    if (el._xe !== msg) { el._xe = msg; console.error(`[dah] extension "${name}" failed:`, e); }
     paint(el, '!' + LANG + msg, () => xErr(name, msg));
   }
 }
@@ -1759,7 +1692,7 @@ function xSections(tab, v) {
   const reg = X.secs[tab];
   if (!reg || !reg.size) return;
   const slot = v._xs || (v._xs = h('div', { class: 'x-slot' }));
-  if (v.lastChild !== slot) v.append(slot);  // after the tab's own sections, also once its shell was rebuilt
+  if (v.lastChild !== slot) v.append(slot);
   let i = 0;
   for (const r of reg.values()) {
     if (slot.children[i] !== r.el) slot.insertBefore(r.el, slot.children[i] || null);
@@ -1767,7 +1700,6 @@ function xSections(tab, v) {
     i++;
   }
 }
-// Registrations re-render once, after the current script turn.
 function xQueue() {
   if (X.queued) return;
   X.queued = true;
@@ -1819,7 +1751,6 @@ function onState(fn) {
   xQueue();
   return true;
 }
-// Paths are relative to this workspace's board: dah.get('api/x/stats') → <BASE>/api/x/stats.
 const xUrl = p => BASE + String(p || '').replace(/^\/+/, '');
 window.dah = {
   get version() { return (S.data && S.data.version) || ''; },
@@ -1834,7 +1765,6 @@ window.dah = {
   addSection, addTab, onState,
 };
 
-// ---------- events + start ----------
 (() => {
   const lb = $('#lb'); let x0 = null, y0 = null;
   lb.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });

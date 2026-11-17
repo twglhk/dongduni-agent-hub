@@ -96,7 +96,7 @@ class ClaudeArgvTest(unittest.TestCase):
             a = call["argv"]
             self.assertEqual(a[a.index("--model") + 1], "opus")
             self.assertEqual(a[a.index("--effort") + 1], "high")
-        rt.open("hub", "plain")  # a task without the lines goes back to the lane's own model
+        rt.open("hub", "plain")
         wait_for(lambda: rt.status("hub") == "idle")
         a = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])["argv"]
         self.assertEqual(a[a.index("--model") + 1], "sonnet")

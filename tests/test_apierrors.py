@@ -1,5 +1,3 @@
-"""API-error push (agent_hub/apierrors.py) from the StopFailure lines the lane hook writes, and its engine tick."""
-
 from __future__ import annotations
 
 import json
@@ -67,7 +65,7 @@ class Watch(unittest.TestCase):
         return A.EventWatch(self.root, lambda: self.now)
 
     def test_starts_at_the_end_then_pushes_each_kind_once_until_the_cool_down(self) -> None:
-        self.append("docs", EXPIRED)  # before the tower started: old news
+        self.append("docs", EXPIRED)
         w = self.watch()
         self.assertEqual(w.poll(), [])
         self.append("docs", EXPIRED + EXPIRED + REFRESH + OVERLOADED + STOP + "not json StopFailure\n")
@@ -95,7 +93,7 @@ class Watch(unittest.TestCase):
         self.assertEqual(len(w.poll()), 1)
         short = fail("rate_limit")
         self.assertLess(len(short), len(BILLING))
-        (self.root / "docs" / "events.jsonl").write_text(short, encoding="utf-8")  # shorter than before: re-read
+        (self.root / "docs" / "events.jsonl").write_text(short, encoding="utf-8")
         self.assertEqual([k for k, _, _ in w.poll()], ["rate"])
 
 

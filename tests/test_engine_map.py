@@ -24,7 +24,7 @@ class SnapshotTest(unittest.TestCase):
     def setUp(self) -> None:
         self.home, self.cfg = make_engine_home()
         self.skills = self.home / ".agents/skills"
-        self.t0 = time.mktime((2026, 11, 4, 12, 0, 0, 0, 0, -1))  # a Wednesday
+        self.t0 = time.mktime((2026, 11, 4, 12, 0, 0, 0, 0, -1))
 
     def live(self, now: float) -> dict:
         return engines.live_snapshot(self.cfg, "anim", now)
@@ -56,17 +56,17 @@ class SnapshotTest(unittest.TestCase):
 
     def test_weekly_writes_once_per_week_and_keeps_old(self) -> None:
         self.assertEqual(len(engines.weekly(self.cfg, self.t0)), 1)
-        self.assertEqual(engines.weekly(self.cfg, self.t0 + DAY), [])  # same ISO week
+        self.assertEqual(engines.weekly(self.cfg, self.t0 + DAY), [])
         self.assertEqual(len(engines.weekly(self.cfg, self.t0 + 7 * DAY)), 1)
         self.assertEqual([p.stem for p in engines.snap_files(self.cfg, "anim")], ["2026-W45", "2026-W46"])
 
     def test_baseline_is_the_last_snapshot_of_an_earlier_week(self) -> None:
         self.assertIsNone(engines.baseline(self.cfg, "anim", self.t0))
         engines.weekly(self.cfg, self.t0)
-        self.assertEqual(engines.baseline(self.cfg, "anim", self.t0 + DAY)["at"], self.t0)  # only this week's: the oldest there is
+        self.assertEqual(engines.baseline(self.cfg, "anim", self.t0 + DAY)["at"], self.t0)
         (self.skills / "layout" / "SKILL.md").write_text("x")
         engines.weekly(self.cfg, self.t0 + 7 * DAY)
-        self.assertEqual(engines.baseline(self.cfg, "anim", self.t0 + 8 * DAY)["at"], self.t0)  # last week's, not this week's
+        self.assertEqual(engines.baseline(self.cfg, "anim", self.t0 + 8 * DAY)["at"], self.t0)
 
     def test_broken_snapshot_file_is_ignored(self) -> None:
         engines.weekly(self.cfg, self.t0)
@@ -97,7 +97,7 @@ class TickHookTest(unittest.TestCase):
         self.assertEqual([p.stem for p in engines.snap_files(cfg, "anim")], ["2026-W45"])
         (home / ".agents/skills/layout/SKILL.md").write_text("later")
         now[0] += 600
-        e.tick()  # inside the hour: no second look, and the same week has its file anyway
+        e.tick()
         now[0] += 7 * DAY
         e.tick()
         self.assertEqual([p.stem for p in engines.snap_files(cfg, "anim")], ["2026-W45", "2026-W46"])
@@ -198,7 +198,7 @@ class MapApiTest(unittest.TestCase):
 class BoardTextTest(unittest.TestCase):
     def test_engine_strings_exist_in_all_five_languages(self) -> None:
         html = BOARD.read_text(encoding="utf-8")
-        used = set(re.findall(r"\bE\.(\w+)", html[html.index("// ---------- AI Engine tab"):html.index("async function loadLane")]))
+        used = set(re.findall(r"\bE\.(\w+)", html[html.index("async function loadEngine"):html.index("async function loadLane")]))
         used |= {"c_" + k for k in ("lane_added", "lane_removed", "skill_added", "skill_changed", "skill_removed", "row_added", "row_removed", "process", "card")}
         used |= {"s_" + k for k in ("new", "best", "good", "fix", "rework")}
         ui = html[html.index("const UI = {"):html.index("const LANGS =")]
@@ -221,7 +221,6 @@ if __name__ == "__main__":
 
 
 class TwoEnginesSkillsTest(unittest.TestCase):
-    """Engines sharing one skills folder each list only their own skills; a skill both name is shared."""
 
     def setUp(self) -> None:
         self.home, _ = make_engine_home()
