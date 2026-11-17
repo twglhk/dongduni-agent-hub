@@ -228,13 +228,20 @@ def main(argv: list[str] | None = None) -> int:
 # ---------------------------------------------------------------- wiring
 
 HOOK_FILE = Path(__file__).resolve()
+_WINDOWS = os.name == "nt"
 
 
 def hook_command() -> str:
-    """The shell command Claude Code runs for each hook: this interpreter on this file."""
-    if os.name == "nt":
-        return f'"{sys.executable}" "{HOOK_FILE}"'
-    return shlex.join([sys.executable, str(HOOK_FILE)])
+    """The shell command Claude Code runs for each hook.
+    Installed package: `python -m agent_hub.hooks`, never a path into site-packages. A reinstall moves or deletes the
+    package files while open lane sessions keep the command they were opened with; a missing script makes python exit
+    2, which Claude Code reads as "block this tool call", so every call of every open session would be refused. `-m`
+    finds the module wherever the reinstall put it, and a missing module exits 1, which does not block.
+    Run from a clone (the package is not importable from this interpreter's own prefix): this file by path."""
+    installed = HOOK_FILE.is_relative_to(Path(sys.prefix).resolve())
+    if _WINDOWS:
+        return f'"{sys.executable}" -m agent_hub.hooks' if installed else f'"{sys.executable}" "{HOOK_FILE}"'
+    return shlex.join([sys.executable, "-m", "agent_hub.hooks"] if installed else [sys.executable, str(HOOK_FILE)])
 
 
 def claude_hooks() -> dict[str, Any]:

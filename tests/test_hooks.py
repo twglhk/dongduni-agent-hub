@@ -95,7 +95,7 @@ class Pretool(unittest.TestCase):
 
     def test_a_deny_carries_a_waiting_urgent_message_too(self) -> None:
         hooks.post_urgent(self.home, "docs", "stop")
-        code, _, err = hooks.pretool(self.call(command="git stash"), self.home, "docs")
+        code, _, err = hooks.pretool({**self.call(command="git stash"), "cwd": tempfile.gettempdir()}, self.home, "docs")
         self.assertEqual(code, 2)
         self.assertTrue(err.startswith("URGENT from the hub"))
         self.assertIn("Git sweep gate refused", err)
@@ -113,7 +113,7 @@ class Pretool(unittest.TestCase):
 
     def test_gates_can_be_turned_off_per_lane(self) -> None:
         with mock.patch.dict(os.environ, {"DAH_GATES": "off"}):
-            self.assertEqual(hooks.pretool(self.call(command="git stash"), self.home, "docs")[0], 0)
+            self.assertEqual(hooks.pretool({**self.call(command="git stash"), "cwd": tempfile.gettempdir()}, self.home, "docs")[0], 0)
 
     def test_event_log_is_trimmed(self) -> None:
         d = hooks.lane_dir(self.home, "docs")
@@ -201,6 +201,29 @@ class Wiring(unittest.TestCase):
         self.assertIn('"tool.execute.before"', text)
         self.assertIn("r.status === 2", text)
         self.assertNotIn("__HOOK__", text)
+
+
+class HookCommand(unittest.TestCase):
+    """hook_command: the module in an installed package, the file path in a clone; quoting per OS."""
+
+    def test_clone_runs_the_file_by_path(self) -> None:
+        with mock.patch.object(sys, "prefix", tempfile.gettempdir() + "/elsewhere-prefix"):
+            cmd = hooks.hook_command()
+        self.assertNotIn("-m agent_hub.hooks", cmd)
+        self.assertIn(str(hooks.HOOK_FILE), cmd)
+
+    def test_installed_package_runs_as_a_module(self) -> None:
+        with mock.patch.object(sys, "prefix", str(hooks.HOOK_FILE.parents[2])):
+            cmd = hooks.hook_command()
+        self.assertTrue(cmd.endswith("-m agent_hub.hooks"), cmd)
+        self.assertNotIn(str(hooks.HOOK_FILE), cmd)
+
+    def test_windows_quotes_the_interpreter_in_both_branches(self) -> None:
+        with mock.patch.object(hooks, "_WINDOWS", True), mock.patch.object(sys, "executable", "C:\\Program Files\\Py\\python.exe"):
+            with mock.patch.object(sys, "prefix", str(hooks.HOOK_FILE.parents[2])):
+                self.assertEqual(hooks.hook_command(), '"C:\\Program Files\\Py\\python.exe" -m agent_hub.hooks')
+            with mock.patch.object(sys, "prefix", tempfile.gettempdir() + "/elsewhere-prefix"):
+                self.assertEqual(hooks.hook_command(), f'"C:\\Program Files\\Py\\python.exe" "{hooks.HOOK_FILE}"')
 
 
 if __name__ == "__main__":
