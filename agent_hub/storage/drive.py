@@ -14,6 +14,7 @@ from .base import Opened, Receiver, Slot, StorageError, View
 COPY_SECONDS = 3600
 QUICK_SECONDS = 60
 READ = 1 << 16
+NOT_FOUND = 3
 MISSING = "rclone is not installed: install it from https://rclone.org/install/, run `rclone config` to add the remote, and restart the board"
 
 
@@ -60,6 +61,18 @@ class Drive(Receiver):
         except ValueError:
             return None
         return rows[0] if rows and not rows[0].get("IsDir") else None
+
+    def used_bytes(self) -> int:
+        got = self.run("size", "--json", self.target("uploads"))
+        if got.returncode == NOT_FOUND:
+            return 0
+        try:
+            return int(json.loads(got.stdout or b"{}")["bytes"]) if got.returncode == 0 else self._size_failed(got)
+        except (ValueError, KeyError, TypeError):
+            raise StorageError("rclone size gave an answer the board cannot read") from None
+
+    def _size_failed(self, got: subprocess.CompletedProcess[bytes]) -> int:
+        raise StorageError("rclone could not measure the attachments folder: " + got.stderr.decode(errors="replace").strip()[:200])
 
     def settle(self, slot: Slot, report: Any) -> str:
         have = self.have(slot)

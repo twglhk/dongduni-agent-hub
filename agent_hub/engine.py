@@ -6,7 +6,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import accounthold, engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel
+from . import accounthold, engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel, uploads
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -1335,7 +1335,7 @@ class Engine:
             lines = []
             for m in msgs:
                 if m["kind"] == "memo":
-                    lines.append(f"• Request #{m['id']} from {m['sender']}: {m['text']} "
+                    lines.append(f"• Request #{m['id']} from {m['sender']}: {uploads.for_session(self.cfg, m['text'])} "
                                  f"(answer with `dah memo reply {m['id']} \"...\"`)")
                 else:
                     lines.append(f"• {m['text']}")

@@ -32,14 +32,27 @@ KEY_AT_END = re.compile(r"(?:^|/)(" + TAIL.pattern + ")$")
 TEXT = {
     "ko": {"head": "첨부 {n}개 ({where}, 보드에서 바로 보기):", "fail": "첨부 실패 {f}개 / {n}개:",
            "orig": "원래 이름", "only": "(첨부만 보냄)", "cut": "올리기가 끝나지 않음", "size": "크기가 다름",
-           "store": "저장하지 못함",
-           "local": "작업 폴더 {root}에 저장됨", "drive": "rclone 원격에 저장됨", "s3": "S3에 저장됨"},
+           "store": "저장하지 못함", "root": "경로는 작업 폴더 {root} 기준",
+           "local": "작업 폴더에 저장됨", "drive": "rclone 원격에 저장됨", "s3": "S3에 저장됨"},
     "en": {"head": "{n} attachment(s) ({where}, viewable on the board):", "fail": "{f} of {n} attachment(s) failed:",
            "orig": "original name", "only": "(attachments only)", "cut": "upload did not finish",
-           "size": "size differs", "store": "could not be stored",
-           "local": "saved in the workspace under {root}", "drive": "stored on an rclone remote", "s3": "stored in S3"},
+           "size": "size differs", "store": "could not be stored", "root": "paths are relative to the workspace folder {root}",
+           "local": "saved in the workspace folder", "drive": "stored on an rclone remote", "s3": "stored in S3"},
+    "ja": {"head": "添付 {n} 件（{where}、ボードでそのまま表示）:", "fail": "添付の失敗 {f} 件 / {n} 件:",
+           "orig": "元の名前", "only": "（添付のみ送信）", "cut": "アップロードが完了しませんでした",
+           "size": "サイズが異なります", "store": "保存できませんでした", "root": "パスは作業フォルダ {root} からの相対パス",
+           "local": "作業フォルダに保存済み", "drive": "rclone のリモートに保存済み", "s3": "S3 に保存済み"},
+    "zh": {"head": "附件 {n} 个（{where}，可在看板中直接查看）：", "fail": "附件失败 {f} 个 / 共 {n} 个：",
+           "orig": "原文件名", "only": "（仅发送附件）", "cut": "上传未完成",
+           "size": "大小不一致", "store": "无法保存", "root": "路径相对于工作文件夹 {root}",
+           "local": "已保存在工作文件夹中", "drive": "已保存到 rclone 远端", "s3": "已保存到 S3"},
+    "es": {"head": "{n} adjunto(s) ({where}, visibles en el tablero):", "fail": "{f} de {n} adjunto(s) fallaron:",
+           "orig": "nombre original", "only": "(solo adjuntos)", "cut": "la subida no terminó",
+           "size": "el tamaño no coincide", "store": "no se pudo guardar", "root": "las rutas son relativas a la carpeta de trabajo {root}",
+           "local": "guardado en la carpeta de trabajo", "drive": "guardado en un remoto de rclone", "s3": "guardado en S3"},
 }
 _lock = threading.Lock()
+_start_lock = threading.Lock()
 _rid_locks: dict[int, threading.Lock] = {}
 _providers: dict[tuple[str, str], Storage] = {}
 
@@ -150,9 +163,20 @@ def _texts(cfg: Config) -> dict[str, str]:
     return TEXT.get(cfg.lang.split("-")[0].lower(), TEXT["en"])
 
 
-def _room(cfg: Config, p: Storage, incoming: int) -> None:
+def _declared(cfg: Config, p: Storage) -> int:
+    total = 0
+    for path in _dir(cfg).glob("*.json") if _dir(cfg).is_dir() else ():
+        try:
+            files = json.loads(path.read_text(encoding="utf-8"))["files"]
+            total += sum(max(0, int(f["size"]) - (p.have(_slot(f)) if p.live_usage else 0)) for f in files)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return total
+
+
+def _room(cfg: Config, p: Storage, incoming: int, reserved: int = 0) -> None:
     total_mb = cfg.uploads.get("max_total_mb", 0)
-    if total_mb and p.used_bytes() + incoming > total_mb * 1024 * 1024:
+    if total_mb and p.used_bytes() + reserved + incoming > total_mb * 1024 * 1024:
         raise UploadError(f"the attachments folder is full (uploads.max_total_mb {total_mb})")
 
 
@@ -163,7 +187,12 @@ def start(cfg: Config, s: Store, who: str, hub: str, text: str, files: Any) -> d
         p.check()
     except StorageError as e:
         raise UploadError(str(e)) from None
-    _room(cfg, p, sum(f["size"] for f in checked))
+    with _start_lock:
+        return _begin(cfg, s, p, who, hub, text, checked)
+
+
+def _begin(cfg: Config, s: Store, p: Storage, who: str, hub: str, text: str, checked: list[dict[str, Any]]) -> dict[str, Any]:
+    _room(cfg, p, sum(f["size"] for f in checked), _declared(cfg, p))
     text = text or _texts(cfg)["only"]
     rid = s.push(HOLD + hub, who, "memo", text)
     now = s.clock()
@@ -206,6 +235,8 @@ def chunk(cfg: Config, s: Store, rid: int, who: str, n: Any, offset: Any, data: 
         f = _file(plan, n)
         if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
             raise UploadError("offset must be a whole number")
+        if p.live_usage:
+            _room(cfg, p, len(data))
         try:
             received = p.receive(_slot(f), offset, data)
         except OutOfOrder as e:
@@ -238,7 +269,7 @@ def _settle(cfg: Config, s: Store, plan: dict[str, Any], results: dict[int, Any]
     bad = [(f, why) for f, why in rows if why]
     lines = [plan["text"], ""]
     if ok:
-        where = t[p.name].format(root=cfg.workdir)
+        where = t[p.name]
         lines.append(t["head"].format(n=len(ok), where=where))
         lines += [f"- {p.locator(f['key'])} · {f['type']} · {mb(f['size'])} ({t['orig']}: {f['name']})" for f in ok]
     if bad:
@@ -291,6 +322,12 @@ def resolve(key: str) -> str:
     if not m or ".." in key.split("/"):
         raise UploadError("not an attachment path")
     return m.group(1)
+
+
+def for_session(cfg: Config, text: str) -> str:
+    if not TAIL.search(text):
+        return text
+    return f"{text}\n({_texts(cfg)['root'].format(root=cfg.workdir)})"
 
 
 def mb(n: int) -> str:
