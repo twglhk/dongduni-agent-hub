@@ -5,15 +5,16 @@ import sys
 import time
 
 from .. import stagemodel
-from ..config import HUB, INFRA, Config
+from ..config import HUB, INFRA, Config, base_lane
 from ..engine import clip
+from ..requester import escalation_audience, infra_reply_text, member_name, requester_for
 from ..store import Store, StoreError
 from .common import TowerError, cfg, need, need_team, store, verdict_text, who
 
 
 def cmd_task(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
+    me = need(args, c, HUB)
     need_team(c, args.lane)
     from ..stagemodel import library_for, missing_lines, problems, resolve, table_for
     if gap := missing_lines(args.brief):
@@ -34,13 +35,27 @@ def cmd_task(args: argparse.Namespace) -> None:
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
     try:
-        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable)
+        asker = requester_for(c, s, me, args.request, args.for_)
+        hub = c.hub_of(asker) if asker and me == HUB else me
+        tid = s.add_task(args.lane, args.title, args.brief, c.lanes[args.lane].engine, args.deliverable,
+                         requester=asker, hub=hub)
     except StoreError as e:
         raise TowerError(str(e))
     s.update_task(tid, **engines_mod.line_fields(args.brief, processes.lane_full(c, args.lane)))
     live = s.live_task(args.lane)
     print(f"task #{tid} → {args.lane}"
-          + (f" (after task #{live['id']} wraps)" if live else ""))
+          + (f" (after task #{live['id']} wraps)" if live else "")
+          + (f" · for {asker}" + (f", news to {hub}" if hub != me else "") if asker else ""))
+
+
+def cmd_task_bump(args: argparse.Namespace) -> None:
+    c = cfg()
+    need(args, c, HUB)
+    try:
+        task = store(c).bump_task(args.id)
+    except StoreError as e:
+        raise TowerError(str(e))
+    print(f"task #{args.id} is first in the queue: the next free session of {base_lane(task['lane'])} takes it")
 
 
 def _gate_line(c: Config, lane: str, brief: str) -> None:
@@ -83,8 +98,8 @@ def cmd_stage(args: argparse.Namespace) -> None:
 
 def cmd_doing(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
-    store(c).set_lane(HUB, doing=clip(args.text, 80), doing_at=time.time())
+    me = need(args, c, HUB)
+    store(c).set_lane(me, doing=clip(args.text, 80), doing_at=time.time())
     print("Shown on the board.")
 
 
@@ -104,7 +119,7 @@ def cmd_scratch(args: argparse.Namespace) -> None:
 
 def cmd_tell(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
+    me = need(args, c, HUB)
     if getattr(args, "urgent", False):
         from ..hooks import urgent_tell
         try:
@@ -117,29 +132,29 @@ def cmd_tell(args: argparse.Namespace) -> None:
     task = s.live_task(args.lane)
     if not task:
         raise TowerError(f"{args.lane} has no running task; use `dah task`")
-    s.push(args.lane, HUB, "tell", f"From the hub: {args.text}", task["id"])
+    s.push(args.lane, me, "tell", f"From the hub: {args.text}", task["id"])
     print(f"→ {args.lane} task #{task['id']} (delivered when idle)")
 
 
 def cmd_wrap(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
+    me = need(args, c, HUB)
     need_team(c, args.lane)
     s = store(c)
     task = s.live_task(args.lane)
     if not task:
         raise TowerError(f"{args.lane} has no running task")
     s.update_task(task["id"], state="wrapping")
-    s.push(args.lane, HUB, "wrap", f"Wrap up task #{task['id']}: remove temp files, save what the next session needs, "
+    s.push(args.lane, me, "wrap", f"Wrap up task #{task['id']}: remove temp files, save what the next session needs, "
            f"then `dah report wrapped \"one line\"`. {args.note or ''}".strip(), task["id"])
     print(f"→ {args.lane} wrap requested")
 
 
 def cmd_decide(args: argparse.Namespace) -> None:
     c = cfg()
-    need(args, c, HUB)
+    me = need(args, c, HUB)
     try:
-        it = store(c).decide(args.id, args.verdict, HUB, args.choice, args.note or "", args.basis or "")
+        it = store(c).decide(args.id, args.verdict, me, args.choice, args.note or "", args.basis or "")
     except StoreError as e:
         raise TowerError(str(e))
     print(f"#{it['id']} {verdict_text(it)}; the tower routes it.")
@@ -149,13 +164,12 @@ def cmd_escalate(args: argparse.Namespace) -> None:
     c = cfg()
     need(args, c, HUB)
     s = store(c)
-    if args.to and args.to not in {m["name"] for m in s.members()}:
-        raise TowerError(f"no member {args.to} (`dah member list`)")
     try:
-        s.escalate(args.id, args.why, args.to)
+        to = escalation_audience(s, s.item(args.id), args.to, c.requester)
+        s.escalate(args.id, args.why, to)
     except StoreError as e:
         raise TowerError(str(e))
-    print(f"#{args.id} → humans" + (f" ({args.to})" if args.to else "") + ". Carry on with other work.")
+    print(f"#{args.id} → humans" + (f" ({to} only)" if to else " (everyone)") + ". Carry on with other work.")
 
 
 def cmd_cancel(args: argparse.Namespace) -> None:
@@ -177,14 +191,26 @@ def cmd_memo(args: argparse.Namespace) -> None:
     s = store(c)
     try:
         if args.sub == "reply":
-            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes))
+            memo = s.memo(args.id)
+            asker = member_name(s, str(memo["sender"])) if c.requester else None
+            card = s.reply_memo(args.id, args.text, me, set(c.all_lanes),
+                                asker if asker in {m["name"] for m in s.members()} else None)
             print(f"Answered #{args.id}; posted as review card #{card} for humans to confirm." if card
                   else f"Answered #{args.id}; it shows on the board.")
+            if me == INFRA and c.requester and c.is_hub(str(memo["sender"])):
+                s.push(str(memo["sender"]), INFRA, "infra_reply", infra_reply_text(args.id, args.text),
+                       item_id=args.id)
+        elif args.sub == "bump":
+            if not c.is_hub(me):
+                raise TowerError("only the hub reorders the infra queue")
+            s.bump_message(args.id, INFRA)
+            print(f"#{args.id} is first in the infra queue: the next free infra session takes it")
         elif args.sub == "forward":
             if me != INFRA:
                 raise TowerError("only infra forwards memos")
             memo = s.memo(args.id)
-            s.push(HUB, memo["sender"], "memo", f"{memo['text']} (forwarded by infra from memo #{args.id})")
+            back = memo["sender"] if c.is_hub(memo["sender"]) else HUB
+            s.push(back, memo["sender"], "memo", f"{memo['text']} (forwarded by infra from memo #{args.id})")
             s.reply_memo(args.id, "Passed to the hub.", INFRA)
             print(f"memo #{args.id} → hub")
         else:
@@ -195,7 +221,7 @@ def cmd_memo(args: argparse.Namespace) -> None:
 
 def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, model: str | None = None,
                effort: str | None = None) -> None:
-    if me != HUB or INFRA not in c.lanes:
+    if not c.is_hub(me) or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
     if bad := stagemodel.problems(model, effort):
         raise TowerError("; ".join(bad))
@@ -204,7 +230,7 @@ def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, mo
         text = "\n".join(head) + "\n\n" + text
     if approved and approved.strip():
         text = f"{text}\n\nApproved by the human: {approved.strip()}"
-    print(f"memo #{s.push(INFRA, HUB, 'memo', text)} → infra")
+    print(f"memo #{s.push(INFRA, me, 'memo', text)} → infra")
 
 
 def cmd_infra(args: argparse.Namespace) -> None:

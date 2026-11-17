@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from typing import Any
 
 from .. import config as config_mod
@@ -117,16 +118,24 @@ def scaffold_engine_cmd(c: Any, args: argparse.Namespace) -> None:
 
 
 def cmd_member(args: argparse.Namespace) -> None:
-    s = store()
+    c = cfg()
+    s = store(c)
     if args.sub == "list":
         for m in s.members():
-            print(f"{m['name']:<16} {m['role']:<7} {m['ident'] or '-':<30} {'token' if m['has_token'] else ''}")
+            hub = c.hub_of(m["name"]) if c.hub_cap else ""
+            print(f"{m['name']:<16} {m['role']:<7} {m['ident'] or '-':<30} {'token' if m['has_token'] else '':<6} {hub}".rstrip())
         return
     if args.sub == "remove":
         s.remove_member(args.name)
         print(f"removed {args.name}")
-        return
-    token = s.add_member(args.name, args.role, args.ident, args.token)
-    print(f"member {args.name} ({args.role})" + (f" ident {args.ident}" if args.ident else ""))
-    if token:
-        print(f"token (shown once; give it privately): {token}")
+    else:
+        token = s.add_member(args.name, args.role, args.ident, args.token)
+        print(f"member {args.name} ({args.role})" + (f" ident {args.ident}" if args.ident else ""))
+        if token:
+            print(f"token (shown once; give it privately): {token}")
+    if c.hub_cap:
+        os.utime(c.home / config_mod.TOWER_DIR / config_mod.CONFIG_NAME)
+        c2 = config_mod.load(c.home)
+        print("person hubs: " + (", ".join(c2.person_hubs) or "none")
+              + (f" · in line for a hub of their own (cap {c2.hub_cap}): {', '.join(c2.hub_overflow)}"
+                 if c2.hub_overflow else ""))

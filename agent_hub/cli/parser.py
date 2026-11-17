@@ -33,7 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "add":
             q.add_argument("--kind", choices=("decision", "review"))
             q.add_argument("--multi", action="store_true", help="several options may be picked")
-            q.add_argument("--to", metavar="MEMBER", help="hub/infra: the person who should decide")
+            q.add_argument("--to", metavar="MEMBER", help="the one person who sees the card (with `requester` on, "
+                           "the default is whoever asked for the work); `all` = everyone")
+            q.add_argument("--request", type=int, metavar="MEMO_ID", help="hub: the board request this card answers "
+                           "(its sender gets the card)")
     q = isub.add_parser("merge")
     q.add_argument("id", type=int)
     q.add_argument("--into", type=int, required=True)
@@ -48,7 +51,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title", required=True)
     p.add_argument("--goal", type=int, metavar="GOAL_ID", help="removed in 0.8.0; ignored with a notice")
     p.add_argument("--deliverable", metavar="KEY", help="deliverable key (e.g. ui:shop): ties the tasks that rework the same deliverable together")
+    p.add_argument("--request", type=int, metavar="MEMO_ID", help="the board request this task serves: its sender "
+                   "is the requester")
+    p.add_argument("--for", dest="for_", metavar="MEMBER", help="the requester by name; `all` = nobody in particular")
     p.add_argument("brief")
+    p = sub.add_parser("task-bump", help="hub: move a queued team task to the front (typed `dah task bump ID`)")
+    p.add_argument("id", type=int)
     p = sub.add_parser("blame", help="lane: name the stage that should have caught this task's failure; hub: --confirm [STAGE]")
     p.add_argument("stage", nargs="?", help="stage number or name, e.g. 3")
     p.add_argument("--task", type=int)
@@ -85,7 +93,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("escalate", help="hub: send an item to humans")
     p.add_argument("id", type=int)
     p.add_argument("--why", required=True)
-    p.add_argument("--to", metavar="MEMBER")
+    p.add_argument("--to", metavar="MEMBER", help="with `requester` on, the default is the person the card is for; "
+                   "`all` = everyone")
     p = sub.add_parser("cancel", help="hub: cancel a task")
     p.add_argument("task", type=int)
     p = sub.add_parser("memo", help="hub/infra: reply, forward or send memos")
@@ -93,6 +102,8 @@ def build_parser() -> argparse.ArgumentParser:
     q = msub.add_parser("reply")
     q.add_argument("id", type=int)
     q.add_argument("text")
+    q = msub.add_parser("bump", help="hub: move a waiting infra memo or decision to the front of the infra queue")
+    q.add_argument("id", type=int)
     q = msub.add_parser("forward")
     q.add_argument("id", type=int)
     q = msub.add_parser("send")
@@ -218,4 +229,15 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--token", action="store_true", help="issue a sign-in token (auth.mode=token)")
     q = esub.add_parser("remove")
     q.add_argument("name")
+    p = sub.add_parser("prefs", help="hub: a person's board settings, changed on their chat request")
+    fsub = p.add_subparsers(dest="sub", required=True)
+    q = fsub.add_parser("show")
+    q.add_argument("name", help="member")
+    q = fsub.add_parser("set")
+    q.add_argument("name", help="member")
+    q.add_argument("pairs", nargs="+", metavar="NAME=VALUE",
+                   help="first_tab=history, font=s|m|l, accent=green, hub.order=yours,asks, lanes.hidden=reports; "
+                        "empty value = default")
+    q = fsub.add_parser("reset")
+    q.add_argument("name", help="member")
     return ap

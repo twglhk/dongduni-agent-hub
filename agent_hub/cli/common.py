@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .. import config as config_mod
-from ..config import Config, base_lane
+from ..config import HUB, Config, base_lane
 from ..engine import VERDICT_WORD
 from ..install import edit_config
 from ..store import Store
@@ -50,7 +50,7 @@ def who(args: argparse.Namespace, c: Config) -> str:
 
 def need(args: argparse.Namespace, c: Config, *lanes: str) -> str:
     me = who(args, c)
-    if me not in lanes:
+    if me not in lanes and not (HUB in lanes and c.is_hub(me)):
         raise TowerError(f"only {' / '.join(lanes)} use this command")
     return me
 

@@ -146,26 +146,6 @@
     "ask": "Ask the hub to set it up",
     "memo": "Have infra make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick."
   },
-  "lane": {
-    "add": "Add a lane",
-    "id": "Lane ID",
-    "idPh": "e.g. docs",
-    "idHelp": "Letters, numbers, - and _. Used in commands and file names.",
-    "idBad": "Use letters, numbers, - and _ only",
-    "idDup": "A lane with this ID already exists",
-    "runtime": "Runtime",
-    "label": "Display name (optional)",
-    "labelPh": "e.g. Docs",
-    "role": "Role",
-    "rolePh": "What it owns, the files it works on, when it is done, what it must not touch",
-    "model": "Model (optional)",
-    "agent": "Agent (optional)",
-    "optPh": "Empty uses the default",
-    "send": "Ask the hub to add it",
-    "sent": "Sent to the hub",
-    "hint": "The hub has infra create the lane and fill in its role file, then sends you a card to confirm.",
-    "memo": "Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\nRun `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch."
-  },
   "cap": {
     "at": "At once",
     "less": "One fewer",
@@ -190,7 +170,8 @@
     "recent": "Recent tasks",
     "engine": "Engine",
     "missing": "folder not found",
-    "none": "Nothing yet"
+    "none": "Nothing yet",
+    "by": "for {who}"
   },
   "eg": {
     "engines": "Engines",
@@ -323,5 +304,73 @@
   "doc": {
     "loading": "Loading…",
     "cantOpen": "Couldn’t open the document: {e}"
+  },
+  "hw": {
+    "title": "Getting your hub ready",
+    "sub": "Your own hub session is opening. It takes about a minute; this page switches over by itself.",
+    "s1": "Signed in as a member",
+    "s2": "Opening your hub session",
+    "s3": "Your hub is reading its instructions",
+    "s4": "Ready",
+    "keep": "You can write a request now: it is kept and handed to your hub as soon as it is ready.",
+    "ready": "Your hub is ready",
+    "fullTitle": "All hubs are taken right now",
+    "fullSub": "Every person-hub place ({c}) is in use. You are number {p} in line, and the board has been told.",
+    "fullKeep": "You can still send requests: the shared hub takes them until a place opens for you."
+  },
+  "pf": {
+    "title": "Screen settings",
+    "open": "Open screen settings",
+    "live": "Changes apply at once and only to your screen.",
+    "first": "Tab that opens first",
+    "font": "Text size",
+    "sample": "Aa",
+    "fonts": {
+      "s": "Small",
+      "m": "Normal",
+      "l": "Large"
+    },
+    "accent": "Accent colour",
+    "accents": {
+      "blue": "Blue",
+      "green": "Green",
+      "orange": "Orange",
+      "purple": "Purple",
+      "pink": "Pink"
+    },
+    "secs": {
+      "hub": "Hub tab sections",
+      "lanes": "Lanes tab sections"
+    },
+    "show": {
+      "open": "Show",
+      "fold": "Fold",
+      "hide": "Hide"
+    },
+    "up": "Move {name} up",
+    "down": "Move {name} down",
+    "foldOn": "Unfold {name}",
+    "foldOff": "Fold {name}",
+    "reset": "Back to the default screen",
+    "resetDone": "Back to the default screen",
+    "chat": "You can also ask your hub in chat, for example “open History first”.",
+    "defOn": "You are seeing the default screen",
+    "defSub": "The address has ?default, so your settings are off for now. They are still saved.",
+    "defOff": "See my screen",
+    "noMember": "Only board members can change their screen",
+    "noMemberSub": "Ask the board owner to add you as a member.",
+    "tipLabel": "About changing this screen",
+    "tipNew": "new",
+    "tip": "You can make this screen your own. Ask your hub things like “open the History tab first” or “make the text bigger”.",
+    "allHidden": "All sections are hidden. Show them again in screen settings."
+  },
+  "nl": {
+    "add": "Add a lane",
+    "title": "Ask the hub for a lane",
+    "label": "What should the new lane do?",
+    "ph": "e.g. A lane that writes release notes: it owns docs/releases and is done when the notes are reviewed",
+    "hint": "Your hub proposes the lane (id, role, runtime) as a card for you to confirm; only then does infra create it. You can leave this empty and the hub will ask.",
+    "send": "Ask the hub",
+    "sent": "Sent to the hub. A card with its proposal will arrive on the Hub tab shortly."
   }
 }

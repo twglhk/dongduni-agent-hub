@@ -250,6 +250,20 @@ A bad value is a config error that names the entry. The tower checks on every ti
 
 Every decision records who made it, and the hub can route an item to one person (`dah escalate ID --to ana`).
 
+The Lanes tab's "Add a lane" row opens a text box: what the new lane should do. It goes to the sender's own hub (the one hub of a single-user install) as a request whose first line is `[New lane request]`; the hub answers with a card proposing the lane, and only after someone decides does it ask infra to create it.
+
+Each person has screen settings of their own (the sliders icon in the board's top bar): the tab that opens first, text size, accent colour, and the order, folding and hiding of the Hub and Lanes tab sections. They are stored in the tower database per member (`member_prefs`), apply at once and only to that person's board, and a person can only read and write their own. `?default` in the board address ignores them. The hub changes them on a chat request with `dah prefs show|set|reset MEMBER` (for example `dah prefs set ana first_tab=history font=l accent=green hub.order=yours,asks lanes.hidden=reports`; an empty value is the default); with person hubs on, only the hub that serves that member can. Nothing to switch on.
+
+The hub can reorder the waiting work: `dah task bump ID` puts a queued team task first (the next free session of its lane takes it), `dah memo bump ID` puts a waiting infra memo first. A bump goes ahead of `fair_turns` once; after the task starts, turns go on as before. The latest bump goes in front of an earlier one.
+
+### Team options in `tower.json`
+
+All off by default; a single-user install behaves as before.
+
+- `"requester": true`: a task records who asked for it (`dah task LANE --request N` takes the sender of board request N, `--for ana` names the person). Cards that lanes and the hub post for that task default to that person (`dah item add --to ana`, `--to all` for everyone, `--request N` on the hub) and show on the Hub tab of that person only (everyone sees them in a local-mode board and in the history). `dah escalate` keeps the person; `--to all` widens it. The hub's reply card to a request is for the sender. Infra's answers and its `wrapped` reach the hub as news (`infra_reply`, `wrapped`). A lane card on the board shows "for <person>" next to its task.
+- `"person_hubs": true` (or `{"max": 3, "auto": false, "domains": []}`; default `false`): one always-on hub per board member, a copy of the hub lane called `hub-<member>` (the id is made from the member name: lower case letters, digits, `-` and `_`; a name with no Latin letter gets a short hash). Each member's board requests go to their own hub, the Hub tab shows their hub and the cards of the tasks it queued, and news about a task (reports, cards, decisions, done gates, stalls) goes back to the hub that queued it. The team lanes and the task queue stay shared; every hub may task, decide, escalate and ask infra. `max` caps how many hubs run (each is a live agent session that uses memory): members past it wait in line (shown on their board, one board item tells humans), the default hub takes their requests, and the first in line gets a hub when a member is removed. `dah member add/remove` reload the member list; `dah member list` shows each member's hub. `"auto": true` (needs `auth.mode` `header`): a person the proxy lets in who is not a member yet joins on their first visit (the first one becomes owner) and sees a wait screen until their hub is ready; `domains` limits that to those email domains. Lane ids starting with `hub-` are reserved while this is on, and so are member names `hub` and `hub-…`.
+- `"fair_turns": true`: when the tower picks the next waiting team task, each requester's first waiting task comes before anyone's second, so one person's long list does not fill every free session (work already running counts as that person's turn). A task whose `after:` task has finished still goes first. Off: oldest first. `dah status` then lists whose each waiting task is and how many wait per person.
+
 ## Development
 
 ```sh

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Collection, Iterable, Iterator
 
 HUB = "hub"
+ALL_HUBS = "hub*"
 INFRA = "infra"
 HUMAN = "human"
 TOWER = "tower"
@@ -27,6 +28,16 @@ TASK_LIVE = ("running", "wrapping")
 OUTCOMES = ("adopted", "redirected", "dropped")
 VERDICTS = ("ok", "no", "hold", "answer")  # answer = a human wrote their own answer; the note is the decision
 MULTI_SEP = " + "
+
+def is_hub_name(lane: str) -> bool:
+    return lane == HUB or lane.startswith(HUB + "-")
+
+
+def _target_sql(target: str) -> tuple[str, tuple[str, ...]]:
+    if target == ALL_HUBS:
+        return "(target=? OR target LIKE ?)", (HUB, HUB + "-%")
+    return "target=?", (target,)
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tasks(
@@ -99,6 +110,11 @@ CREATE TABLE IF NOT EXISTS reports(
   text TEXT NOT NULL,
   attachments TEXT NOT NULL DEFAULT '[]',
   created REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS member_prefs(
+  member TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  updated REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS lanes(
   lane TEXT PRIMARY KEY,
@@ -186,7 +202,8 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("tok_cache", "INTEGER NOT NULL DEFAULT 0"), ("tok_out", "INTEGER NOT NULL DEFAULT 0"),
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
-                ("deliverable", "TEXT"))  # the brief's Line: header and `dah stage`
+                ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
+                ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"))
 
 
 class StoreError(Exception):
@@ -283,6 +300,8 @@ class Store:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             con.execute("CREATE TABLE IF NOT EXISTS schedule_runs(key TEXT PRIMARY KEY, period TEXT NOT NULL, "
                         "fired REAL NOT NULL)")
+            if "rank" not in _columns(con, "messages"):
+                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
@@ -362,11 +381,28 @@ class Store:
             active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
             if active is None:
                 row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
-                                       "ORDER BY id LIMIT 1", (lane,)))
+                                       "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
                 if row:
                     active = row["id"]
                     con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
             return _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
+
+    def inbox_queue(self, target: str) -> list[dict[str, Any]]:
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
+                                     "(SELECT active_message FROM lanes WHERE active_message IS NOT NULL) "
+                                     "ORDER BY COALESCE(rank, id), id", (target,)))
+
+    def bump_message(self, message_id: int, target: str) -> None:
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM messages WHERE id=? AND target=? AND delivered IS NULL",
+                                   (message_id, target)))
+            held = con.execute("SELECT 1 FROM lanes WHERE active_message=?", (message_id,)).fetchone()
+            if not row or held:
+                raise StoreError(f"#{message_id} is not waiting in the {target} queue")
+            front = con.execute("SELECT MIN(COALESCE(rank, id)) FROM messages WHERE target=? AND delivered IS NULL",
+                                (target,)).fetchone()[0]
+            con.execute("UPDATE messages SET rank=? WHERE id=?", (float(front) - 1, message_id))
 
     def retry_inbox(self, lane: str) -> int:
         with self.conn() as con:
@@ -383,9 +419,10 @@ class Store:
 
     def memos(self, target: str, limit: int = 30, offset: int = 0) -> list[dict[str, Any]]:
         with self.conn() as con:
+            where, vals = _target_sql(target)
             rows = _rows(con.execute("SELECT id, text, sender, created, delivered FROM messages "
-                                     "WHERE target=? AND kind='memo' ORDER BY id DESC LIMIT ? OFFSET ?",
-                                     (target, limit, offset)))
+                                     f"WHERE {where} AND kind='memo' ORDER BY id DESC LIMIT ? OFFSET ?",
+                                     (*vals, limit, offset)))
             if not rows:
                 return rows
             ids = [r["id"] for r in rows]
@@ -403,7 +440,13 @@ class Store:
             raise StoreError(f"memo #{memo_id} not found")
         return row
 
-    def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = ()) -> int | None:
+    def replied(self, memo_id: int, by: str) -> bool:
+        with self.conn() as con:
+            return con.execute("SELECT 1 FROM messages WHERE kind='memo_reply' AND item_id=? AND sender=? LIMIT 1",
+                               (memo_id, by)).fetchone() is not None
+
+    def reply_memo(self, memo_id: int, text: str, by: str, machines: Collection[str] = (),
+                   assignee: str | None = None) -> int | None:
         """Record the reply. A hub reply to a person's request also becomes a review card for humans
         (one open card per request: a second reply revises it). Returns that item's id, else None."""
         memo = self.memo(memo_id)
@@ -413,11 +456,12 @@ class Store:
         with self.conn() as con:
             con.execute("INSERT INTO messages(target, sender, kind, item_id, text, created, delivered) "
                         "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", memo_id, text, now, now))
-        if by != HUB or memo["sender"] in (HUB, INFRA, TOWER, "dah update", *machines):
+        if not is_hub_name(by) or is_hub_name(str(memo["sender"])) or memo["sender"] in (INFRA, TOWER, "dah update",
+                                                                                     *machines):
             return None
-        return self.post_memo_card(memo, text)
+        return self.post_memo_card(memo, text, assignee, by)
 
-    def post_memo_card(self, memo: dict[str, Any], reply: str) -> int:
+    def post_memo_card(self, memo: dict[str, Any], reply: str, assignee: str | None = None, lane: str = HUB) -> int:
         quoted = "\n".join(f"> {ln}" if ln.strip() else ">" for ln in memo["text"].strip().splitlines())
         title = " ".join(memo["text"].split())
         title = title if len(title) <= 80 else title[:79] + "…"
@@ -430,9 +474,9 @@ class Store:
                 return int(row["id"])
             return _id(con.execute(
                 "INSERT INTO items(task_id, lane, kind, title, body, options, multi, attachments, audience, state, "
-                "created, memo_id) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?)",
-                (HUB, "review", title, f"{reply}\n\n{quoted}", HUMAN,
-                 self.clock(), memo["id"])))
+                "created, memo_id, assignee) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?,?)",
+                (lane, "review", title, f"{reply}\n\n{quoted}", HUMAN,
+                 self.clock(), memo["id"], assignee)))
 
     # ---------- schedules ----------
 
@@ -449,12 +493,45 @@ class Store:
 
     # ---------- tasks ----------
 
-    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None) -> int:
+    def add_task(self, lane: str, title: str, brief: str, engine: str | None = None, deliverable: str | None = None,
+                 requester: str | None = None, hub: str | None = None) -> int:
         with self.conn() as con:
-            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable) "
-                                   "VALUES(?,?,?,?,?,?,?)",
+            return _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, deliverable, "
+                                   "requester, hub) VALUES(?,?,?,?,?,?,?,?,?)",
                                    (lane, title, brief, "queued", self.clock(), engine,
-                                    valid_key(deliverable) if deliverable else None)))
+                                    valid_key(deliverable) if deliverable else None, requester or None,
+                                    hub if hub and hub != HUB else None)))
+
+    def hub_for_task(self, task_id: int | None) -> str:
+        if task_id is None:
+            return HUB
+        with self.conn() as con:
+            row = con.execute("SELECT hub FROM tasks WHERE id=?", (task_id,)).fetchone()
+        return str(row[0]) if row and row[0] else HUB
+
+    def task_hubs(self) -> dict[int, str]:
+        with self.conn() as con:
+            return {int(r[0]): str(r[1]) for r in con.execute("SELECT id, hub FROM tasks WHERE hub IS NOT NULL")}
+
+    def pending_targets(self) -> set[str]:
+        with self.conn() as con:
+            return {str(r[0]) for r in con.execute("SELECT DISTINCT target FROM messages WHERE delivered IS NULL")}
+
+    def retarget_pending(self, old: str, new: str) -> int:
+        with self.conn() as con:
+            return con.execute("UPDATE messages SET target=? WHERE target=? AND delivered IS NULL", (new, old)).rowcount
+
+    def delivered_since(self, target: str, since: float) -> bool:
+        with self.conn() as con:
+            return con.execute("SELECT 1 FROM messages WHERE target=? AND delivered>=? LIMIT 1",
+                               (target, since)).fetchone() is not None
+
+    def requester_of_task(self, task_id: int | None) -> str | None:
+        if task_id is None:
+            return None
+        with self.conn() as con:
+            row = con.execute("SELECT requester FROM tasks WHERE id=?", (task_id,)).fetchone()
+        return str(row[0]) if row and row[0] else None
 
     def task(self, task_id: int) -> dict[str, Any]:
         with self.conn() as con:
@@ -470,12 +547,14 @@ class Store:
 
     def next_queued(self, lane: str) -> dict[str, Any] | None:
         with self.conn() as con:
-            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id LIMIT 1", (lane,)))
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' "
+                                    "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
 
     def queued_for(self, lane: str) -> list[dict[str, Any]]:
         """A lane's queued tasks, oldest first (the order they start in)."""
         with self.conn() as con:
-            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id", (lane,)))
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' "
+                                     "ORDER BY COALESCE(rank, id), id", (lane,)))
 
     def last_closed_task(self, lane: str) -> dict[str, Any] | None:
         """The task the lane most recently finished (closed, not cancelled)."""
@@ -497,6 +576,15 @@ class Store:
                 return _rows(con.execute(f"SELECT * FROM tasks WHERE state IN ({','.join('?' * len(states))}) "
                                          f"ORDER BY id DESC LIMIT ?", (*states, limit)))
             return _rows(con.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)))
+
+    def bump_task(self, task_id: int) -> dict[str, Any]:
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM tasks WHERE id=? AND state='queued'", (task_id,)))
+            if not row:
+                raise StoreError(f"task #{task_id} is not queued")
+            front = con.execute("SELECT MIN(COALESCE(rank, id)) FROM tasks WHERE state='queued'").fetchone()[0]
+            con.execute("UPDATE tasks SET rank=? WHERE id=?", (float(front) - 1, task_id))
+        return row
 
     def claim_task(self, task_id: int) -> dict[str, Any] | None:
         now = self.clock()
@@ -592,7 +680,7 @@ class Store:
         if it["state"] != "open":
             raise StoreError(f"#{item_id} is already decided ({it['decided_by']})")
         out = self.check_decision(it, verdict, choice, note)
-        if by == HUB:
+        if is_hub_name(by):
             if it["audience"] == HUMAN and not hub_may_decide:
                 raise StoreError(f"#{item_id} was escalated to humans; the hub does not decide it")
             if not basis.strip():
@@ -645,10 +733,11 @@ class Store:
             if row is None or row[0] is not None:
                 return False
             if follow:
-                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine) VALUES(?,?,?,?,?,?)",
+                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, requester, hub) "
+                                      "VALUES(?,?,?,?,?,?,?,?)",
                                       (follow["lane"], follow["title"], follow["brief"], "queued", self.clock(),
-                                       follow.get("engine"))))
-                self.push(HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
+                                       follow.get("engine"), follow.get("requester"), follow.get("hub"))))
+                self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
             elif push:
                 self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con)
             con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
@@ -704,13 +793,14 @@ class Store:
         "reports": ("reports", "id DESC"),
         "closed": ("tasks WHERE state IN ('closed','cancelled')", "closed DESC, id DESC"),
     }
-    MEMO_HISTORY = {"memos": INFRA, "requests": HUB}
+    MEMO_HISTORY = {"memos": INFRA, "requests": ALL_HUBS}
 
     def history_count(self, kind: str) -> int:
         with self.conn() as con:
             if kind in self.MEMO_HISTORY:
-                return int(con.execute("SELECT count(*) FROM messages WHERE target=? AND kind='memo'",
-                                       (self.MEMO_HISTORY[kind],)).fetchone()[0])
+                where, vals = _target_sql(self.MEMO_HISTORY[kind])
+                return int(con.execute(f"SELECT count(*) FROM messages WHERE {where} AND kind='memo'",
+                                       vals).fetchone()[0])
             return int(con.execute(f"SELECT count(*) FROM {self.HISTORY[kind][0]}").fetchone()[0])
 
     def history(self, kind: str, offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
@@ -961,6 +1051,8 @@ class Store:
                    with_token: bool = False) -> str | None:
         if role not in ("owner", "member"):
             raise StoreError("role must be owner or member")
+        if is_hub_name(name):
+            raise StoreError(f"{name!r} is reserved for hubs: pick another member name")
         token = secrets.token_urlsafe(24) if with_token else None
         with self.conn() as con:
             con.execute("INSERT INTO members(name, role, ident, token_hash, created) VALUES(?,?,?,?,?) "
@@ -973,6 +1065,22 @@ class Store:
         with self.conn() as con:
             if con.execute("DELETE FROM members WHERE name=?", (name,)).rowcount != 1:
                 raise StoreError(f"no member {name}")
+            con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
+
+    def member_prefs(self, name: str) -> str | None:
+        with self.conn() as con:
+            row = con.execute("SELECT data FROM member_prefs WHERE member=?", (name,)).fetchone()
+        return str(row[0]) if row else None
+
+    def put_member_prefs(self, name: str, data: str) -> None:
+        with self.conn() as con:
+            con.execute("INSERT INTO member_prefs(member, data, updated) VALUES(?,?,?) "
+                        "ON CONFLICT(member) DO UPDATE SET data=excluded.data, updated=excluded.updated",
+                        (name, data, self.clock()))
+
+    def drop_member_prefs(self, name: str) -> None:
+        with self.conn() as con:
+            con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
 
     def members(self) -> list[dict[str, Any]]:
         with self.conn() as con:

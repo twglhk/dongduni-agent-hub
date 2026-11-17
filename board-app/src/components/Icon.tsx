@@ -10,6 +10,7 @@ export const ICON = {
   lock: 'M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 017 0v3',
   down: 'M6 9l6 6 6-6',
   plus: 'M12 5v14M5 12h14', minus: 'M5 12h14',
+  tune: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
   ext: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
   warn: 'M12 9v4.5M12 17v.01M10.3 4.2L2.6 17.5A2 2 0 004.3 20.5h15.4a2 2 0 001.7-3L13.7 4.2a2 2 0 00-3.4 0z',
 } as const;

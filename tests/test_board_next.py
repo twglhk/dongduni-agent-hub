@@ -111,9 +111,9 @@ class BoardNextTest(unittest.TestCase):
     def test_the_build_calls_the_routes_it_needs(self) -> None:
         js = "".join((BOARD_NEXT / a).read_text(encoding="utf-8") for a in self.assets if a.endswith(".js"))
         for route in ("api/state", "api/machine", "api/history?kind=", "api/lanes/", "api/processes", "api/processes/doc?path=",
-                      "api/items/", "/decide", "api/memo", "api/settings", "api/login", "api/logout", "api/workspaces"):
+                      "api/items/", "/decide", "api/memo", "api/settings", "api/login", "api/logout", "api/workspaces", "api/me/prefs"):
             self.assertIn(route, js, route)
-        for gone in ("api/uploads", "api/me/prefs", "api/x/lane-rows"):
+        for gone in ("api/uploads", "api/x/lane-rows"):
             self.assertNotIn(gone, js, gone)
 
     def test_extension_contract_is_in_the_build(self) -> None:

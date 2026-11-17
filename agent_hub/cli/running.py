@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import config as config_mod, procs
-from ..config import HUB, Config, ConfigError, tower_pid
+from ..config import Config, ConfigError, tower_pid
 from ..engine import Engine
 from ..install import lock_file
 from ..memwatch import MemWatch
@@ -33,6 +33,9 @@ def close_changed(rt: Any, old: Config, new: Config, say: Any) -> None:
     close it the old way, or the new adapter would start a second agent beside it."""
     for lid, ln in old.all_lanes.items():
         nl = new.all_lanes.get(lid)
+        if nl is None and ln.owner and rt.status(lid) != "closed":
+            rt.close(lid)
+            say(f"{lid}: its member is gone, closed its hub session")
         if nl and (nl.runtime, nl.terminal, nl.worktree) != (ln.runtime, ln.terminal, ln.worktree) \
                 and rt.status(lid) != "closed":
             rt.close(lid)
@@ -73,7 +76,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     s = store(c)
     config_mod.register(c.home)
     if not args.no_hub:
-        s.set_lane(HUB, enabled=1)
+        for hub in c.hubs():
+            s.set_lane(hub, enabled=1)
     ext = Extensions(c.home, say)  # one load of .tower/ext for the board and the engine
     httpd = server(c, s, say, ext)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -101,6 +105,9 @@ def cmd_run(args: argparse.Namespace) -> None:
                         procs.terminate(tunnel.pid)
                         tunnel = None
                     close_changed(engine.rt, c, c2, say)
+                    if not args.no_hub:
+                        for hub in c2.hubs():
+                            s.set_lane(hub, enabled=1)
                     c = c2
                     rebuilt = Engine(c, s, Runtimes(c, s, ext), notifier(c, say), log=say, ext=ext)
                     rebuilt.inherit(engine)

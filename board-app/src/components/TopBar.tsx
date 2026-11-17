@@ -31,6 +31,8 @@ export function TopBar({ openMenu }: { openMenu: (m: Menu) => void }) {
         {data && data.running === false && <Chip tone="orange">{L.msg.stopped}</Chip>}
         <span className="flex-1" />
         <span className="max-w-[40vw] truncate whitespace-nowrap text-t6 font-semibold text-ink-3">{data?.me?.name || ''}</span>
+        <button type="button" aria-haspopup="dialog" aria-label={L.pf.title} title={L.pf.title} onClick={() => openMenu('prefs')}
+          className="-mr-1 flex size-11 flex-none items-center justify-center rounded-full text-ink-3 active:bg-[var(--press)]"><Icon name="tune" className="size-[22px]" stroke={2} /></button>
         <button type="button" aria-haspopup="dialog" aria-label={L.lang.title} onClick={() => openMenu('lang')}
           className="min-w-11 whitespace-nowrap rounded-chip px-2 text-t6 font-bold tracking-wider text-ink-3">{lang.toUpperCase()}</button>
         {data?.auth_mode === 'token' && (

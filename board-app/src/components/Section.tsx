@@ -1,13 +1,19 @@
 import type { ReactNode } from 'react';
+import { FoldTitle } from './prefs/FoldTitle';
 
-export function Section({ title, n, children }: { title: string; n?: number; children: ReactNode }) {
+export interface Fold { folded: boolean; toggle: () => void }
+
+export function Section({ title, n, children, fold, aside }: { title: string; n?: number; children: ReactNode; fold?: Fold; aside?: ReactNode }) {
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center gap-2 px-1 text-t3 font-bold leading-snug tracking-[-.01em]">
-        <h2>{title}</h2>
-        {n !== undefined && <span className="text-t4 font-semibold text-ink-3">{n}</span>}
+        <FoldTitle name={title} fold={fold}>
+          <h2>{title}</h2>
+          {n !== undefined && <span className="text-t4 font-semibold text-ink-3">{n}</span>}
+        </FoldTitle>
+        {aside}
       </div>
-      {children}
+      {!fold?.folded && children}
     </section>
   );
 }

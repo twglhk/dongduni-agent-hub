@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChatBox } from './components/ChatBox';
 import { ExtensionBridge } from './components/ExtensionBridge';
 import { itemSheet } from './components/item/ItemSheet';
@@ -13,10 +13,12 @@ import { TopBar } from './components/TopBar';
 import { XTabView } from './components/XHost';
 import { useL } from './i18n/context';
 import { HttpError } from './lib/api';
-import { forHuman } from './lib/items';
+import { forHuman, forMe } from './lib/items';
 import { useBoard } from './state/board';
 import { closeDoc, useDoc } from './state/docSheet';
 import { closeItem, sheetOpen, useRoute } from './state/route';
+import { useHubWatch } from './state/hubWatch';
+import { useOpenPrefs } from './state/prefs';
 import { useToast } from './state/toast';
 import { useLaneSheet } from './state/useLaneSheet';
 import { useProcSheet } from './state/useProcSheet';
@@ -33,8 +35,9 @@ export function App() {
   const r = useRoute();
   const [menu, setMenu] = useState<Menu | null>(null);
   const [lb, setLb] = useState<LbState | null>(null);
-  const badge = data ? data.items.filter(forHuman).length : 0;
+  const badge = data ? data.items.filter(it => forHuman(it) && forMe(data, it)).length : 0;
   const onImage = (list: string[], i: number) => setLb({ list, i });
+  useHubWatch(data, r, useCallback(() => toast(L.hw.ready), [toast, L]));
 
   useEffect(() => { document.title = (badge ? `(${badge}) ` : '') + (data?.title || ''); }, [badge, data?.title]);
   useEffect(() => { setMenu(null); closeDoc(); }, [r]);
@@ -50,6 +53,7 @@ export function App() {
   }, [r.item, !!it, !!data]);
 
   const openMenu = (m: Menu) => { if (m === 'ws') loadWs(); setMenu(m); };
+  useOpenPrefs(useCallback(() => setMenu('prefs'), []));
   const closeMenu = () => setMenu(null);
   const lane = useLaneSheet(r.lane);
   const proc = useProcSheet(r.full, r.sub);
@@ -67,7 +71,7 @@ export function App() {
 
   const view = !data ? <Empty>{L.empty.loading}</Empty>
     : r.view === 'hub' ? <HubView d={data} />
-    : r.view === 'lanes' ? <LanesView d={data} onImage={onImage} />
+    : r.view === 'lanes' ? <LanesView d={data} onImage={onImage} onAdd={() => openMenu('newlane')} />
     : r.view === 'engine' ? <EngineView />
     : r.view === 'history' ? <HistoryView d={data} onImage={onImage} />
     : r.view === 'info' ? <InfoView />

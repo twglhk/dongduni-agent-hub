@@ -27,7 +27,7 @@ export function LaneCard({ l }: { l: Lane }) {
         {l.runtime && <Chip>{rtName(l.runtime)}</Chip>}
         <span className="ml-auto flex-none"><StatusChip status={l.status} /></span>
       </div>
-      {l.task_id ? <div className={`text-t5 font-semibold ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">#{l.task_id}</span>{l.task_title}</div>
+      {l.task_id ? <div className={`text-t5 font-semibold ${CLAMP2}`}><span className="mr-1 font-medium text-ink-3">#{l.task_id}</span>{l.task_title}{l.requester && <span className="ml-2 whitespace-nowrap text-t6 font-semibold text-ink-3">· {fmt(L.lv.by, { who: l.requester })}</span>}</div>
         : l.doing ? null : <div className="text-t5 text-ink-3">{L.label.noTask}</div>}
       {l.doing && <div className={`${l.task_id ? 'text-t6 text-ink-2' : 'text-t5 font-semibold'} ${CLAMP2}`}>{l.doing}</div>}
       {(proc || model || l.fixing) && (
