@@ -187,7 +187,8 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
                   ("turns", "INTEGER NOT NULL DEFAULT 0"), ("tok_at", "REAL"))
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
                 ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
-                ("requester", "TEXT"))  # the member whose request the task serves; NULL = nobody (an automatic task)
+                ("requester", "TEXT"),  # the member whose request the task serves; NULL = nobody (an automatic task)
+                ("rank", "REAL"))  # start order once the hub moved it (`dah task bump`); NULL = by id
 
 
 class StoreError(Exception):
@@ -282,6 +283,8 @@ class Store:
             for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
+            if "rank" not in _columns(con, "messages"):
+                con.execute("ALTER TABLE messages ADD COLUMN rank REAL")  # queue order once the hub moved a memo first
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
@@ -361,11 +364,28 @@ class Store:
             active = con.execute("SELECT active_message FROM lanes WHERE lane=?", (lane,)).fetchone()[0]
             if active is None:
                 row = _one(con.execute("SELECT id FROM messages WHERE target=? AND delivered IS NULL "
-                                       "ORDER BY id LIMIT 1", (lane,)))
+                                       "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
                 if row:
                     active = row["id"]
                     con.execute("UPDATE lanes SET active_message=?, active_retries=0 WHERE lane=?", (active, lane))
             return _one(con.execute("SELECT * FROM messages WHERE id=?", (active,))) if active is not None else None
+
+    def inbox_queue(self, target: str) -> list[dict[str, Any]]:
+        with self.conn() as con:
+            return _rows(con.execute("SELECT * FROM messages WHERE target=? AND delivered IS NULL AND id NOT IN "
+                                     "(SELECT active_message FROM lanes WHERE active_message IS NOT NULL) "
+                                     "ORDER BY COALESCE(rank, id), id", (target,)))
+
+    def bump_message(self, message_id: int, target: str) -> None:
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM messages WHERE id=? AND target=? AND delivered IS NULL",
+                                   (message_id, target)))
+            held = con.execute("SELECT 1 FROM lanes WHERE active_message=?", (message_id,)).fetchone()
+            if not row or held:
+                raise StoreError(f"#{message_id} is not waiting in the {target} queue")
+            front = con.execute("SELECT MIN(COALESCE(rank, id)) FROM messages WHERE target=? AND delivered IS NULL",
+                                (target,)).fetchone()[0]
+            con.execute("UPDATE messages SET rank=? WHERE id=?", (float(front) - 1, message_id))
 
     def retry_inbox(self, lane: str) -> int:
         with self.conn() as con:
@@ -470,12 +490,14 @@ class Store:
 
     def next_queued(self, lane: str) -> dict[str, Any] | None:
         with self.conn() as con:
-            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id LIMIT 1", (lane,)))
+            return _one(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' "
+                                    "ORDER BY COALESCE(rank, id), id LIMIT 1", (lane,)))
 
     def queued_for(self, lane: str) -> list[dict[str, Any]]:
         """A lane's queued tasks, oldest first (the order they start in)."""
         with self.conn() as con:
-            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' ORDER BY id", (lane,)))
+            return _rows(con.execute("SELECT * FROM tasks WHERE lane=? AND state='queued' "
+                                     "ORDER BY COALESCE(rank, id), id", (lane,)))
 
     def last_closed_task(self, lane: str) -> dict[str, Any] | None:
         """The task the lane most recently finished (closed, not cancelled)."""
@@ -497,6 +519,15 @@ class Store:
                 return _rows(con.execute(f"SELECT * FROM tasks WHERE state IN ({','.join('?' * len(states))}) "
                                          f"ORDER BY id DESC LIMIT ?", (*states, limit)))
             return _rows(con.execute("SELECT * FROM tasks ORDER BY id DESC LIMIT ?", (limit,)))
+
+    def bump_task(self, task_id: int) -> dict[str, Any]:
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM tasks WHERE id=? AND state='queued'", (task_id,)))
+            if not row:
+                raise StoreError(f"task #{task_id} is not queued")
+            front = con.execute("SELECT MIN(COALESCE(rank, id)) FROM tasks WHERE state='queued'").fetchone()[0]
+            con.execute("UPDATE tasks SET rank=? WHERE id=?", (float(front) - 1, task_id))
+        return row
 
     def claim_task(self, task_id: int) -> dict[str, Any] | None:
         now = self.clock()

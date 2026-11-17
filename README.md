@@ -225,6 +225,8 @@ Optional, all off by default (`tower.json`): `"branch_sync": true` merges your c
 
 Every decision records who made it, and the hub can route an item to one person (`dah escalate ID --to ana`).
 
+The hub can reorder the waiting work: `dah task bump ID` puts a queued team task first (the next free session of its lane takes it), `dah memo bump ID` puts a waiting infra memo first. A bump goes ahead of `fair_turns` once; after the task starts, turns go on as before. The latest bump goes in front of an earlier one.
+
 ### Team options in `tower.json`
 
 All off by default; a single-user install behaves as before.

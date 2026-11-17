@@ -5,7 +5,7 @@ import sys
 import time
 
 from .. import stagemodel
-from ..config import HUB, INFRA, Config
+from ..config import HUB, INFRA, Config, base_lane
 from ..engine import clip
 from ..requester import escalation_audience, infra_reply_text, requester_for
 from ..store import Store, StoreError
@@ -50,6 +50,16 @@ def cmd_task(args: argparse.Namespace) -> None:
     print(f"task #{tid} → {args.lane}"
           + (f" (after task #{live['id']} wraps)" if live else "")
           + (f" · for {asker}" if asker else ""))
+
+
+def cmd_task_bump(args: argparse.Namespace) -> None:
+    c = cfg()
+    need(args, c, HUB)
+    try:
+        task = store(c).bump_task(args.id)
+    except StoreError as e:
+        raise TowerError(str(e))
+    print(f"task #{args.id} is first in the queue: the next free session of {base_lane(task['lane'])} takes it")
 
 
 def cmd_stage(args: argparse.Namespace) -> None:
@@ -164,6 +174,11 @@ def cmd_memo(args: argparse.Namespace) -> None:
                   else f"Answered #{args.id}; it shows on the board.")
             if me == INFRA and c.requester and memo["sender"] == HUB:
                 s.push(HUB, INFRA, "infra_reply", infra_reply_text(args.id, args.text), item_id=args.id)
+        elif args.sub == "bump":
+            if me != HUB:
+                raise TowerError("only the hub reorders the infra queue")
+            s.bump_message(args.id, INFRA)
+            print(f"#{args.id} is first in the infra queue: the next free infra session takes it")
         elif args.sub == "forward":
             if me != INFRA:
                 raise TowerError("only infra forwards memos")

@@ -6,7 +6,7 @@ from ..config import ConfigError
 from ..store import StoreError
 from .common import TowerError
 from .hub import (cmd_cancel, cmd_decide, cmd_doing, cmd_escalate, cmd_infra, cmd_memo, cmd_scratch, cmd_stage,
-                  cmd_task, cmd_tell, cmd_wrap)
+                  cmd_task, cmd_task_bump, cmd_tell, cmd_wrap)
 from .lanes import cmd_item_add, cmd_item_merge, cmd_item_update, cmd_mine, cmd_report
 from .manage import cmd_engine, cmd_lane, cmd_member
 from .parser import build_parser
@@ -17,7 +17,7 @@ from .setup import cmd_discover, cmd_guide, cmd_init, cmd_install, cmd_skill, cm
 
 
 HANDLERS = {
-    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
+    "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "task-bump": cmd_task_bump, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "restart": cmd_restart, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
@@ -36,6 +36,9 @@ def utf8_output() -> None:
 
 def main(argv: list[str] | None = None) -> None:
     utf8_output()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:2] == ["task", "bump"]:  # `dah task LANE` takes a lane first, so `bump` is routed before argparse sees it
+        argv = ["task-bump", *argv[2:]]
     args = build_parser().parse_args(argv)
     try:
         HANDLERS[args.cmd](args)

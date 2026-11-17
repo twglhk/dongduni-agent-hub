@@ -176,8 +176,13 @@ def cmd_status(_args: argparse.Namespace) -> None:
                       + (f" waits: {why}" if why else ""))
     if c.fair_turns and all_queued:
         per = waiting_by_person(all_queued, lambda t: task_who(t) or "-")
-        print("waiting tasks per person (the tower takes them in turns): "
+        print("waiting tasks per person (the tower takes them in turns; `dah task bump ID` puts one first): "
               + ", ".join(f"{k} {n}" for k, n in per.items()))
+    waiting = s.inbox_queue(INFRA) if INFRA in c.lanes else []
+    if waiting:
+        print("infra queue (`dah memo bump ID` puts one first):")
+        for m in waiting[:20]:
+            print(f"  #{m['id']} {m['kind']} from {m['sender']}")
     terms = {ln.terminal for ln in c.lanes.values()}
     if "tmux" in terms:
         from ..runtimes import tmux_session

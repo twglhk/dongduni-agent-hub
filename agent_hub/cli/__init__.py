@@ -2,7 +2,7 @@ from .common import (REACH_HINT, TowerError, body_of, cfg, check_paths, edit_tow
                      parse_options, store, verdict_text, who)
 from .lanes import cmd_item_add, cmd_item_merge, cmd_item_update, cmd_mine, cmd_report
 from .hub import (cmd_cancel, cmd_decide, cmd_doing, cmd_escalate, cmd_infra, cmd_memo, cmd_scratch, cmd_stage,
-                  cmd_task, cmd_tell, cmd_wrap, send_infra)
+                  cmd_task, cmd_task_bump, cmd_tell, cmd_wrap, send_infra)
 from .reading import (cmd_blame, cmd_deliverable, cmd_items, cmd_last, cmd_log, cmd_ratings, cmd_retros, cmd_show,
                       cmd_signal, cmd_stats, cmd_status, cmd_tasks, day_arg, lane_markers)
 from .running import (RESTART_WAIT_SECONDS, TICK_SECONDS, TUNNEL_RETRY, claim_pid, close_changed, cmd_pause,
@@ -20,7 +20,7 @@ __all__ = [
     "cmd_guide", "cmd_infra", "cmd_init", "cmd_install", "cmd_item_add", "cmd_item_merge", "cmd_item_update",
     "cmd_items", "cmd_lane", "cmd_last", "cmd_log", "cmd_member", "cmd_memo", "cmd_mine", "cmd_pause", "cmd_ratings",
     "cmd_report", "cmd_restart", "cmd_retros", "cmd_run", "cmd_scratch", "cmd_show", "cmd_signal", "cmd_skill",
-    "cmd_stage", "cmd_start", "cmd_stats", "cmd_status", "cmd_stop", "cmd_task", "cmd_tasks", "cmd_tell",
+    "cmd_stage", "cmd_start", "cmd_stats", "cmd_status", "cmd_stop", "cmd_task", "cmd_task_bump", "cmd_tasks", "cmd_tell",
     "cmd_uninstall", "cmd_update", "cmd_workspaces", "cmd_wrap", "day_arg", "edit_tower_json", "guide_names", "hhmm",
     "lane_markers", "main", "need", "need_team", "parse_options", "say", "scaffold_engine_cmd", "send_infra",
     "start_tower", "stop_loop", "store", "update_workspace", "utf8_output", "verdict_text", "who",

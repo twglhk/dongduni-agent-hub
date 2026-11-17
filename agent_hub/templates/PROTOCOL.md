@@ -54,10 +54,10 @@ Lanes share one working tree unless a lane has its own worktree.
 | team lane, hub (`handoff` only) | `dah report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
 | team lane | `dah stage N` | name the stage of your process card you are on (the brief's `Line:` header names the card) |
 | hub | `dah status` · `dah doing "one line"` | see everything · show what you are doing on the board |
-| hub | `dah task LANE --title T [--request N] "brief"` (`--request N`: the board request it serves, so its cards go to that person) · `dah tell LANE "text"` · `dah tell --urgent LANE "stop"` (a busy Claude Code lane reads it at its next tool call) · `dah wrap LANE` · `dah cancel TASK` | run the team |
+| hub | `dah task LANE --title T [--request N] "brief"` (`--request N`: the board request it serves, so its cards go to that person) · `dah tell LANE "text"` · `dah tell --urgent LANE "stop"` (a busy Claude Code lane reads it at its next tool call) · `dah wrap LANE` · `dah cancel TASK` · `dah task bump ID` (a queued task goes first; the next free session of its lane takes it) | run the team |
 | hub | `dah decide ID ok\|no\|hold [--choice LABEL]... [--note] --basis "rule · evidence"` | decide within approved scope |
 | hub | `dah escalate ID --why "why a human decides" [--to MEMBER]` | send an item to humans (push notification) |
-| hub | `dah memo reply ID "text"` · `dah infra "text" --approved "request #N"` | answer a human request (it becomes a review card the human confirms) · hand tower work to infra (humans reach infra only through you) |
+| hub | `dah memo reply ID "text"` · `dah infra "text" --approved "request #N"` · `dah memo bump ID` (a waiting infra memo goes first) | answer a human request (it becomes a review card the human confirms) · hand tower work to infra (humans reach infra only through you) |
 | infra | `dah memo reply ID "text"` · `dah memo forward ID` · `dah report wrapped "text"` | answer a memo · pass it to the hub · finish |
 | team lane | `dah blame STAGE [--cause "one line"]` | after a failure, name the stage of the card that should have caught it |
 | anyone | `dah show ID` · `dah items [--open]` · `dah tasks` · `dah log TASK` · `dah last LANE` | read |

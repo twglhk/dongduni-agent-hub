@@ -162,12 +162,16 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
 
 def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tuple[int, int, float]]:
     from .fair import task_who, turns
-    queued = [t for t in sorted(store.tasks(("queued",), limit=500), key=lambda t: t["id"]) if t["lane"] in team]
+    queued = [t for t in sorted(store.tasks(("queued",), limit=500),
+                                key=lambda t: (t["rank"] if t.get("rank") is not None else t["id"], t["id"]))
+              if t["lane"] in team]
     if not fair:
-        return {t["id"]: (1, 0, t["id"]) for t in queued}
+        return {t["id"]: (0, 0, i) if t.get("rank") is not None else (1, 0, i) for i, t in enumerate(queued)}
     running = [t for t in store.tasks(("running", "wrapping"), limit=500) if t["lane"] in team]
 
-    def chained(t: dict[str, Any]) -> bool:
+    def first(t: dict[str, Any]) -> bool:
+        if t.get("rank") is not None:
+            return True
         dep = after_of(t)
         if dep is None:
             return False
@@ -175,7 +179,7 @@ def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tup
             return store.task(dep)["state"] == "closed"
         except StoreError:
             return False
-    return turns(queued, task_who, running, chained)
+    return turns(queued, task_who, running, first)
 
 
 def linked(prev: dict[str, Any], nxt: dict[str, Any]) -> bool:
