@@ -224,6 +224,21 @@ class HalfDoneTest(OldWorkspace):
         self.assertEqual(Store(self.cfg.db).task(tid)["line_row"], "anim/anim-storyboard")
 
 
+class InstanceLaneTest(OldWorkspace):
+    def test_a_parallel_instance_reads_the_engine_library_like_its_lane(self) -> None:
+        raw = json.loads((self.home / ".tower/tower.json").read_text())
+        raw["max_instances"] = 2
+        (self.home / ".tower/tower.json").write_text(json.dumps(raw))
+        self.update()
+        cfg = config_mod.load(self.home)
+        self.assertEqual(cfg.all_lanes["story#2"].engine, "anim")
+        self.assertEqual(processes.lane_full(cfg, "story#2"), processes.lane_full(cfg, "story"))
+        table, library = stagemodel.table_for(cfg, "story#2"), stagemodel.library_for(cfg)
+        self.assertEqual(table, self.home / NEW)
+        self.assertEqual(stagemodel.resolve(table, "Line: #1 Storyboard · stage 1 · make", library), ("sonnet", "medium"))
+        self.assertEqual(cfg.engines["anim"].lanes, ["story", "render"])
+
+
 class EngineShowAfterConversionTest(OldWorkspace):
     def test_engine_show_before_and_after(self) -> None:
         self.assertIn("#1 Storyboard", self.dah("engine", "show", "anim"))

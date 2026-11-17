@@ -494,6 +494,8 @@ def from_raw(home: Path, raw: Any) -> Config:
                           "expose it: use auth.mode header or token (or set auth.allow_exposed true to accept that)")
     project = raw.get("project")
     engines = _engines(raw.get("engines"), lanes)
+    for inst in instances.values():
+        inst.engine = lanes[inst.base].engine
     return Config(
         home=home, name=str(raw.get("name") or "Agent Hub"), lang=str(raw.get("lang") or "en"),
         project=(home / project).resolve() if project else None,
