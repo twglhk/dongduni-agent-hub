@@ -123,3 +123,14 @@ Every poll one `ps` snapshot is read; a lane whose session process is over `memo
 - `donegate.py`: the config is in the README; a pending gate whose runner never wrote its pid is failed after two minutes, and a lock folder without a pid file older than a minute is taken over.
 - `scratch.py`: a gate worktree inside the project would be seen by the project's own tools, so the root must be outside it.
 - `install.py`: `_refresh_file` brings a template-based file to the newest template: untouched since some release, the old text is swapped; edited inside, it is left and the new template goes beside it as `<name>.new`. `dah update` also backs up package files changed in place to `.tower/patches/<version>/files/` with `changes.diff` and `index.json`.
+
+## Skill lint (`tools/skill_lint.py`)
+
+The idea comes from Claude Code Game Studios `skill-test static` (MIT, commit 05ad7c8); the checks are OpenCode's (https://opencode.ai/docs/skills/). Run `python3 tools/skill_lint.py [repo_root]` from a clone; it is not part of the installed package and needs only the standard library.
+
+Skills are found by globbing `.opencode/skills/*/`, `.agents/skills/*/` and `.claude/skills/*/` (never a list, so a new skill cannot slip past). Per skill:
+
+- FAIL: no `SKILL.md`; frontmatter missing or not YAML; `name` missing, not `^[a-z0-9]+(-[a-z0-9]+)*$`, over 64 characters, or not the folder name; `description` missing or not 1-1024 characters; a description cut short by an unquoted ` #` (YAML reads the rest as a comment); a relative markdown link in `SKILL.md` or `references/*.md` that points nowhere.
+- WARN: frontmatter keys OpenCode ignores; a `SKILL.md` body over 150 lines or a reference over 300 lines (size budget).
+
+Rules in `.claude/rules/*.md` (oh-my-opencode rules): FAIL without `paths`/`globs`, WARN when a pattern matches no file in the repository. A file that cannot be read is NOT ASSESSED, never OK. The exit code is 0 only when every item is OK or WARN and at least one skill was scanned.

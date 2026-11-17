@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""Static lint for OpenCode skills and oh-my-opencode path rules.
-
-Idea from Claude Code Game Studios `skill-test static` (MIT, commit 05ad7c8);
-the checks are opencode's: https://opencode.ai/docs/skills/
-
-    python3 tools/skill_lint.py [repo_root]
-
-Standard library only. It lives in `tools/` of the agent-hub repository and is not part of the installed
-package: run it from a clone. Skills are found by globbing `.opencode/skills/*/`, `.agents/skills/*/` and
-`.claude/skills/*/` (never a list, so a new skill can't slip past). Per skill:
-  FAIL  no SKILL.md; frontmatter missing or not YAML; `name` missing, not
-        ^[a-z0-9]+(-[a-z0-9]+)*$, over 64 chars, or not the folder name;
-        `description` missing or not 1-1024 chars; description cut short by
-        an unquoted ` #` (YAML reads the rest as a comment); a relative
-        markdown link in SKILL.md or references/*.md that points nowhere.
-  WARN  frontmatter keys opencode ignores; SKILL.md body over 150 lines or a
-        reference over 300 lines (size budget).
-Rules in `.claude/rules/*.md` (oh-my-opencode rules): FAIL without `paths`/`globs`,
-WARN when a pattern matches no file in the repo.
-
-A file that can't be read is NOT ASSESSED, never OK. Exit 0 only when every
-item is OK or WARN and at least one skill was scanned.
-"""
-
 from __future__ import annotations
 
 import json
