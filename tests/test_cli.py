@@ -433,13 +433,26 @@ class TemplateCommandsTest(unittest.TestCase):
                 return dict(a.choices)
         return {}
 
-    def test_every_dah_command_in_a_template_names_real_commands_and_flags(self) -> None:
+    def documents(self) -> list[tuple[Path, str]]:
+        import re
+        skipped = {ROOT / "docs" / "port-from-auto-arkham.md"}
+        files = [*(ROOT / "agent_hub" / "templates").rglob("*.md"), ROOT / "README.md",
+                 *(ROOT / "agent_hub" / "guide").rglob("*.md"), *(ROOT / "docs").glob("*.md")]
+        out = []
+        for f in sorted(set(files) - skipped):
+            text = f.read_text(encoding="utf-8")
+            if f.name == "RELEASING.md":
+                text = re.split(r"^### 0\.", text, maxsplit=1, flags=re.M)[0]
+            out.append((f, text))
+        return out
+
+    def test_every_dah_command_in_the_docs_and_templates_names_real_commands_and_flags(self) -> None:
         import re
         import shlex
         from agent_hub.cli import build_parser
         problems = []
-        for f in sorted((ROOT / "agent_hub" / "templates").rglob("*.md")):
-            for m in re.finditer(r"`(dah [^`\n]*)`", f.read_text(encoding="utf-8")):
+        for f, text in self.documents():
+            for m in re.finditer(r"`(dah [^`\n]*)`", text):
                 try:
                     toks = shlex.split(m.group(1))[1:]
                 except ValueError:
