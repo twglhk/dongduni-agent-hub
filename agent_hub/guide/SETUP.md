@@ -2,7 +2,7 @@
 
 You are a coding agent (OpenCode, Claude Code, Codex or similar) and a person asked you to set up agent-hub for them. Work through the phases in order. The goal: by the end, the tower runs in their workspace with a **hub** and an **infra** lane that fit how they already work, the board opens on their phone, their first request has gone through the hub, and you have watched one request to infra go round trip.
 
-`dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws` prints the guides for reaching the board.
+`dah guide` prints this playbook; `dah guide lan|tailscale|cloudflare|aws|linux-server` prints the guides for reaching the board and for running the tower on a server.
 
 ## Ground rules
 
@@ -80,7 +80,7 @@ Do not skip this phase silently: a board that only opens on this machine is easy
 | phone on the same Wi-Fi, trying it out | the board on the network, token sign-in | `dah guide lan` |
 | Tailscale installed (phone on the tailnet) | `tailscale serve`, identity header | `dah guide tailscale` |
 | a domain on Cloudflare | Cloudflare Tunnel + Access | `dah guide cloudflare` |
-| agents should run on a server | EC2 + one of the above, or an ALB with OIDC | `dah guide aws` |
+| agents should run on a server | EC2 + one of the above, or an ALB with OIDC | `dah guide aws`; any Linux box: `dah guide linux-server` (systemd unit, swap, Orca) |
 
 1. Follow the guide. Opening the board beyond this machine is their call: show each command first.
 2. Set `web.public_url` and `auth` in `tower.json`; add members (`dah member add NAME [--ident EMAIL] [--token]`; tokens are printed once, hand them over privately). Restart the tower (`dah stop && dah start`) when `web` or `auth` changed.

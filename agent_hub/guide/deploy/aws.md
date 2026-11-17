@@ -7,7 +7,7 @@ Run the tower and the agents on a server when the team should not depend on one 
 - EC2 (or Lightsail), Ubuntu or Amazon Linux, 2 vCPU / 4–8 GB is enough for a hub, infra and two team lanes. The agents do the heavy lifting remotely; the box mostly runs git, tests and builds.
 - Install the agent CLIs you use and log them in once over SSH (`opencode auth login`, `claude`, `codex login`). Put API keys in the environment of the service, not in the repo.
 - Install the `dah` command (`uv tool install dongduni-agent-hub` or `pipx install dongduni-agent-hub`), clone your workspace, then `dah init` as in the setup playbook (`dah guide`).
-- Run it as a service, in the workspace:
+- Run it as a service, in the workspace (the full server guide, with Orca, swap and troubleshooting, is [linux-server.md](linux-server.md)):
 
 ```ini
 # /etc/systemd/system/tower.service
@@ -21,6 +21,9 @@ WorkingDirectory=/home/ubuntu/workspace
 EnvironmentFile=/home/ubuntu/.tower.env
 ExecStart=/home/ubuntu/.local/bin/dah run
 Restart=always
+RestartSec=5
+# keep lane sessions alive when the tower restarts (the default kills the whole cgroup)
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
