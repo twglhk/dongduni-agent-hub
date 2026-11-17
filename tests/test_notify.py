@@ -81,11 +81,14 @@ class PushTest(unittest.TestCase):
             started.set()
             release.wait(5)
 
+        before = set(threading.enumerate())
         with mock.patch("agent_hub.notify._post", slow):
             notify.notifier(cfg)(ITEM)
             self.assertTrue(started.wait(5))
             self.assertNotEqual(seen[0], caller)
             release.set()
+            for sender in set(threading.enumerate()) - before:
+                sender.join(5)
 
     def test_the_macos_text_keeps_non_ascii_characters(self) -> None:
         with mock.patch("agent_hub.notify.sys.platform", "darwin"), mock.patch("agent_hub.notify.subprocess.run") as run:

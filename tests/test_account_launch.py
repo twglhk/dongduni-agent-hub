@@ -277,6 +277,9 @@ class EngineLaunchTest(Base):
 
 class RuntimeEnvTest(unittest.TestCase):
     def setUp(self) -> None:
+        patcher = mock.patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != "CLAUDE_CONFIG_DIR"}, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.cfg = make_home({"hub": {"runtime": "claude"}, "infra": {"runtime": "claude"},
                               "win": {"runtime": "claude", "terminal": "tmux"}})
         self.s = Store(self.cfg.db)
