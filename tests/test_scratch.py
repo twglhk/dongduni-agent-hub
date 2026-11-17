@@ -142,6 +142,21 @@ class LaneWorktreeTest(unittest.TestCase):
         sweep.sweep(0)
         self.assertEqual(len([ln for ln in log if "kept lane worktree" in ln]), 1)  # said once
 
+    def test_instance_worktrees_stay_while_the_lane_may_run_them(self) -> None:
+        cfg = workspace({"hub": {"runtime": "claude"}, "docs": {"runtime": "claude", "worktree": True,
+                                                                "max_instances": 3}})
+        base = cfg.state_dir / "worktrees"
+        for d in ("docs", "docs-2", "docs-3"):
+            git(cfg.home, "worktree", "add", "-q", "-b", f"dah/{d}", str(base / d))
+        raw = json.loads((cfg.home / ".tower/tower.json").read_text(encoding="utf-8"))
+        raw["lanes"]["docs"]["max_instances"] = 2
+        (cfg.home / ".tower/tower.json").write_text(json.dumps(raw), encoding="utf-8")
+        cfg = config_mod.load(cfg.home)
+        removed = ScratchSweep(cfg, Store(cfg.db), lambda _: None, size=lambda p: 1.0).sweep(0)
+        self.assertEqual([Path(p).name for p, _ in removed], ["docs-3"])
+        self.assertTrue((base / "docs").exists() and (base / "docs-2").exists())
+        self.assertIn("dah/docs-3", git(cfg.home, "branch"))
+
 
 class ScratchRootTest(unittest.TestCase):
     def test_default_root_is_under_the_user_cache_dir(self) -> None:

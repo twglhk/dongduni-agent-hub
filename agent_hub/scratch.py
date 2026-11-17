@@ -242,13 +242,15 @@ class ScratchSweep:
         return removed
 
     def _lane_leftovers(self) -> list[tuple[str, float]]:
-        """`.tower/state/worktrees/<lane>` whose lane is gone from tower.json or no longer has "worktree": true."""
+        """`.tower/state/worktrees/<lane>` (or `<lane>-N`) whose lane is gone from tower.json, no longer has "worktree":
+        true, or whose instance #N is past the lane's max_instances now."""
         base = self.cfg.state_dir / "worktrees"
         try:
             dirs = sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink())
         except OSError:
             return []
-        wanted = {lid for lid, ln in self.cfg.lanes.items() if ln.kind == "team" and ln.worktree}
+        wanted = {self.cfg.lane_dir(lid).name for lid, ln in self.cfg.all_lanes.items()
+                  if ln.kind == "team" and ln.worktree}
         removed: list[tuple[str, float]] = []
         for p in dirs:
             if p.name in wanted:

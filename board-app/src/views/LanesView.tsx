@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { Chip } from '../components/Chips';
 import { LaneAdd } from '../components/lanes/LaneAdd';
-import { LaneCard } from '../components/lanes/LaneCard';
+import { LaneGroup } from '../components/lanes/LaneGroup';
 import { Stepper } from '../components/lanes/Stepper';
 import { FoldTitle } from '../components/prefs/FoldTitle';
 import { ReportCard } from '../components/history/ReportCard';
@@ -10,6 +10,7 @@ import { TaskRow } from '../components/TaskRow';
 import { XSections } from '../components/XHost';
 import { useL } from '../i18n/context';
 import { fmt } from '../lib/format';
+import { byLane } from '../lib/laneRows';
 import { isHidden, ordered } from '../lib/prefs';
 import type { BoardState } from '../lib/types';
 import { useFold, usePrefs } from '../state/prefs';
@@ -37,7 +38,7 @@ export function LanesView({ d, onImage, onAdd }: { d: BoardState; onImage: (imgs
         </div>
         {!laneFold?.folded && (
           <>
-            {d.lanes.length ? <div className="grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">{d.lanes.map(l => <LaneCard key={l.lane} l={l} />)}</div> : <Empty>{L.empty.lanes}</Empty>}
+            {d.lanes.length ? <div className="grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">{byLane(d.lanes).map(g => <LaneGroup key={g[0].lane} rows={g} />)}</div> : <Empty>{L.empty.lanes}</Empty>}
             {cap && <div className="px-1 pt-2 text-t6 leading-normal text-ink-3">{L.cap.hint}</div>}
             <LaneAdd onOpen={onAdd} />
           </>

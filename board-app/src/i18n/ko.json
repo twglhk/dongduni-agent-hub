@@ -171,7 +171,8 @@
     "engine": "엔진",
     "missing": "폴더를 찾지 못했어요",
     "none": "아직 없어요",
-    "by": "{who} 요청"
+    "by": "{who} 요청",
+    "branch": "브랜치"
   },
   "eg": {
     "engines": "엔진",

@@ -120,6 +120,8 @@ def cmd_report(args: argparse.Namespace) -> None:
         s.add_retro(tid, me, text, retro["cost"], retro["corrected"], retro["rule"], retro["raw"])
     s.signal(tid)
     tag = me + (f" task #{tid} \"{task['title']}\"" if task else "")
+    if task and c.branch_of(me) and args.kind in ("done", "wrapped"):
+        tag += f" (branch {c.branch_of(me)})"
     if args.kind == "handoff" and task:
         s.update_task(task["id"], handoff=args.text, rotate_ready=time.time())
         print("Handoff saved. End your turn; the tower continues in a fresh session.")

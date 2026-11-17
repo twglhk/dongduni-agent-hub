@@ -345,8 +345,8 @@ LANES = {"hub": {"runtime": "opencode"}, "infra": {"runtime": "opencode"},
 
 
 class Base(unittest.TestCase):
-    def build(self, **extra):
-        self.cfg = make_home(LANES, **extra)
+    def build(self, lanes=None, **extra):
+        self.cfg = make_home(lanes or LANES, **extra)
         self.clock = Clock()
         self.s = Store(self.cfg.db, clock=self.clock)
         self.rt = FakeRuntime(self.s)
@@ -433,6 +433,36 @@ class ConflictTest(Base):
         self.tick()
         self.assertEqual(self.s.task(first)["state"], "queued")  # still waiting for dep
         self.assertEqual(self.s.task(second)["state"], "running")  # ... and does not hold the lane up
+
+    def test_a_lane_sets_its_own_max_instances(self) -> None:
+        self.build(max_lanes=5, max_instances=2, lanes={**LANES, "docs": {"runtime": "claude", "max_instances": 3},
+                                                       "web": {"runtime": "claude", "max_instances": 1}})
+        self.assertEqual(sorted(self.cfg.instances), ["docs#2", "docs#3"])
+        self.assertEqual((self.cfg.instance_cap("docs"), self.cfg.instance_cap("docs#2"), self.cfg.instance_cap("web")),
+                         (3, 3, 1))
+        for p in ("a", "b", "c"):
+            self.s.add_task("docs", p, f"paths: {p}")
+            self.s.add_task("web", p, f"paths: {p}")
+        self.tick(4)
+        self.assertEqual(sorted(self.started()), ["docs", "docs#2", "docs#3", "web"])
+
+    def test_a_lane_without_its_own_max_instances_takes_the_top_level_one(self) -> None:
+        self.build(max_instances=2)
+        self.assertEqual(self.cfg.instance_cap("docs"), 2)
+        self.assertEqual(self.cfg.lanes["docs"].max_instances, 0)
+
+    def test_max_instances_on_the_hub_or_below_one_is_refused(self) -> None:
+        from agent_hub.config import ConfigError
+        with self.assertRaises(ConfigError):
+            make_home({**LANES, "hub": {"runtime": "opencode", "max_instances": 2}})
+        with self.assertRaises(ConfigError):
+            make_home({**LANES, "docs": {"runtime": "claude", "max_instances": 0}})
+
+    def test_an_instance_worktree_name_may_not_be_another_lanes(self) -> None:
+        from agent_hub.config import ConfigError
+        with self.assertRaises(ConfigError):
+            make_home({**LANES, "docs": {"runtime": "claude", "worktree": True}, "docs-2": {"runtime": "claude"}},
+                      max_instances=2)
 
     def test_lowering_max_instances_sends_queued_work_back_to_the_base_lane(self) -> None:
         self.build(max_lanes=3, max_instances=2)

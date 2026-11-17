@@ -171,7 +171,8 @@
     "engine": "Engine",
     "missing": "folder not found",
     "none": "Nothing yet",
-    "by": "for {who}"
+    "by": "for {who}",
+    "branch": "Branch"
   },
   "eg": {
     "engines": "Engines",

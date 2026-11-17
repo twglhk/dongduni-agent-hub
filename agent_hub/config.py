@@ -59,6 +59,14 @@ def instance_lane(base: str, n: int) -> str:
     return f"{base}{INSTANCE_SEP}{n}"
 
 
+def lane_slug(lane: str) -> str:
+    return lane.replace(INSTANCE_SEP, "-")
+
+
+def lane_branch(lane: str) -> str:
+    return f"dah/{lane_slug(lane)}"
+
+
 PERSON_HUB_PREFIX = HUB + "-"
 DEFAULT_HUB_CAP = 3
 HUB_SLUG_MAX = 32
@@ -150,7 +158,8 @@ class Lane:
     instructions: str = ""       # path relative to home
     env: dict[str, str] = field(default_factory=dict)
     terminal: str = "none"       # none: the tower runs the session in the background; tmux | orca: in a window
-    worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
+    worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane> (dah/<lane>-N for instance #N)
+    max_instances: int = 0       # team lanes: sessions this lane may run at once (0 = the top-level max_instances)
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
     context_limit_k: int | None = None
@@ -250,10 +259,18 @@ class Config:
                 and self.auth_mode == "local")
 
     def lane_dir(self, lane: str) -> Path:
-        """Where a lane's agent works: the workspace, or the lane's own git worktree."""
-        base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
-        ln = self.lanes.get(base)
-        return self.state_dir / "worktrees" / base if ln and ln.worktree else self.workdir
+        """Where a lane's agent works: the workspace, or this session's own git worktree. Without "worktree": true a
+        lane and its instances share the workspace, which is why their `paths:` may not overlap."""
+        ln = self.lanes.get(base_lane(lane))
+        return self.state_dir / "worktrees" / lane_slug(lane) if ln and ln.worktree else self.workdir
+
+    def branch_of(self, lane: str) -> str:
+        ln = self.lanes.get(base_lane(lane))
+        return lane_branch(lane) if ln and ln.kind == "team" and ln.worktree else ""
+
+    def instance_cap(self, lane: str) -> int:
+        ln = self.lanes.get(base_lane(lane))
+        return (ln.max_instances or self.max_instances) if ln and ln.kind == "team" else 1
 
     def context_limit(self, lane: str, model: str = "") -> int:
         ln = self.lanes.get(base_lane(lane))
@@ -342,6 +359,9 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
     if _bool(raw, "worktree", False, f"lane {lid}") and kind != "team":
         raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
+    if raw.get("max_instances") is not None and kind != "team":
+        raise ConfigError(f"lane {lid}: \"max_instances\" is for team lanes; {lid} runs one session")
+    cap = _int(raw, "max_instances", 0, 1, f"lane {lid}")
     limit = raw.get("context_limit_k")
     if limit is not None and kind == INFRA:
         raise ConfigError(f"lane {lid}: \"context_limit_k\" is for team lanes and the hub (infra runs one memo per session)")
@@ -361,6 +381,7 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
         terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
         worktree=_bool(raw, "worktree", False, f"lane {lid}") if "worktree" in raw else (worktree and kind == "team"),
         context_limit_k=limit,
+        max_instances=cap,
     )
 
 
@@ -441,8 +462,11 @@ def from_raw(home: Path, raw: Any) -> Config:
     max_instances = _int(raw, "max_instances", 1, 1)
     instances: dict[str, Lane] = {}
     for lid, ln in list(lanes.items()):
-        for n in range(2, max_instances + 1) if ln.kind == "team" else ():
+        for n in range(2, (ln.max_instances or max_instances) + 1) if ln.kind == "team" else ():
             key = instance_lane(lid, n)
+            if ln.worktree and lane_slug(key) in lanes:
+                raise ConfigError(f"lane {lane_slug(key)}: its worktree and branch name are the ones {lid} #{n} uses "
+                                  f"({lane_branch(key)}); rename one of them")
             instances[key] = dataclasses.replace(ln, id=key, base=lid, label=f"{ln.label} #{n}",
                                                  port=next_port if ln.port else None, args=list(ln.args), env=dict(ln.env))
             next_port += 1 if ln.port else 0

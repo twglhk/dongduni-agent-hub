@@ -310,11 +310,25 @@ def process_doc(cfg: Config, path: str) -> dict[str, Any] | None:
         return None
 
 
+def shown_lanes(cfg: Config, s: Store) -> list[str]:
+    out: list[str] = []
+    for lid in [*cfg.lanes, *cfg.person_hubs]:
+        out.append(lid)
+        for key, ln in cfg.instances.items():
+            if ln.base != lid:
+                continue
+            row = s.lane(key)
+            if row.get("status") not in (None, "closed") or s.live_task(key):
+                out.append(key)
+    return out
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     blamed = set(s.blames())
     libs: dict[str, list[dict[str, Any]]] = {}
-    for lid, ln in {**cfg.lanes, **cfg.person_hubs}.items():
+    for lid in shown_lanes(cfg, s):
+        ln = cfg.all_lanes[lid]
         row = s.lane(lid)
         task = s.live_task(lid) if ln.kind == "team" else None
         doing = None
@@ -334,6 +348,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
             proc = hit["type"] if hit else None
         out.append({"lane": lid, "label": ln.label, "runtime": ln.runtime, "kind": ln.kind,
                     "owner": ln.owner or None, "status": row.get("status") or "closed", "doing": doing,
+                    "base": ln.base or None, "branch": cfg.branch_of(lid) or None,
                     "engine": ln.engine or None,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
                     "requester": task["requester"] if task else None,

@@ -260,7 +260,6 @@ class Engine:
         self.marks: dict[str, float] | None = None  # how far extensions have heard about changes
         self.ext_lanes: dict[str, str] | None = None  # lane statuses as extensions last heard them
         self._team = cfg.team()
-        self.max_instances = cfg.max_instances
         self.heavy: dict[str, int] = {}  # lane -> process MB over cfg.memory_limit_mb (memwatch fills it)
         self.rotate_asked: set[tuple[int, str]] = set()  # (task, session) already asked to hand off because the session is fat
         self.ctx_asked: set[tuple[int, str]] = set()
@@ -671,8 +670,9 @@ class Engine:
                 self.store.add_report(tid, lane, "done", info["text"], atts)
                 self.store.signal(tid)
                 att = f" (files: {', '.join(atts)})" if atts else ""
+                br = f" on branch {self.cfg.branch_of(lane)}" if self.cfg.branch_of(lane) else ""
                 self.store.push(self.store.hub_for_task(tid), lane, "done", f"Done: {lane} task #{tid} \"{task['title']}\" (done gate passed "
-                                f"at {str(info.get('sha'))[:8]}): {clip(info['text'], 700)}{att}", tid)
+                                f"at {str(info.get('sha'))[:8]}{br}): {clip(info['text'], 700)}{att}", tid)
                 self.store.push(lane, TOWER, "tell", "The done gate passed; your done went to the hub. Review comes "
                                 "back to this session.", tid)
             else:
@@ -982,9 +982,7 @@ class Engine:
             self.log(f"leftover: stopped {len(lines)} process tree(s)")
 
     def _tree_in_use(self, lane: str, busy: set[str], statuses: dict[str, str]) -> bool:
-        base = base_lane(lane)
-        return any(base_lane(k) == base and (k in busy or statuses.get(k, "closed") not in ("closed", "idle"))
-                   for k in self.team)
+        return lane in busy or statuses.get(lane, "closed") not in ("closed", "idle")
 
     def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str], busy: set[str],
                      statuses: dict[str, str]) -> bool:
@@ -992,8 +990,7 @@ class Engine:
         ln = self.cfg.all_lanes.get(lane)
         if not (self.cfg.branch_sync and ln and ln.worktree) or not hasattr(self.rt, "sync"):
             return True
-        base = base_lane(lane)
-        if self.clock() < self.sync_retry.get(base, 0.0) or self._tree_in_use(lane, busy, statuses):
+        if self.clock() < self.sync_retry.get(lane, 0.0) or self._tree_in_use(lane, busy, statuses):
             return True
         try:
             what = self.rt.sync(lane)
@@ -1011,7 +1008,7 @@ class Engine:
             self.log(f"{lane}: task #{task['id']} waits: {why}")
             return False
         except Exception as e:
-            self.sync_retry[base] = self.clock() + SYNC_RETRY_SECONDS
+            self.sync_retry[lane] = self.clock() + SYNC_RETRY_SECONDS
             self.log(f"{lane}: branch sync before task #{task['id']} failed: {e}")
             return True
         self.sync_told.pop(task["id"], None)
@@ -1027,33 +1024,30 @@ class Engine:
             return
         self.catch_up_at = now
         busy = self.store.busy_lanes()
-        trees: set[str] = set()
         for lane in self.team:
             ln = self.cfg.all_lanes.get(lane)
-            base = base_lane(lane)
-            if not (ln and ln.worktree) or base in trees:
+            if not (ln and ln.worktree):
                 continue
-            trees.add(base)
-            if now < self.sync_retry.get(base, 0.0) or self._tree_in_use(base, busy, statuses):
+            if now < self.sync_retry.get(lane, 0.0) or self._tree_in_use(lane, busy, statuses):
                 continue
             try:
                 what = catch_up(self.cfg, ln)
             except WorktreeConflict as e:
                 why = str(e)
-                if self.catch_up_told.get(base) != why:
-                    self.catch_up_told[base] = why
-                    self.store.push(HUB, TOWER, "stalled", f"{base}: the tower could not merge main into its idle "
-                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(base)} "
+                if self.catch_up_told.get(lane) != why:
+                    self.catch_up_told[lane] = why
+                    self.store.push(HUB, TOWER, "stalled", f"{lane}: the tower could not merge main into its idle "
+                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(lane)} "
                                     "(merge main, commit) or merge the branch yourself.")
-                self.log(f"{base}: branch sync: {why}")
+                self.log(f"{lane}: branch sync: {why}")
                 continue
             except Exception as e:
-                self.sync_retry[base] = now + SYNC_RETRY_SECONDS
-                self.log(f"{base}: branch sync failed: {e}")
+                self.sync_retry[lane] = now + SYNC_RETRY_SECONDS
+                self.log(f"{lane}: branch sync failed: {e}")
                 continue
-            self.catch_up_told.pop(base, None)
+            self.catch_up_told.pop(lane, None)
             if what:
-                self.log(f"{base}: {what}")
+                self.log(f"{lane}: {what}")
 
     def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
         """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)
@@ -1061,17 +1055,17 @@ class Engine:
         (overlapping or undeclared `paths:`, an unfinished `after:`) stay queued and the next one is tried."""
         for task in self.store.tasks(("queued",), limit=500):  # max_instances was lowered: back to the base lane
             n = task["lane"].partition("#")[2]
-            if n and (not n.isdigit() or int(n) > self.max_instances):
+            if n and (not n.isdigit() or int(n) > self.cfg.instance_cap(task["lane"])):
                 self.store.update_task(task["id"], lane=base_lane(task["lane"]))
         out: list[dict[str, Any]] = []
-        if self.max_instances < 2 or room <= 0:
+        if room <= 0:
             return out
         moved: list[dict[str, Any]] = []
         order = self.task_turns()
         for base in self._team:
-            if base not in busy:
+            if base not in busy or self.cfg.instance_cap(base) < 2:
                 continue
-            keys = [instance_lane(base, n) for n in range(2, self.max_instances + 1)]
+            keys = [instance_lane(base, n) for n in range(2, self.cfg.instance_cap(base) + 1)]
             key = next((k for k in keys if k not in busy and not self.store.lane(k).get("closing")
                         and not self.store.queued_for(k) and self.rt.status(k) == "closed"), None)
             if key is None:

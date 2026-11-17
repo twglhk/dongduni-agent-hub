@@ -34,6 +34,8 @@ export interface Lane {
   usage?: Usage | null;
   requester?: string | null;
   owner?: string | null;
+  base?: string | null;
+  branch?: string | null;
 }
 
 export interface LaneCap { used: number; cap: number; max: number }

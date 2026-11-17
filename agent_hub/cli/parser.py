@@ -195,7 +195,7 @@ def build_parser() -> argparse.ArgumentParser:
     q = lsub.add_parser("add")
     q.add_argument("id")
     q.add_argument("--runtime", required=True, help=f"{', '.join(RUNTIMES)}, or one an extension registers")
-    q.add_argument("--worktree", action="store_true", help="work in a git worktree of its own (branch dah/ID)")
+    q.add_argument("--worktree", action="store_true", help="work in a git worktree of its own (branch dah/ID; parallel session #N: dah/ID-N)")
     q.add_argument("--label")
     q.add_argument("--engine", help="the engine this lane belongs to (`dah engine list`); default: the implicit one")
     q.add_argument("--model")

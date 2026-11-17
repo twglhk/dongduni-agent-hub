@@ -171,7 +171,8 @@
     "engine": "Motor",
     "missing": "carpeta no encontrada",
     "none": "Aún nada",
-    "by": "para {who}"
+    "by": "para {who}",
+    "branch": "Rama"
   },
   "eg": {
     "engines": "Motores",

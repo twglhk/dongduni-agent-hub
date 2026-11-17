@@ -20,10 +20,11 @@ export function LaneCard({ l }: { l: Lane }) {
   const proc = l.process ? [l.process, l.stage ? fmt(L.lv.stageN, { n: l.stage }) : ''].filter(Boolean).join(' · ') : '';
   const u = l.usage, used = u && ((u.tokens_in || 0) + (u.tokens_out || 0)) > 0;
   return (
-    <button type="button" onClick={() => openLane(l.lane)}
+    <button type="button" onClick={() => openLane(l.base || l.lane)}
       className="pressable grid w-full content-start gap-1.5 rounded-card bg-surface px-5 py-4 text-left">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 truncate text-t4 font-bold">{l.label || l.lane}</span>
+        <span className="min-w-0 truncate text-t4 font-bold">{l.base ? (l.label || l.lane).replace(/ #\d+$/, '') : l.label || l.lane}</span>
+        {l.base && <Chip>#{l.lane.slice(l.lane.indexOf('#') + 1)}</Chip>}
         {l.runtime && <Chip>{rtName(l.runtime)}</Chip>}
         <span className="ml-auto flex-none"><StatusChip status={l.status} /></span>
       </div>
@@ -38,6 +39,7 @@ export function LaneCard({ l }: { l: Lane }) {
         </div>
       )}
       {!!l.ctx_k && l.ctx_k > 0 && <div className="text-t6 text-ink-3">{L.label.ctx} {l.ctx_k}K</div>}
+      {l.branch && <div className="flex min-w-0 items-center gap-1.5 text-t6 text-ink-3">{L.lv.branch}<code className="truncate rounded-[6px] bg-surface-3 px-1.5 py-px font-mono text-ink-2">{l.branch}</code></div>}
       <TokenLine k={l.task_tokens} />
       {used && <div className="text-t6 text-ink-3">{fmt(L.use.today, { i: tok(u.tokens_in), o: tok(u.tokens_out) }) + (isNum(u.cost) ? ' · ' + cost(u.cost) : '')}</div>}
     </button>

@@ -86,7 +86,7 @@ One image shows one thing. Keep sizes and framing equal when images are compared
 
 ## Lanes in their own worktree
 
-- A team lane with `"worktree": true` works in a git worktree of its own (`.tower/state/worktrees/<lane>`, branch `dah/<lane>`); its brief says so. It commits there and names the branch and commits in its report.
+- A team lane with `"worktree": true` works in a git worktree of its own (`.tower/state/worktrees/<lane>`, branch `dah/<lane>`); its brief says so. Its parallel session #N (`<lane>#N`) has its own too: `.tower/state/worktrees/<lane>-N`, branch `dah/<lane>-N`. It commits there and names the branch and commits in its report.
 - Nothing it does reaches the main checkout by itself. The hub reviews the branch from the workspace (`git diff HEAD...dah/<lane>`) and merges it when the task is done and inside the approved scope, or posts a review item when people should decide.
 
 ## agent-hub itself

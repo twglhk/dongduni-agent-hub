@@ -49,7 +49,7 @@ export function EngineView() {
       </Section>
       <Section title={P.byLane} n={Object.keys(v.lanes).length}>
         <RowCard>
-          {laneOrder(data?.lanes.map(l => l.lane) || [], v).map(id => (
+          {laneOrder(data?.lanes.filter(l => !l.base).map(l => l.lane) || [], v).map(id => (
             <Row key={id} onClick={() => openLane(id)} label={fmt(P.open, { name: lane(id) })} title={lane(id)}
               sub={v.lanes[id].length ? v.lanes[id].map(fullTitle).join(', ') : P.laneEmpty} />
           ))}

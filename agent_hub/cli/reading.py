@@ -163,6 +163,8 @@ def cmd_status(_args: argparse.Namespace) -> None:
         if task:
             line += f" · task #{task['id']} {task['state']} \"{clip(task['title'], 50)}\"" + (
                 f" for {task['requester']}" if task.get("requester") else "")
+            if c.branch_of(lid):
+                line += f" · {c.branch_of(lid)}"
         if queued:
             line += f" · {len(queued)} queued"
         opened = sum(1 for it in s.items(state="open", lane=lid))
