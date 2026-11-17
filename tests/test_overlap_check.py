@@ -154,6 +154,37 @@ class OverlapTest(Base):
         self.assertIn(a, self.held())
 
 
+class HoldIsKeptTest(Base):
+    def setUp(self) -> None:
+        super().setUp()
+        self.a = self.memo("hub-alice", "[Shared notices wording] one", ".tower/PROTOCOL.md")
+        self.e.tick()
+        self.b = self.memo("hub-bob", "[Shared notices wording] two", "AGENTS.md")
+        self.e.tick()
+        self.card = next(c for c in self.cards() if c["assignee"] == "bob")
+
+    def test_a_memo_with_other_paths_but_the_same_topic_words_waits_for_the_card(self) -> None:
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "wait")
+        self.assertEqual(self.held(), {self.a})
+        self.e.tick()
+        self.assertEqual(self.held(), {self.a})
+
+    def test_it_keeps_waiting_after_the_earlier_memo_finished(self) -> None:
+        self.s.finish_inbox("infra")
+        self.e.tick()
+        self.e.tick()
+        self.assertNotIn(self.b, self.held())
+        self.assertEqual(self.s.message(self.b)["delivered"], None)
+
+    def test_a_merge_answer_does_not_start_it(self) -> None:
+        self.s.decide(self.card["id"], "ok", "bob", choice="Merge")
+        self.e.tick()
+        self.s.finish_inbox("infra")
+        self.e.tick()
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "merge")
+        self.assertNotIn(self.b, self.held())
+
+
 class OwnAnswerTest(Base):
     def setUp(self) -> None:
         super().setUp()

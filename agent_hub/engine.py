@@ -1420,9 +1420,8 @@ class Engine:
             return
         live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
         now, barrier = self.clock(), []
-        held = {int(r["work"].split(":")[1]) for r in self.store.overlaps(overlap.HOLDS) if r["work"].startswith("memo:")}
-
-        held = {int(r["work"].split(":")[1]) for r in self.store.account_holds() if r["work"].startswith("memo:")}
+        held = {int(r["work"].split(":")[1]) for r in [*self.store.overlaps(overlap.HOLDS), *self.store.account_holds()]
+                if r["work"].startswith("memo:")}
 
         def allow(m: dict[str, Any]) -> bool:
             if barrier or m["id"] in held:
