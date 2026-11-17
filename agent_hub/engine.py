@@ -235,8 +235,6 @@ def team_turns(store: Store, team: set[str], fair: bool = True) -> dict[int, tup
 
 
 def message_paths(msg: dict[str, Any]) -> list[str] | None:
-    """An infra message's paths: `dah infra --paths` / `dah memo paths` (the column), else a `paths:` line in its text.
-    None = not declared yet; [] = touches nothing (NOTHING); [ALONE] = runs alone."""
     col = str(msg.get("paths") or "").strip()
     if col == NOTHING:
         return []
@@ -257,10 +255,6 @@ def paths_label(msg: dict[str, Any]) -> str:
 
 
 def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> tuple[str, dict[str, Any]] | None:
-    """What keeps this infra message from starting beside the ones other sessions hold, as (why, that message), or None.
-    A file lock: declared paths that overlap wait for the other side to finish; `--alone` waits for every session and
-    every session waits for it; a session that took a message with no paths is waited for only DECLARE_GRACE seconds
-    after it opened, while it declares them. A message with no paths may start (it declares)."""
     mine = message_paths(msg)
     for o in live:
         theirs = message_paths(o)
@@ -313,8 +307,6 @@ def message_conflict(msg: dict[str, Any], live: list[dict[str, Any]], now: float
 
 def infra_waits(store: Store, sessions: list[str], now: float, fair: bool = False,
                 limit: int = 20) -> list[tuple[dict[str, Any], tuple[str, dict[str, Any] | None] | None]]:
-    """Each waiting infra message with what keeps it waiting, by the rule the tower uses (`dah status`, the Lanes tab):
-    (message, (why, blocking message) or None when the next free session takes it)."""
     held = store.held_messages(sessions)
     live = [{**m, "_lane": k} for k, m in held.items()]
     free = len(sessions) - len(held)
@@ -748,9 +740,6 @@ class Engine:
             self.store.route_decision(it["id"], push, follow, self._decision_paths(it) if push and push[0] == INFRA else None)
 
     def _decision_paths(self, it: dict[str, Any]) -> str | None:
-        """Paths for the follow-up of an infra card: those of the memo the posting session was on (recorded when the card
-        was posted, else the first `memo #N` the card names); a report card confirmed with no note touches no files.
-        None = the session that takes it declares them."""
         mids = [it.get("message_id")] + [int(x) for x in MEMO_REF.findall(f"{it.get('title') or ''}\n{it.get('body') or ''}")]
         with self.store.conn() as con:
             for mid in mids:
@@ -1410,7 +1399,7 @@ class Engine:
         live = [{**m, "_lane": k} for k, m in self.store.held_messages([k for k in self.infra_keys if k != lane]).items()]
         now, barrier = self.clock(), []
 
-        def allow(m: dict[str, Any]) -> bool:  # oldest first; a blocked `--alone` message holds back the ones after it
+        def allow(m: dict[str, Any]) -> bool:
             if barrier:
                 return False
             if message_block(m, live, now) is None:

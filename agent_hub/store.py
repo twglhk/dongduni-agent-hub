@@ -204,7 +204,7 @@ LEDGER_COLUMNS = (("model", "TEXT"), ("effort", "TEXT"), ("tok_new", "INTEGER NO
 LINE_COLUMNS = (("line_row", "TEXT"), ("line_stage", "TEXT"), ("line_mode", "TEXT"), ("stage_now", "TEXT"),
                 ("deliverable", "TEXT"),  # the brief's Line: header and `dah stage`
                 ("requester", "TEXT"), ("rank", "REAL"), ("hub", "TEXT"),
-                ("paths", "TEXT"))  # what its session declared with `dah paths`; NULL = the brief's `paths:` line
+                ("paths", "TEXT"))
 
 
 def _in_turns(con: sqlite3.Connection, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -313,7 +313,7 @@ class Store:
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
             if "message_id" not in _columns(con, "items"):
-                con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")  # infra: the message the posting session held
+                con.execute("ALTER TABLE items ADD COLUMN message_id INTEGER")
 
     def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
         if table not in self.columns:

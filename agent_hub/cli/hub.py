@@ -247,9 +247,6 @@ def cancel_waiting(c: Config, s: Store, me: str, mid: int, why: str) -> None:
 
 
 def memo_paths(c: Config, s: Store, me: str, mid: int, given: list[str], alone: bool = False) -> None:
-    """Paths of an infra message, a file lock. The hub sets a hint on a waiting one; the infra session that holds it
-    declares its own (they replace the hint). Declared paths that overlap another session's give the message back to
-    the queue and close this session; it starts again once the other one finishes."""
     from ..engine import ALONE, block_text, message_block, paths_label
     paths = ALONE if alone else (", ".join(p.strip() for p in given if p.strip()) or None)
     msg = s.message(mid)
@@ -279,8 +276,6 @@ def memo_paths(c: Config, s: Store, me: str, mid: int, given: list[str], alone: 
 
 def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, paths: str | None = None,
                alone: bool = False, model: str | None = None, effort: str | None = None) -> None:
-    """`--paths` is a hint: the session that takes the memo declares its own; `--alone` = it runs with no other infra
-    session."""
     from ..engine import ALONE
     if not c.is_hub(me) or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
