@@ -1,3 +1,4 @@
+import re
 import subprocess
 import unittest
 from typing import Any
@@ -194,3 +195,21 @@ class RuleWatchConfigTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MessageLanguagesTest(unittest.TestCase):
+    def test_every_language_has_the_same_keys_and_placeholders_as_english(self) -> None:
+        for table in (rulewatch.TEXT, rulewatch.WORDS):
+            self.assertEqual(set(table), {"en", "ko", "ja", "zh", "es"})
+            for lang, entry in table.items():
+                with self.subTest(lang=lang):
+                    self.assertEqual(set(entry), set(table["en"]))
+        for lang, entry in rulewatch.TEXT.items():
+            for key, text in entry.items():
+                with self.subTest(lang=lang, key=key):
+                    self.assertEqual(sorted(re.findall(r"\{\w+\}", text)), sorted(re.findall(r"\{\w+\}", rulewatch.TEXT["en"][key])))
+
+    def test_a_reference_is_labelled_in_the_cards_language(self) -> None:
+        self.assertEqual(rulewatch.ref_label("memo:7", "es"), "memo #7")
+        self.assertEqual(rulewatch.ref_label("task:7", "ja"), "タスク #7")
+        self.assertEqual(rulewatch.ref_label("card:7", "zh"), "卡片 #7")

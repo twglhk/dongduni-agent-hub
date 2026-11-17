@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -279,3 +280,16 @@ class WordsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MessageLanguagesTest(unittest.TestCase):
+    def test_every_language_has_the_same_keys_and_placeholders_as_english(self) -> None:
+        for table in (overlap.TEXT, overlap.LABELS):
+            self.assertEqual(set(table), {"en", "ko", "ja", "zh", "es"})
+        for lang, entry in overlap.TEXT.items():
+            self.assertEqual(set(entry), set(overlap.TEXT["en"]), lang)
+            for key, text in entry.items():
+                with self.subTest(lang=lang, key=key):
+                    self.assertEqual(sorted(re.findall(r"\{\w+\}", text)), sorted(re.findall(r"\{\w+\}", overlap.TEXT["en"][key])))
+        for lang, entry in overlap.LABELS.items():
+            self.assertEqual(set(entry), set(overlap.LABELS["en"]), lang)
