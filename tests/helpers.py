@@ -45,6 +45,8 @@ class FakeRuntime:
         self.use: dict[str, dict[str, Any]] = {}
         self.ledger_use: dict[str, dict[str, Any]] = {}  # lane -> {"new", "cache", "out", "turns"}
         self.not_owned: set[str] = set()
+        self.synced: list[str] = []  # lanes whose branch sync() was asked for
+        self.sync_conflict: dict[str, str] = {}
 
     def status(self, lane: str) -> str:
         if self.qs.get(lane):
@@ -60,6 +62,14 @@ class FakeRuntime:
     def reply_question(self, lane: str, qid: str, answers: list[list[str]]) -> None:
         self.replies.append((lane, qid, answers))
         self.qs[lane] = [q for q in self.qs.get(lane, []) if q["id"] != qid]
+
+    def sync(self, lane: str) -> str:
+        """runtimes.sync_worktree: a test puts a reason in sync_conflict[lane] to make the merge fail."""
+        from agent_hub.branchsync import WorktreeConflict
+        self.synced.append(lane)
+        if self.sync_conflict.get(lane):
+            raise WorktreeConflict(self.sync_conflict[lane])
+        return ""
 
     def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
         self.opened.append((lane, prompt))

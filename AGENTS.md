@@ -22,6 +22,7 @@ Instructions for coding agents working in this repository.
 | `agent_hub/guide/` | the setup playbook, the extension guide and the guides for reaching the board (`dah guide`); shipped in the package |
 | `agent_hub/stagemodel.py` | per-task model and effort from brief lines, a library's `model · effort` column or an optional table |
 | `agent_hub/engines.py` · `rating.py` · `stats.py` | engines: pattern library, process and pattern cards, skills list, weekly snapshots; ratings and blame; the token ledger |
+| `agent_hub/branchsync.py` | opt-in: a worktree lane's branch takes the workspace's branch before each task, and while idle (`branch_sync`, `branch_sync_seconds`, `branch_sync_push`) |
 | `agent_hub/memwatch.py` | renews idle sessions over a memory line |
 | `docs/` | README illustrations, the engine playbook, a Claude lane harness section, releasing |
 | `tools/skill_lint.py` | lint for OpenCode skills |

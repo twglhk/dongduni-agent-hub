@@ -194,6 +194,9 @@ class Engine:
         self.api_watch: Any = None  # apierrors.EventWatch, made on the first tick
         self.sweep: Any = None  # scratch.ScratchSweep, made on the first tick
         self.waits: dict[int, str] | None = None  # why each queued task is not starting (machine.write_waits)
+        self.sync_told: dict[int, str] = {}  # task id -> the merge conflict the hub was told about (once each)
+        self.catch_up_at: float | None = None
+        self.catch_up_told: dict[str, str] = {}  # lane session -> the idle-merge conflict the hub was told about
 
     # ---------- prompts ----------
 
@@ -331,6 +334,10 @@ class Engine:
                     fn(statuses[name])
                 except Exception as e:
                     self.log(f"{name}: {e}")
+        try:
+            self._catch_up_branches(statuses)
+        except Exception as e:
+            self.log(f"branch sync: {e}")
         self._extensions(statuses)
 
     # ---------- extensions ----------
@@ -688,6 +695,8 @@ class Engine:
                 waits[nxt["id"]] = why
                 self.log(f"{lane}: task #{nxt['id']} waits: {why}")
                 continue
+            if not self._sync_branch(lane, nxt, waits):
+                continue
             try:
                 if statuses[lane] == "idle":
                     self.rt.close(lane)  # a fresh session per task
@@ -712,6 +721,68 @@ class Engine:
             from .machine import write_waits
             self.waits = waits
             write_waits(self.cfg.state_dir, waits)
+
+    def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str]) -> bool:
+        """With `branch_sync` on, a worktree lane session gets the workspace's branch (main) merged into its own before a
+        task opens. When that cannot be done cleanly the task stays queued, the hub is told once, and it opens on a
+        later tick once the branch merges (the hub fixes it in the worktree or with a pull request)."""
+        from .branchsync import WorktreeConflict
+        ln = self.cfg.all_lanes.get(lane)
+        if not (self.cfg.branch_sync and ln and ln.worktree) or not hasattr(self.rt, "sync"):
+            return True
+        try:
+            what = self.rt.sync(lane)
+        except WorktreeConflict as e:
+            why = str(e)
+            waits[task["id"]] = f"its branch does not take main cleanly: {why}"
+            if self.sync_told.get(task["id"]) != why:
+                self.sync_told[task["id"]] = why
+                self.store.push(HUB, TOWER, "stalled",
+                                f"Not started: {lane} task #{task['id']} \"{task['title']}\": {why}. Resolve it in "
+                                f"{self.cfg.lane_dir(lane)} (merge main, commit) or merge the branch yourself; the "
+                                f"task opens once main merges in.", task["id"])
+            self.log(f"{lane}: task #{task['id']} waits: {why}")
+            return False
+        except Exception as e:  # git missing or broken: the start itself reports it
+            self.log(f"{lane}: branch sync before task #{task['id']} failed: {e}")
+            return True
+        self.sync_told.pop(task["id"], None)
+        if what:
+            self.log(f"{lane}: {what} (task #{task['id']})")
+        return True
+
+    def _catch_up_branches(self, statuses: dict[str, str]) -> None:
+        """Every branch_sync_seconds (0 = off): each worktree lane session with no task in hand and no session at work
+        gets main merged into its branch (and pushed with `branch_sync_push`; branchsync.catch_up). A busy one waits for
+        the next check or its next task's own sync. A conflict is aborted and the hub told once per conflict."""
+        from .branchsync import WorktreeConflict, catch_up
+        every = self.cfg.branch_sync_seconds
+        now = self.clock()
+        if not every or (self.catch_up_at is not None and now - self.catch_up_at < every):
+            return
+        self.catch_up_at = now
+        busy = self.store.busy_lanes()
+        for lane in self.team:
+            ln = self.cfg.all_lanes.get(lane)
+            if not (ln and ln.worktree) or lane in busy or statuses.get(lane, "closed") not in ("closed", "idle"):
+                continue
+            try:
+                what = catch_up(self.cfg, ln)
+            except WorktreeConflict as e:
+                why = str(e)
+                if self.catch_up_told.get(lane) != why:
+                    self.catch_up_told[lane] = why
+                    self.store.push(HUB, TOWER, "stalled", f"{lane}: the tower could not merge main into its idle "
+                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(lane)} "
+                                    "(merge main, commit) or merge the branch yourself.")
+                self.log(f"{lane}: branch sync: {why}")
+                continue
+            except Exception as e:
+                self.log(f"{lane}: branch sync failed: {e}")
+                continue
+            self.catch_up_told.pop(lane, None)
+            if what:
+                self.log(f"{lane}: {what}")
 
     def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
         """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)

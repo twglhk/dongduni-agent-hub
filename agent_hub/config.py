@@ -118,6 +118,9 @@ class Config:
     done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
     scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
     scratch_grace: int = 600     # seconds after a task closes before its scratch is swept
+    branch_sync: bool = False    # a worktree lane's branch takes the workspace's branch before each task (branchsync.py)
+    branch_sync_seconds: int = 0  # >0: every N seconds idle worktree lane branches take main too; 0 = off
+    branch_sync_push: bool = False  # after such a catch-up, push the branch to origin
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -326,7 +329,8 @@ def load(home: Path | None = None) -> Config:
 
 
 def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
-    """done_gate, scratch_root, scratch_grace, usage_percent (donegate.py, scratch.py, claudeusage.py)."""
+    """done_gate, scratch_root, scratch_grace, usage_percent, branch_sync* (donegate.py, scratch.py, claudeusage.py,
+    branchsync.py)."""
     from .claudeusage import PROVIDERS
     from .donegate import parse
     from .scratch import check_root
@@ -345,7 +349,10 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
     if usage and usage not in PROVIDERS:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
     return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
-            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600}
+            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600,
+            "branch_sync": bool(raw.get("branch_sync", False)),
+            "branch_sync_seconds": max(0, int(raw.get("branch_sync_seconds") or 0)),
+            "branch_sync_push": bool(raw.get("branch_sync_push", False))}
 
 
 def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,

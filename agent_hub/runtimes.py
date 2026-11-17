@@ -121,11 +121,19 @@ def lane_cwd(cfg: Config, lane: Lane) -> Path:
     return path
 
 
+def _base_branch(cfg: Config) -> str:
+    """The branch the workspace has checked out (main), or '' when it is detached."""
+    p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
+    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
+
+
 def worktree_note(cfg: Config, lane: Lane) -> str:
     """What a lane in its own worktree is told before its first message."""
-    p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
-    base = p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
-    sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
+    base = _base_branch(cfg)
+    if base and cfg.branch_sync:  # the tower merged it already (branchsync.py)
+        sync = f"The tower merged `{base}` into it before this task. Commit"
+    else:
+        sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
     return (f"(You work in a git worktree of your own, `{cfg.lane_dir(lane.id)}`, on branch `{worktree_branch(lane)}`. "
             f"{sync} your work there and name the branch and commits in your report. It reaches the main checkout "
             f"only when the hub or a person merges it.)\n\n")
@@ -1149,6 +1157,11 @@ class Runtimes:
             lane_cwd(self.cfg, ln)
             prompt = worktree_note(self.cfg, ln) + prompt
         return self._a(lane).open(prompt)
+
+    def sync(self, lane: str) -> str:
+        """A worktree lane session: merge the workspace's branch into its branch before a task (branchsync)."""
+        from .branchsync import sync_worktree
+        return sync_worktree(self.cfg, self.cfg.all_lanes[lane])
 
     def send(self, lane: str, sid: str, text: str) -> None:
         self._a(lane).send(sid, text)

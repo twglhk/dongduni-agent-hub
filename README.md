@@ -195,6 +195,8 @@ Good to know: open each agent once by hand in the workspace first, so first-run 
 
 Team lanes share one checkout with each other and with you by default. Set `"worktree": true` on a team lane (or at the top level for every team lane; `dah lane add ID --worktree`) and its sessions run in a git worktree of their own, `.tower/state/worktrees/<lane>` on branch `dah/<lane>`, created from your current commit the first time the lane opens. The lane commits there and reports the branch; the hub reviews it (`git diff HEAD...dah/<lane>`) and merges it, or asks you on the board. Nothing lands in your checkout by itself. With `terminal: orca` the lane's tab opens in that worktree. The hub and infra always work in the workspace itself.
 
+Optional, all off by default (`tower.json`): `"branch_sync": true` merges your current branch into a worktree lane's branch before each task (fast-forward, else a merge commit; a conflict is undone, the task stays queued and the hub is told). `"branch_sync_seconds": 300` does the same every 300 s for idle lane branches, and `"branch_sync_push": true` additionally pushes them to `origin` (never forced). See `agent_hub/branchsync.py`.
+
 ## Requirements and limits
 
 - Python 3.10+ for `dah`, and at least one agent CLI (OpenCode, Claude Code or Codex) installed and signed in. Lanes use your agent accounts: every lane session counts against your subscription or API usage.
