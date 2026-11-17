@@ -235,6 +235,8 @@ def paths_label(msg: dict[str, Any]) -> str:
 def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | None = None) -> tuple[str, dict[str, Any]] | None:
     mine = message_paths(msg)
     for o in live:
+        if mine == [ALONE]:
+            return "busy", o
         theirs = message_paths(o)
         if theirs is None:
             opened = o.get("delivered")
@@ -243,8 +245,6 @@ def message_block(msg: dict[str, Any], live: list[dict[str, Any]], now: float | 
             continue
         if theirs == [ALONE]:
             return "alone", o
-        if mine == [ALONE]:
-            return "busy", o
         if mine and theirs and paths_overlap(mine, theirs):
             return "overlap", o
     return None
