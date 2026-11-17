@@ -19,7 +19,7 @@ from typing import Any
 
 from . import config as config_mod
 from . import procs, stats
-from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
+from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, base_lane, tower_pid
 from .engine import VERDICT_WORD, Engine, clip, conflict_of
 from .memwatch import MemWatch
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
@@ -43,7 +43,16 @@ def store(c: Config | None = None) -> Store:
 
 
 def who(args: argparse.Namespace, c: Config) -> str:
-    me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
+    """The calling lane. Inside a tower session TOWER_LANE is the truth: `--as` naming the session's own lane by its base
+    name (`--as docs` from `docs#3`) still writes as the session itself, and `--as` any other lane or instance is
+    refused, so a wrapped always lets go of the session's own task."""
+    asked, env = getattr(args, "as_", None), os.environ.get("TOWER_LANE")
+    me = asked or env
+    if asked and env and asked != env:
+        if asked != base_lane(env):
+            raise TowerError(f"this session is {env}; --as {asked} would write as another lane. Run dah without --as.")
+        me = env
+        print(f"(this session is {env}: --as {asked} ignored, writing as {env})", file=sys.stderr)
     if not me:
         raise TowerError("Unknown caller. Sessions the tower opens have TOWER_LANE; by hand, add --as LANE.")
     if me not in c.all_lanes:
