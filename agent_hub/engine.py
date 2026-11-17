@@ -102,6 +102,8 @@ HUB_ROTATE_ASK = ("[tower] Your hub session is {why}, over the hub limit, and no
                   "tasks you follow, and what you were about to do. Then end your turn. The tower opens a new hub "
                   "session with your handoff and `dah status`.")
 COMPACT_TYPED_GAP_SECONDS = 2.0
+COMPACT_GIVE_UP_SECONDS = 600
+SYNC_RETRY_SECONDS = 60
 COMPACT_FOCUS = ("Keep the task brief, the latest handoff, the files changed, the open board items and the next step; "
                  "drop tool output already acted on.")
 PATHS_LINE = re.compile(r"^\s*paths\s*:\s*(.+)$", re.I | re.M)
@@ -202,7 +204,7 @@ class Engine:
         self._team = cfg.team()
         self.max_instances = cfg.max_instances
         self.heavy: dict[str, int] = {}  # lane -> process MB over cfg.memory_limit_mb (memwatch fills it)
-        self.rotate_asked: set[int] = set()  # tasks already asked to hand off because their session is fat
+        self.rotate_asked: set[tuple[int, str]] = set()  # (task, session) already asked to hand off because the session is fat
         self.ctx_asked: set[tuple[int, str]] = set()
         self.rotate_why: dict[int, str] = {}
         self.compacting: dict[int, tuple[str, str, float]] = {}
@@ -228,6 +230,12 @@ class Engine:
         self.sync_told: dict[int, str] = {}
         self.catch_up_at: float | None = None
         self.catch_up_told: dict[str, str] = {}
+        self.sync_retry: dict[str, float] = {}
+
+    def inherit(self, old: Engine) -> None:
+        self.compacting, self.hub_asked = old.compacting, old.hub_asked
+        self.sync_told, self.catch_up_told = old.sync_told, old.catch_up_told
+        self.rotate_asked, self.ctx_asked, self.rotate_why = old.rotate_asked, old.ctx_asked, old.rotate_why
 
     # ---------- prompts ----------
 
@@ -294,8 +302,8 @@ class Engine:
             return 0.0
         return now - self.idle_since.setdefault(lane, now)
 
-    def _send(self, lane: str, sid: str, text: str) -> None:
-        self.rt.send(lane, sid, text)
+    def _send(self, lane: str, sid: str, text: str, queued: bool = False) -> None:
+        (self.rt.send_queued if queued else self.rt.send)(lane, sid, text)
         self.idle_since[lane] = self.clock()
 
     def summary(self) -> str:
@@ -355,15 +363,10 @@ class Engine:
                 statuses[lane] = "unknown"
                 self.log(f"{lane}: status failed: {e}")
             self.store.set_lane(lane, status=statuses[lane], seen=self.clock())
-        self._usage(statuses)
-        self._questions(statuses)
-        self.route_decisions()
-        self._notify_humans()
-        try:
-            self._api_errors()
-        except Exception as e:
-            self.log(f"api errors: {e}")
-        for name, fn in (("done gate", self._done_gates), ("scratch", self._scratch)):
+        for name, fn in (("usage", lambda: self._usage(statuses)), ("questions", lambda: self._questions(statuses)),
+                         ("decisions", self.route_decisions), ("notify", self._notify_humans),
+                         ("api errors", self._api_errors), ("done gate", self._done_gates),
+                         ("scratch", self._scratch)):
             try:
                 fn()
             except Exception as e:
@@ -476,7 +479,7 @@ class Engine:
             if lane in (HUB, INFRA):
                 self._ask_board(lane, st)
             elif st == "asking":
-                for q in self.rt.questions(lane):
+                for q in self.rt.questions(lane) or []:
                     self.rt.reply_question(lane, q["id"], [[ASK_BOUNCE]] * max(1, len(q.get("questions", []))))
                     self.log(f"{lane}: bounced an ask to the board")
 
@@ -484,6 +487,8 @@ class Engine:
         if st == "unknown":
             return
         asks = self.rt.questions(lane) if st != "closed" else []
+        if asks is None:
+            return
         live = {str(q["id"]) for q in asks}
         items = self.store.question_items(lane)
         for it in items:
@@ -639,8 +644,8 @@ class Engine:
             self.store.mark_delivered(m["id"] for m in msgs)
             self.store.update_task(task["id"], last_prompt=self.clock())
             return
-        if lane in self.heavy and task["id"] not in self.rotate_asked:
-            self.rotate_asked.add(task["id"])
+        if lane in self.heavy and (task["id"], task.get("session") or "") not in self.rotate_asked:
+            self.rotate_asked.add((task["id"], task.get("session") or ""))
             self.store.push(lane, TOWER, "rotate", f"Your session process is using {self.heavy[lane]} MB, over the limit "
                             f"({self.cfg.memory_limit_mb} MB). Write down where you are and hand off: "
                             f"`dah report handoff \"[now] ... [plan] ... [files] ...\"`, then end your turn. A fresh "
@@ -673,11 +678,20 @@ class Engine:
             ready = self.clock() - since >= COMPACT_TYPED_GAP_SECONDS
         else:
             ready = st == "idle" and idle_for >= SETTLE_SECONDS
-        if ready:
+        if not ready:
+            return False
+        try:
+            self._send(lane, sid, self.compact_prompt(task), queued=how == COMPACT_TYPED)
+        except Exception as e:
+            if self.clock() - since < COMPACT_GIVE_UP_SECONDS:
+                self.log(f"{lane}: task #{task['id']} continue message not sent yet: {e}")
+                return True
+            self.log(f"{lane}: task #{task['id']} continue message not sent for {COMPACT_GIVE_UP_SECONDS} s: {e}")
             del self.compacting[task["id"]]
-            self._send(lane, sid, self.compact_prompt(task))
-            self.store.update_task(task["id"], last_prompt=self.clock())
-        return ready
+            return False
+        del self.compacting[task["id"]]
+        self.store.update_task(task["id"], last_prompt=self.clock())
+        return True
 
     def _context_guard(self, lane: str, st: str, task: dict[str, Any]) -> None:
         limit, sid = self.cfg.context_limit(lane, task.get("model") or ""), task.get("session")
@@ -692,7 +706,7 @@ class Engine:
         if st == "busy" and self.cfg.all_lanes[lane].runtime == "claude":
             from .hooks import post_urgent
             try:
-                post_urgent(self.cfg.home, lane, f"[tower] {text}")
+                post_urgent(self.cfg.home, lane, f"[tower] {text}", source=TOWER)
             except OSError as e:
                 self.log(f"{lane}: urgent handoff ask not written: {e}")
         self.store.push(lane, TOWER, "rotate", text, task["id"])
@@ -703,12 +717,12 @@ class Engine:
         why = self.rotate_why.pop(tid, None) or (f"process at {self.heavy[lane]} MB" if lane in self.heavy else "")
         why = f" ({why})" if why else ""
         self.store.drop_pending(lane, ("rotate",))
-        from .hooks import take_urgent
-        take_urgent(self.cfg.home, lane)
+        from .hooks import drop_urgent
+        drop_urgent(self.cfg.home, lane, TOWER)
         how = None
         if handoff_mode(task.get("handoff")) == "compact" and sid:
             try:
-                how = self.rt.compact(lane, sid, COMPACT_FOCUS, self.compact_prompt(task))
+                how = self.rt.compact(lane, sid, COMPACT_FOCUS)
             except Exception as e:
                 self.log(f"{lane}: compact failed: {e}")
             if how:
@@ -800,7 +814,7 @@ class Engine:
                 waits[nxt["id"]] = why
                 self.log(f"{lane}: task #{nxt['id']} waits: {why}")
                 continue
-            if not self._sync_branch(lane, nxt, waits):
+            if not self._sync_branch(lane, nxt, waits, busy | {t["lane"] for t in started}, statuses):
                 continue
             try:
                 if statuses[lane] == "idle":
@@ -860,25 +874,37 @@ class Engine:
                             + "\n".join(lines))
             self.log(f"leftover: stopped {len(lines)} process tree(s)")
 
-    def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str]) -> bool:
-        from .branchsync import WorktreeConflict
+    def _tree_in_use(self, lane: str, busy: set[str], statuses: dict[str, str]) -> bool:
+        base = base_lane(lane)
+        return any(base_lane(k) == base and (k in busy or statuses.get(k, "closed") not in ("closed", "idle"))
+                   for k in self.team)
+
+    def _sync_branch(self, lane: str, task: dict[str, Any], waits: dict[int, str], busy: set[str],
+                     statuses: dict[str, str]) -> bool:
+        from .branchsync import WorktreeConflict, WorktreeDirty
         ln = self.cfg.all_lanes.get(lane)
         if not (self.cfg.branch_sync and ln and ln.worktree) or not hasattr(self.rt, "sync"):
+            return True
+        base = base_lane(lane)
+        if self.clock() < self.sync_retry.get(base, 0.0) or self._tree_in_use(lane, busy, statuses):
             return True
         try:
             what = self.rt.sync(lane)
         except WorktreeConflict as e:
             why = str(e)
-            waits[task["id"]] = f"its branch does not take main cleanly: {why}"
+            dirty = isinstance(e, WorktreeDirty)
+            waits[task["id"]] = f"its worktree has {why}" if dirty else f"its branch does not take main cleanly: {why}"
             if self.sync_told.get(task["id"]) != why:
                 self.sync_told[task["id"]] = why
+                fix = ("Commit or discard them; the task opens once the tree is clean." if dirty else
+                       f"Resolve it in {self.cfg.lane_dir(lane)} (merge main, commit) or merge the branch yourself; "
+                       "the task opens once main merges in.")
                 self.store.push(HUB, TOWER, "stalled",
-                                f"Not started: {lane} task #{task['id']} \"{task['title']}\": {why}. Resolve it in "
-                                f"{self.cfg.lane_dir(lane)} (merge main, commit) or merge the branch yourself; the "
-                                f"task opens once main merges in.", task["id"])
+                                f"Not started: {lane} task #{task['id']} \"{task['title']}\": {why}. {fix}", task["id"])
             self.log(f"{lane}: task #{task['id']} waits: {why}")
             return False
         except Exception as e:
+            self.sync_retry[base] = self.clock() + SYNC_RETRY_SECONDS
             self.log(f"{lane}: branch sync before task #{task['id']} failed: {e}")
             return True
         self.sync_told.pop(task["id"], None)
@@ -894,27 +920,33 @@ class Engine:
             return
         self.catch_up_at = now
         busy = self.store.busy_lanes()
+        trees: set[str] = set()
         for lane in self.team:
             ln = self.cfg.all_lanes.get(lane)
-            if not (ln and ln.worktree) or lane in busy or statuses.get(lane, "closed") not in ("closed", "idle"):
+            base = base_lane(lane)
+            if not (ln and ln.worktree) or base in trees:
+                continue
+            trees.add(base)
+            if now < self.sync_retry.get(base, 0.0) or self._tree_in_use(base, busy, statuses):
                 continue
             try:
                 what = catch_up(self.cfg, ln)
             except WorktreeConflict as e:
                 why = str(e)
-                if self.catch_up_told.get(lane) != why:
-                    self.catch_up_told[lane] = why
-                    self.store.push(HUB, TOWER, "stalled", f"{lane}: the tower could not merge main into its idle "
-                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(lane)} "
+                if self.catch_up_told.get(base) != why:
+                    self.catch_up_told[base] = why
+                    self.store.push(HUB, TOWER, "stalled", f"{base}: the tower could not merge main into its idle "
+                                    f"branch and undid the merge: {why}. Resolve it in {self.cfg.lane_dir(base)} "
                                     "(merge main, commit) or merge the branch yourself.")
-                self.log(f"{lane}: branch sync: {why}")
+                self.log(f"{base}: branch sync: {why}")
                 continue
             except Exception as e:
-                self.log(f"{lane}: branch sync failed: {e}")
+                self.sync_retry[base] = now + SYNC_RETRY_SECONDS
+                self.log(f"{base}: branch sync failed: {e}")
                 continue
-            self.catch_up_told.pop(lane, None)
+            self.catch_up_told.pop(base, None)
             if what:
-                self.log(f"{lane}: {what}")
+                self.log(f"{base}: {what}")
 
     def _spill(self, busy: set[str], room: int, statuses: dict[str, str]) -> list[dict[str, Any]]:
         """Parallel sessions: a lane that is busy with tasks queued behind it, while a slot and an instance key (`lane#2` ...)
@@ -989,7 +1021,10 @@ class Engine:
                         return
                     self.hub_opens = self.hub_opens[1:]
                 self.hub_opens.append(now)
-                self.rt.open(HUB, self.hub_prompt())
+                handoff = str(info.get("handoff") or "")
+                self.rt.open(HUB, self.hub_prompt(handoff))
+                if handoff:
+                    self.store.set_lane(HUB, handoff=None, handoff_session=None)
                 self.idle_since.pop(HUB, None)
                 self.log("hub: opened")
             return

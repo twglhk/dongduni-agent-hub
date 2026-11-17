@@ -35,6 +35,25 @@ def _env(pid: str) -> dict[str, str]:
     return out
 
 
+def _ppid(pid: int) -> int | None:
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        return int(stat[stat.rfind(")") + 2:].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _below(pid: int, root: int) -> bool:
+    for _ in range(64):
+        parent = _ppid(pid)
+        if parent is None or parent <= 1:
+            return False
+        if parent == root:
+            return True
+        pid = parent
+    return False
+
+
 def scan(home: Path) -> list[LaneProc]:
     proc = Path("/proc")
     if not proc.is_dir():
@@ -47,8 +66,10 @@ def scan(home: Path) -> list[LaneProc]:
         lane = env.get("TOWER_LANE")
         if not lane or not env.get("TOWER_HOME") or str(Path(env["TOWER_HOME"]).resolve()) != home_s:
             continue
+        if _below(int(d.name), me):
+            continue
         try:
-            stat = (d / "stat").read_text()
+            stat = (d / "stat").read_text(encoding="utf-8", errors="replace")
             cmd = (d / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", errors="replace").strip()
         except OSError:
             continue

@@ -1,9 +1,11 @@
 import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from agent_hub.branchsync import WorktreeConflict, catch_up, sync_worktree
-from agent_hub.runtimes import lane_cwd
+from agent_hub import branchsync
+from agent_hub.branchsync import WorktreeConflict, WorktreeDirty, catch_up, sync_worktree
+from agent_hub.runtimes import RuntimeFailure, lane_cwd
 from agent_hub.engine import Engine
 from agent_hub.store import Store
 from tests.helpers import Clock, FakeRuntime, make_home
@@ -65,6 +67,47 @@ class BranchSyncTest(unittest.TestCase):
         self.assertEqual((self.tree / "app.txt").read_text(), "lane v2\n")
 
 
+    def test_uncommitted_edits_stop_the_merge_before_it_starts(self) -> None:
+        sync_worktree(self.cfg, self.lane)
+        (self.tree / "app.txt").write_text("lane draft\n")
+        self.main_commit("other.txt", "main work\n")
+        before = git(self.tree, "rev-parse", "HEAD")
+        with self.assertRaises(WorktreeDirty) as cm:
+            sync_worktree(self.cfg, self.lane)
+        self.assertIn("uncommitted edits", str(cm.exception))
+        self.assertEqual(git(self.tree, "rev-parse", "HEAD"), before)
+        self.assertEqual((self.tree / "app.txt").read_text(), "lane draft\n")
+
+    def test_a_conflict_is_not_merged_again_until_main_or_the_branch_moves(self) -> None:
+        sync_worktree(self.cfg, self.lane)
+        (self.tree / "app.txt").write_text("lane v2\n")
+        git(self.tree, "commit", "-qam", "lane edit")
+        self.main_commit("app.txt", "main v2\n")
+        with self.assertRaises(WorktreeConflict):
+            sync_worktree(self.cfg, self.lane)
+        real = branchsync._git
+        merges: list[tuple] = []
+
+        def spy(path, *a):
+            if a[0] == "merge":
+                merges.append(a)
+            return real(path, *a)
+        with mock.patch.object(branchsync, "_git", spy):
+            with self.assertRaises(WorktreeConflict):
+                sync_worktree(self.cfg, self.lane)
+            self.assertEqual(merges, [])
+            self.main_commit("again.txt", "more\n")
+            with self.assertRaises(WorktreeConflict):
+                sync_worktree(self.cfg, self.lane)
+        self.assertTrue(merges)
+
+    def test_a_git_call_that_hangs_fails_instead_of_stalling_the_tick(self) -> None:
+        lane_cwd(self.cfg, self.lane)
+        with mock.patch.object(branchsync.subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 20)):
+            with self.assertRaises(RuntimeFailure):
+                sync_worktree(self.cfg, self.lane)
+
+
 class EngineBranchSyncTest(unittest.TestCase):
     def setUp(self) -> None:
         self.cfg = make_home({"hub": {"runtime": "claude"}, "wt": {"runtime": "claude", "worktree": True},
@@ -94,6 +137,35 @@ class EngineBranchSyncTest(unittest.TestCase):
         self.assertEqual([o[0] for o in self.rt.opened if o[0] == "wt"], ["wt"])
         self.assertEqual(self.s.task(tid)["state"], "running")
 
+    def test_a_worktree_with_uncommitted_edits_holds_the_task_and_says_so(self) -> None:
+        self.rt.sync_dirty["wt"] = "uncommitted edits in /x"
+        tid = self.s.add_task("wt", "Fix it", "brief")
+        for _ in range(3):
+            self.e.tick()
+            self.clock.tick(5)
+        self.assertEqual(self.s.task(tid)["state"], "queued")
+        self.assertEqual(len(self.stalled()), 1)
+        self.assertIn("uncommitted edits in /x", self.stalled()[0])
+        self.assertIn("worktree", self.e.waits[tid])
+
+    def test_a_failing_sync_is_not_retried_every_tick(self) -> None:
+        self.rt.sync_error["wt"] = "git did not finish"
+        for n in range(3):
+            self.s.add_task("wt", f"Fix {n}", "brief")
+
+        def finish_and_tick(wait: float) -> None:
+            self.s.update_task(self.s.tasks(("running",))[0]["id"], state="closed")
+            self.rt.st["wt"] = "closed"
+            self.clock.tick(wait)
+            self.e.tick()
+        self.e.tick()
+        self.assertEqual(self.rt.synced, ["wt"])
+        finish_and_tick(5)
+        self.assertEqual(self.rt.synced, ["wt"])
+        self.assertEqual(len([o for o in self.rt.opened if o[0] == "wt"]), 2)
+        finish_and_tick(120)
+        self.assertEqual(self.rt.synced, ["wt", "wt"])
+
     def test_off_by_default_the_task_opens_without_a_sync(self) -> None:
         cfg = make_home({"hub": {"runtime": "claude"}, "wt": {"runtime": "claude", "worktree": True}})
         s = Store(cfg.db, clock=self.clock)
@@ -113,7 +185,7 @@ class EngineBranchSyncTest(unittest.TestCase):
 
 class CatchUpTest(unittest.TestCase):
 
-    extra = {"branch_sync_seconds": 300, "branch_sync_push": True}
+    extra = {"branch_sync_seconds": 300, "branch_sync_push": True, "max_instances": 2}
 
     def setUp(self) -> None:
         self.cfg = make_home({"hub": {"runtime": "claude"}, "wt": {"runtime": "claude", "worktree": True}}, **self.extra)
@@ -200,6 +272,25 @@ class CatchUpTest(unittest.TestCase):
         told = self.stalled()
         self.assertEqual(len(told), 1)
         self.assertIn("wt: the tower could not merge main", told[0])
+
+    def test_a_worktree_shared_with_a_busy_instance_is_left_alone(self) -> None:
+        lane_cwd(self.cfg, self.lane)
+        before = self.head()
+        self.main_commit("app.txt", "v2\n")
+        tid = self.s.add_task("wt#2", "Work", "brief")
+        self.s.claim_task(tid)
+        self.rt.st["wt#2"] = "busy"
+        self.rt.st["wt"] = "closed"
+        self.clock.tick(301)
+        self.e.tick()
+        self.assertEqual(self.head(), before)
+        self.s.update_task(tid, state="closed")
+        self.rt.st["wt#2"] = "closed"
+        self.clock.tick(301)
+        with mock.patch("agent_hub.branchsync.catch_up", wraps=catch_up) as caught:
+            self.e.tick()
+        self.assertEqual(caught.call_count, 1)
+        self.assertEqual(self.head(), git(self.home, "rev-parse", "main"))
 
     def test_everything_is_off_unless_tower_json_asks(self) -> None:
         self.assertEqual((self.cfg.branch_sync_seconds, self.cfg.branch_sync_push), (300, True))

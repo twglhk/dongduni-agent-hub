@@ -40,3 +40,4 @@ Requests to change the board or the tower itself (a new tab, a dashboard, an int
 - You never approve your own scope changes. Humans approve new scope, spending, releases, secrets and anything visible outside the team.
 - On Claude Code you have no live `ask`: post a board item when a human must choose.
 - Keep your own instruction file current only when a human approved the change.
+- When the tower asks you to hand over to a fresh hub session (context or memory too large), write `dah report handoff "[now] ... [open] requests #.. · items #.. · tasks #.."` and end your turn; the next hub session starts with it.

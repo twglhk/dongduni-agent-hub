@@ -52,25 +52,43 @@ class StaleTest(unittest.TestCase):
 
 
 class ScanTest(unittest.TestCase):
+    SLEEP = "import time; time.sleep(30)"
+
+    def orphan(self, env: dict[str, str]) -> int:
+        out = subprocess.run(["sh", "-c", f'"{sys.executable}" -c "{self.SLEEP}" >/dev/null 2>&1 & echo $!'],
+                             env=env, capture_output=True, text=True, check=True).stdout
+        pid = int(out.strip())
+        self.addCleanup(lambda: os.kill(pid, 9) if os.path.exists(f"/proc/{pid}") else None)
+        return pid
+
+    def find(self, home, pid: int) -> list[LaneProc]:
+        for _ in range(50):
+            found = [p for p in leftovers.scan(home) if p.pid == pid]
+            if found:
+                return found
+            time.sleep(0.05)
+        return []
+
     @unittest.skipUnless(os.path.isdir("/proc"), "Linux /proc")
-    def test_finds_own_child_by_env_only_for_this_home(self) -> None:
+    def test_finds_an_orphan_by_env_only_for_this_home(self) -> None:
         home = make_home({"hub": {"runtime": "claude"}}).home
         env = {**os.environ, "TOWER_HOME": str(home), "TOWER_LANE": "docs"}
-        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env=env)
-        other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
-                                 env={**env, "TOWER_HOME": "/elsewhere"})
+        mine = self.orphan(env)
+        other = self.orphan({**env, "TOWER_HOME": "/elsewhere"})
+        self.assertEqual([p.lane for p in self.find(home, mine)], ["docs"])
+        self.assertFalse([p for p in leftovers.scan(home) if p.pid == other])
+
+    @unittest.skipUnless(os.path.isdir("/proc"), "Linux /proc")
+    def test_a_process_below_the_tower_is_not_a_leftover(self) -> None:
+        home = make_home({"hub": {"runtime": "claude"}}).home
+        env = {**os.environ, "TOWER_HOME": str(home), "TOWER_LANE": "infra"}
+        child = subprocess.Popen([sys.executable, "-c", self.SLEEP], env=env)
         try:
-            for _ in range(50):
-                found = [p for p in leftovers.scan(home) if p.pid == child.pid]
-                if found:
-                    break
-                time.sleep(0.05)
-            self.assertEqual([p.lane for p in found], ["docs"])
-            self.assertFalse([p for p in leftovers.scan(home) if p.pid == other.pid])
+            time.sleep(0.3)
+            self.assertFalse([p for p in leftovers.scan(home) if p.pid == child.pid])
         finally:
-            for p in (child, other):
-                p.kill()
-                p.wait()
+            child.kill()
+            child.wait()
 
 
 class EngineLeftoverTest(unittest.TestCase):

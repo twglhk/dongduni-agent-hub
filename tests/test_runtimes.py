@@ -14,7 +14,8 @@ from pathlib import Path
 
 from agent_hub import config as config_mod
 from agent_hub.config import ConfigError
-from agent_hub.runtimes import Runtimes
+from agent_hub import procs
+from agent_hub.runtimes import Runtimes, RuntimeFailure
 from agent_hub.store import Store
 from tests.helpers import make_home
 
@@ -42,6 +43,14 @@ print(json.dumps({"type": "thread.started", "thread_id": tid}), flush=True)
 time.sleep(0.3)
 print(json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "codex says hi"}}))
 print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 12000, "output_tokens": 50}}))
+'''
+
+
+SILENT_CODEX = r'''#!PY
+import os, time
+with open(os.environ["FAKE_LOG"], "w", encoding="utf-8") as f:
+    f.write(str(os.getpid()))
+time.sleep(60)
 '''
 
 
@@ -115,12 +124,12 @@ class HeadlessTest(unittest.TestCase):
     def test_claude_compacts_with_a_resume_run_and_codex_cannot(self) -> None:
         sid = self.rt.open("hub", "hello")
         wait_for(lambda: self.rt.status("hub") == "idle")
-        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on"), "pending")
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan"), "pending")
         wait_for(lambda: self.rt.status("hub") == "idle")
         argv = self.calls()[1]["argv"]
         self.assertEqual(argv[argv.index("--resume") + 1], sid)
         self.assertEqual(argv[-1], "/compact keep the plan")
-        self.assertIsNone(self.rt.compact("docs", "thread-123", "x", "y"))
+        self.assertIsNone(self.rt.compact("docs", "thread-123", "x"))
 
     def test_close_kills_a_running_turn(self) -> None:
         os.environ["FAKE_SLEEP"] = "30"
@@ -195,6 +204,23 @@ class HeadlessTest(unittest.TestCase):
             make_home({"hub": {"runtime": "claude", "worktree": True}})
         self.assertTrue(make_home({"hub": {"runtime": "claude"}, "a": {"runtime": "claude"}}, worktree=True).lanes["a"].worktree)
 
+    def test_codex_open_finds_its_thread_after_a_long_log(self) -> None:
+        logs = self.cfg.state_dir / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "old"}}) + "\n"
+        (logs / "docs.jsonl").write_text(line * 2500, encoding="utf-8")
+        self.assertEqual(self.rt.open("docs", "do docs"), "thread-123")
+
+    def test_codex_open_that_prints_no_thread_id_kills_what_it_started(self) -> None:
+        os.environ["TOWER_CODEX_BIN"] = str(script(self.tmp, "silent-codex", SILENT_CODEX))
+        rt = Runtimes(self.cfg, self.s)
+        rt.adapters["docs"].OPEN_WAIT = 1
+        with self.assertRaises(RuntimeFailure):
+            rt.open("docs", "do docs")
+        self.assertEqual(rt.status("docs"), "closed")
+        pid = int(Path(os.environ["FAKE_LOG"]).read_text(encoding="utf-8"))
+        wait_for(lambda: not procs.alive(pid), 15)
+
     def test_codex_rejects_an_agent(self) -> None:
         with self.assertRaises(ConfigError):
             make_home({"hub": {"runtime": "codex", "agent": "x"}})
@@ -217,6 +243,7 @@ class FakeOpenCode(BaseHTTPRequestHandler):
     busy: dict = {}
     questions: list = []
     prompts: list = []
+    questions_fail = False
 
     def log_message(self, *a) -> None:
         pass
@@ -233,7 +260,7 @@ class FakeOpenCode(BaseHTTPRequestHandler):
         if self.path == "/session/status":
             return self._send(200, FakeOpenCode.busy)
         if self.path == "/question":
-            return self._send(200, FakeOpenCode.questions)
+            return self._send(500 if FakeOpenCode.questions_fail else 200, FakeOpenCode.questions)
         if self.path.endswith("/message"):
             return self._send(200, [{"info": {"role": "assistant", "cost": 0.1,
                                               "tokens": {"input": 5000, "output": 40, "cache": {"read": 95000}}},
@@ -262,6 +289,7 @@ class OpenCodeTest(unittest.TestCase):
         self.s = Store(self.cfg.db)
         self.rt = Runtimes(self.cfg, self.s)
         FakeOpenCode.busy, FakeOpenCode.questions, FakeOpenCode.prompts = {}, [], []
+        FakeOpenCode.questions_fail = False
 
     def tearDown(self) -> None:
         self.srv.shutdown()
@@ -285,6 +313,13 @@ class OpenCodeTest(unittest.TestCase):
         FakeOpenCode.busy = {}
         self.rt.close("hub")  # not owned: clears the session, leaves the server up
         self.assertEqual(self.rt.status("hub"), "idle")
+
+    def test_a_failed_question_lookup_is_not_an_empty_list(self) -> None:
+        self.rt.open("hub", "hi")
+        FakeOpenCode.questions_fail = True
+        self.assertIsNone(self.rt.questions("hub"))
+        FakeOpenCode.questions_fail = False
+        self.assertEqual(self.rt.questions("hub"), [])
 
     def test_lane_agent_goes_with_every_prompt(self) -> None:
         cfg = make_home({"hub": {"runtime": "opencode", "port": self.srv.server_address[1], "agent": "writer"}})

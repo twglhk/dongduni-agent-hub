@@ -3,7 +3,7 @@ import io
 import unittest
 
 from agent_hub.config import ConfigError
-from agent_hub.engine import COMPACT_TYPED_GAP_SECONDS, HUB_HANDOFF_WAIT, HUB_ROTATE_K, SETTLE_SECONDS, Engine, handoff_mode
+from agent_hub.engine import COMPACT_FOCUS, COMPACT_TYPED_GAP_SECONDS, HUB_HANDOFF_WAIT, HUB_ROTATE_K, SETTLE_SECONDS, Engine, handoff_mode
 from agent_hub.hooks import pending_urgent
 from agent_hub.store import Store
 from tests.helpers import Clock, FakeRuntime, make_home
@@ -143,7 +143,7 @@ class ContextLimitTest(Base):
         self.assertEqual(self.rt.closed, [])
         self.assertEqual(self.opens("docs"), 1)
         self.assertEqual(len(self.rt.compacts), 1)
-        self.assertIn("mid-edit", self.rt.compacts[0][2])
+        self.assertEqual(self.rt.compacts[0][2], COMPACT_FOCUS)
         self.assertIsNone(self.s.task(t)["rotate_ready"])
         self.assertEqual(self.s.session_ctx("docs", self.s.lane("docs")["session"]), 0)
         self.assertIn("compacted", self.hub_news()[0])
@@ -296,6 +296,94 @@ class HubHandoffTest(Base):
                 cli.cmd_report(args)
         lane = Store(self.cfg.db).lane("hub")
         self.assertEqual((lane["handoff"], lane["handoff_session"]), ("[now] y", sid))
+
+
+class EngineStateTest(Base):
+    def test_a_continue_message_that_fails_is_kept_and_sent_later(self) -> None:
+        self.build(max_lanes=2)
+        t = self.s.add_task("docs", "A", "x")
+        self.tick()
+        self.rt.compact_how = "typed"
+        self.s.update_task(t, handoff="[mode] compact [now] z", rotate_ready=self.clock())
+        self.rt.st["docs"] = "idle"
+        self.tick()
+        real = self.rt.send_queued
+        calls: list[str] = []
+
+        def flaky(lane, sid, text):
+            calls.append(text)
+            if len(calls) == 1:
+                raise RuntimeError("window gone")
+            real(lane, sid, text)
+        self.rt.send_queued = flaky
+        self.tick(3, step=COMPACT_TYPED_GAP_SECONDS + 1)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len([x for x in self.rt.sent if "[now] z" in x[2]]), 1)
+        self.assertNotIn(t, self.e.compacting)
+
+    def test_rotating_a_lane_keeps_the_hubs_own_urgent_tells(self) -> None:
+        from agent_hub.hooks import post_urgent, take_urgent
+        self.build(max_lanes=2, context_limit_k=120)
+        t = self.s.add_task("docs", "A", "x")
+        self.tick()
+        self.ctx("docs", 130)
+        self.rt.st["docs"] = "busy"
+        post_urgent(self.cfg.home, "docs", "hub says stop")
+        self.tick()
+        self.assertEqual(pending_urgent(self.cfg.home, "docs"), 2)
+        self.s.update_task(t, handoff="[mode] fresh [now] x", rotate_ready=self.clock())
+        self.rt.st["docs"] = "idle"
+        self.tick()
+        self.assertEqual(take_urgent(self.cfg.home, "docs"), ["hub says stop"])
+
+    def test_one_failing_stage_does_not_stop_the_rest_of_the_tick(self) -> None:
+        self.build(max_lanes=2)
+        self.s.add_task("docs", "A", "x")
+        logged: list[str] = []
+        self.e.log = logged.append
+
+        def boom(_statuses) -> None:
+            raise RuntimeError("usage broke")
+        self.e._usage = boom
+        self.e._questions = boom
+        self.e.tick()
+        self.assertEqual(self.opens("docs"), 1)
+        self.assertTrue(any("usage broke" in x for x in logged))
+
+    def test_a_fat_new_session_is_asked_again(self) -> None:
+        self.build(max_lanes=2, memory_limit_mb=1000)
+        t = self.s.add_task("docs", "A", "x")
+        self.tick()
+        self.e.heavy = {"docs": 2048}
+        asks = lambda: len([m for m in self.s.pending("docs") if m["kind"] == "rotate"] + [x for x in self.rt.sent if "2048 MB" in x[2]])
+        self.rt.st["docs"] = "idle"
+        self.tick(2)
+        self.assertEqual(asks(), 1)
+        self.s.update_task(t, session="a-new-session")
+        self.rt.st["docs"] = "idle"
+        self.tick(2)
+        self.assertEqual(asks(), 2)
+
+    def test_a_hub_that_closed_comes_back_with_its_stored_handoff(self) -> None:
+        self.build({"hub": {"runtime": "claude"}, "infra": {"runtime": "claude"}, "docs": {"runtime": "claude"}})
+        self.s.set_lane("hub", enabled=1, handoff="[now] watching request #9", handoff_session="old-session")
+        self.tick()
+        self.assertIn("watching request #9", self.rt.opened[0][1])
+        self.assertIsNone(self.s.lane("hub")["handoff"])
+
+    def test_a_rebuilt_engine_keeps_what_it_was_waiting_for(self) -> None:
+        self.build(max_lanes=2)
+        self.e.compacting[3] = ("sid", "typed", 5.0)
+        self.e.hub_asked["hub"] = ("sid", 6.0)
+        self.e.sync_told[4] = "conflict"
+        self.e.catch_up_told["wt"] = "conflict"
+        self.e.ctx_asked.add((3, "sid"))
+        fresh = Engine(self.cfg, self.s, self.rt, lambda n: None, clock=self.clock, log=lambda _: None)
+        fresh.inherit(self.e)
+        self.assertEqual(fresh.compacting, {3: ("sid", "typed", 5.0)})
+        self.assertEqual(fresh.hub_asked, {"hub": ("sid", 6.0)})
+        self.assertEqual((fresh.sync_told, fresh.catch_up_told), ({4: "conflict"}, {"wt": "conflict"}))
+        self.assertEqual(fresh.ctx_asked, {(3, "sid")})
 
 
 class StoreMigrationTest(unittest.TestCase):

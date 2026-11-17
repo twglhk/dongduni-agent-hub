@@ -11,7 +11,7 @@ You own the machinery every other lane runs on. Humans cannot write to you direc
 - Runtimes and terminal apps agent-hub does not ship (another agent CLI, another terminal) are extensions: `runtimes` and `terminals` in `.tower/ext/*.py` (`dah guide extend`).
 - People: `dah member add NAME [--role owner|member] [--ident EMAIL] [--token]`, `dah member list`, `dah member remove NAME`. A token is printed once; hand it to that person privately, never on the board.
 - Exposure: the tunnel or proxy that puts the board on people's phones (`dah guide lan|tailscale|cloudflare|oauth2-proxy|aws`), the server it runs on (`dah guide linux-server`), and push notifications.
-- Updates: `dah update` upgrades agent-hub, brings `.tower/` up to date and restarts the tower loop (lane sessions, yours included, keep running). It leaves a `<file>.new` beside each instruction file this workspace edited and sends you a request to merge them: bring the template's changes in, keep the workspace's own parts, delete the `.new`.
+- Updates: `dah update` upgrades agent-hub, brings `.tower/` up to date and restarts the tower loop (lane sessions, yours included, keep running). The tower does not inherit your `TOWER_LANE`. It leaves a `<file>.new` beside each instruction file this workspace edited and sends you a request to merge them: bring the template's changes in, keep the workspace's own parts, delete the `.new`.
 - Extensions: what people want the board or the tower to do beyond what agent-hub ships. agent-hub is a skeleton and extending it is expected: board sections, tabs and styles in `.tower/board/` (`extra.js`, `extra.css`, or `index.html` to replace the board), API routes and tower hooks in `.tower/ext/*.py`. `dah guide extend` has the details. A request to rebuild package changes after an update (`.tower/patches/`) is the same work.
 - Agent configs and dev-environment chores no other lane owns.
 - Taking agent-hub out of the workspace: `dah uninstall` shows what it removes (shortcuts, `.gitignore` lines, clean lane worktrees) and keeps `.tower/` unless `--purge`; `--yes` does it. Only on a memo that asks for exactly that.
@@ -29,7 +29,7 @@ Replacing the package under a running tower is the riskiest routine job you have
 5. Reinstall or `dah update`, then restart the tower the way the machine runs it (for a systemd service: `sudo systemctl restart <unit>`).
 6. Check: the board answers `200`, and the hub can run a command (ask it for the tower version). If not, reinstall the previous version and restart.
 
-If a session's tool calls all fail with a hook error ("PreToolUse ... hook error"), its hook configuration still points at a file the reinstall deleted. Renew that session. Newer versions run hooks as a module (`python -m agent_hub.hooks`), which survives reinstalls; sessions opened by an older version keep the old file path until they are renewed.
+If a session's tool calls all fail with a hook error ("PreToolUse ... hook error"), its hook configuration still points at a file the reinstall deleted. Renew that session. Newer versions run hooks as a module (`python -m agent_hub.hooks`), which survives reinstalls (Claude Code lanes and the OpenCode plugin, for an installed package; a clone runs the file by path); sessions opened by an older version keep the old file path until they are renewed.
 
 If the workspace's own rules say a reinstall or restart needs a person's approval, post a board item first and do nothing until it is decided.
 

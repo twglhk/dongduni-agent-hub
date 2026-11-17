@@ -50,6 +50,16 @@ class KillGate(unittest.TestCase):
         "taskkill /IM python.exe /F",
         "taskkill /F /IM node.exe",
         "C:/Windows/System32/taskkill.exe /im claude.exe",
+        "nice -n 5 pkill node",
+        "timeout 5 pkill -f x",
+        "sudo -u root pkill -f opencode",
+        "env -i A=1 pkill node",
+        "pgrep -f node | xargs kill",
+        "xargs pkill node",
+        "kill $(pgrep -f node)",
+        'pkill -f "node.*"',
+        "pkill -f '^node$'",
+        "pkill -f '[n]ode'",
     ]
     PASS = [
         'pkill -n -u alice -f "run_tests.py"',
@@ -67,6 +77,10 @@ class KillGate(unittest.TestCase):
         'grep -n "kill -1" file.sh',
         "taskkill /PID 4242 /F",
         "ls  # pkill -f opencode",
+        'timeout -s KILL 5 pkill -n -f "vite --port 5177"',
+        'nice -n 5 pkill -n -f "run_tests.py"',
+        'pgrep -f "run_tests.py" | xargs kill',
+        "pgrep -f node",
     ]
 
     def test_rejects(self) -> None:

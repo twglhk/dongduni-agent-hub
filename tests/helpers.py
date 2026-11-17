@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_hub import config as config_mod
+from agent_hub.runtimes import RuntimeFailure
 from agent_hub.store import Store
 
 
@@ -49,6 +50,9 @@ class FakeRuntime:
         self.compact_how: str | None = "sent"
         self.synced: list[str] = []
         self.sync_conflict: dict[str, str] = {}
+        self.question_down: set[str] = set()
+        self.sync_dirty: dict[str, str] = {}
+        self.sync_error: dict[str, str] = {}
 
     def status(self, lane: str) -> str:
         if self.qs.get(lane):
@@ -58,16 +62,20 @@ class FakeRuntime:
     def owned(self, lane: str) -> bool:
         return lane not in self.not_owned
 
-    def questions(self, lane: str) -> list[dict[str, Any]]:
-        return self.qs.get(lane, [])
+    def questions(self, lane: str) -> list[dict[str, Any]] | None:
+        return None if lane in self.question_down else self.qs.get(lane, [])
 
     def reply_question(self, lane: str, qid: str, answers: list[list[str]]) -> None:
         self.replies.append((lane, qid, answers))
         self.qs[lane] = [q for q in self.qs.get(lane, []) if q["id"] != qid]
 
     def sync(self, lane: str) -> str:
-        from agent_hub.branchsync import WorktreeConflict
+        from agent_hub.branchsync import WorktreeConflict, WorktreeDirty
         self.synced.append(lane)
+        if self.sync_error.get(lane):
+            raise RuntimeFailure(self.sync_error[lane])
+        if self.sync_dirty.get(lane):
+            raise WorktreeDirty(self.sync_dirty[lane])
         if self.sync_conflict.get(lane):
             raise WorktreeConflict(self.sync_conflict[lane])
         return ""
@@ -81,12 +89,17 @@ class FakeRuntime:
         return sid
 
     def send(self, lane: str, sid: str, text: str) -> None:
+        if self.status(lane) in ("busy", "asking"):
+            raise RuntimeFailure(f"{lane}: still busy")
+        self.send_queued(lane, sid, text)
+
+    def send_queued(self, lane: str, sid: str, text: str) -> None:
         self.sent.append((lane, sid, text))
         self.st[lane] = "busy"
 
-    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
+    def compact(self, lane: str, sid: str, focus: str) -> str | None:
         if self.compact_how:
-            self.compacts.append((lane, sid, then))
+            self.compacts.append((lane, sid, focus))
             self.st[lane] = "busy"
         return self.compact_how
 

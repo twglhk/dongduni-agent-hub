@@ -79,6 +79,10 @@ def pid_alive(pid: int | None) -> bool:
     return procs.alive(pid)
 
 
+def claude_base() -> Path:
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+
+
 def lane_env(cfg: Config, lane: Lane) -> dict[str, str]:
     env = dict(os.environ)
     env.update(lane.env)
@@ -97,6 +101,8 @@ def _git(cfg: Config, *args: str) -> subprocess.CompletedProcess[str]:
                               encoding="utf-8", errors="replace", timeout=60)
     except FileNotFoundError:
         raise RuntimeFailure("git not found: a lane with \"worktree\": true needs git")
+    except subprocess.TimeoutExpired:
+        raise RuntimeFailure(f"git {args[0]} in {cfg.workdir} did not finish in 60 s")
 
 
 def worktree_branch(lane: Lane) -> str:
@@ -154,7 +160,7 @@ class Adapter:
 
     def set_opts(self, model: str | None, effort: str | None) -> None:
         """A task's own model and effort (stagemodel.py), kept so every resume of the session runs with them."""
-        (self.logs / f"{self.lane.id}.opts.json").write_text(json.dumps({"model": model, "effort": effort}), encoding="utf-8")
+        hooks_mod.write_if_changed(self.logs / f"{self.lane.id}.opts.json", json.dumps({"model": model, "effort": effort}))
 
     def opts(self) -> dict[str, str | None]:
         try:
@@ -215,16 +221,19 @@ class Adapter:
         return True
 
     # optional capabilities
-    def questions(self) -> list[dict[str, Any]]:
+    def questions(self) -> list[dict[str, Any]] | None:
         return []
 
     def reply_question(self, qid: str, answers: list[list[str]]) -> None:
         raise RuntimeFailure(f"{self.lane.runtime} has no live questions")
 
+    def send_queued(self, sid: str, text: str) -> None:
+        self.send(sid, text)
+
     def context_k(self, sid: str | None) -> int:
         return 0
 
-    def compact(self, sid: str, focus: str, then: str) -> str | None:
+    def compact(self, sid: str, focus: str) -> str | None:
         return None
 
     def usage(self, sid: str | None) -> dict[str, Any] | None:
@@ -265,9 +274,9 @@ class OpenCode(Adapter):
             return "unknown"
         return "busy" if data else "idle"  # the server lists only sessions that are working
 
-    def questions(self) -> list[dict[str, Any]]:
+    def questions(self) -> list[dict[str, Any]] | None:
         code, data = http(self.port, "GET", "/question", timeout=2)
-        return data if code == 200 and isinstance(data, list) else []
+        return data if code == 200 and isinstance(data, list) else None
 
     def reply_question(self, qid: str, answers: list[list[str]]) -> None:
         code, body = http(self.port, "POST", f"/question/{qid}/reply", {"answers": answers}, timeout=10)
@@ -381,11 +390,23 @@ class Headless(Adapter):
         self._kill()
         self.store.set_lane(self.lane.id, session=None, pid=None)
 
-    def _events(self) -> list[dict[str, Any]]:
+    def _log_size(self) -> int:
+        try:
+            return self.log_path.stat().st_size
+        except OSError:
+            return 0
+
+    def _events(self, since: int | None = None) -> list[dict[str, Any]]:
         if not self.log_path.exists():
             return []
+        if since is None:
+            lines = self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]
+        else:
+            with self.log_path.open("rb") as f:
+                f.seek(since)
+                lines = f.read().decode("utf-8", errors="replace").splitlines()
         out = []
-        for line in self.log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]:
+        for line in lines:
             line = line.strip()
             if line.startswith("{"):
                 try:
@@ -421,7 +442,7 @@ class Claude(Headless):
     def resume_argv(self, sid: str, text: str) -> list[str]:
         return [*self._base(), "--resume", sid, text]
 
-    def compact(self, sid: str, focus: str, then: str) -> str | None:
+    def compact(self, sid: str, focus: str) -> str | None:
         self.send(sid, f"/compact {focus}")  # print mode runs the slash command as the whole run
         return COMPACT_PENDING
 
@@ -488,12 +509,12 @@ class Codex(Headless):
         return str(msg["session_id"]) if msg.get("session_id") else None
 
     def open(self, prompt: str) -> str:
-        start = len(self._events())
+        start = self._log_size()
         self.store.set_lane(self.lane.id, session=None)
         self._spawn([*self._base(), prompt])
         deadline = time.time() + self.OPEN_WAIT
         while time.time() < deadline:
-            for e in self._events()[start:]:
+            for e in self._events(since=start):
                 sid = self._thread_id(e)
                 if sid:
                     self.store.set_lane(self.lane.id, session=sid)
@@ -501,6 +522,7 @@ class Codex(Headless):
             if not self._running():
                 break
             time.sleep(0.5)
+        self._kill()
         raise RuntimeFailure(f"{self.lane.id}: codex printed no thread id (see {self.logs / (self.lane.id + '.err')})")
 
     def resume_argv(self, sid: str, text: str) -> list[str]:
@@ -734,6 +756,13 @@ def record_signal(home: Path, lane: str, payload: dict[str, Any]) -> None:
                      session=payload.get("thread-id") or payload.get("thread_id"))
 
 
+def _write_private(path: Path, text: str, mode: int) -> None:
+    path.unlink(missing_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+    with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+
+
 class Terminal:
     """Mixin for an adapter whose session runs in a window: the launcher, the handle, the signal file."""
 
@@ -768,23 +797,31 @@ class Terminal:
 
     def _launch(self, argv: list[str], extra_env: dict[str, str] | None = None) -> None:
         """Write a launcher script (so the window gets the lane's environment whatever the terminal app's own
-        is) and open a window running it."""
+        is) and open a window running it. The lane's own `env` values go in a private file the launcher sources
+        and deletes, never in the script."""
         cwd = lane_cwd(self.cfg, self.lane)
         env = {**lane_env(self.cfg, self.lane), **(extra_env or {})}
-        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *self.lane.env, *(extra_env or {})]
         env["PYTHONPATH"] = os.pathsep.join(p for p in (str(PACKAGE_PARENT), os.environ.get("PYTHONPATH", "")) if p)
-        keys.append("PYTHONPATH")
+        keys = ["TOWER_HOME", "TOWER_LANE", "PATH", *(extra_env or {}), "PYTHONPATH"]
+        secrets = [k for k in self.lane.env if k not in keys]
+        secret_file = self.term_dir / (f"{self.lane.id}.env.cmd" if procs.WINDOWS else f"{self.lane.id}.env")
         if procs.WINDOWS:
             path = self.term_dir / f"{self.lane.id}.cmd"
-            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{cwd}"', *(f'set "{k}={env[k]}"' for k in keys),
-                     subprocess.list2cmdline(argv)]
+            lines = ["@echo off", "chcp 65001 >nul", f'cd /d "{cwd}"', *(f'set "{k}={env[k]}"' for k in keys)]
+            if secrets:
+                _write_private(secret_file, "\r\n".join(f'set "{k}={env[k]}"' for k in secrets) + "\r\n", 0o600)
+                lines += [f'call "{secret_file}"', f'del "{secret_file}"']
+            lines.append(subprocess.list2cmdline(argv))
             path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
         else:
             path = self.term_dir / f"{self.lane.id}.sh"
             lines = ["#!/bin/sh", f"cd {shlex.quote(str(cwd))} || exit 1",
-                     *(f"export {k}={shlex.quote(env[k])}" for k in keys), "exec " + shlex.join(argv)]
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            path.chmod(0o755)
+                     *(f"export {k}={shlex.quote(env[k])}" for k in keys)]
+            if secrets:
+                _write_private(secret_file, "\n".join(f"export {k}={shlex.quote(env[k])}" for k in secrets) + "\n", 0o600)
+                lines += [f". {shlex.quote(str(secret_file))}", f"rm -f {shlex.quote(str(secret_file))}"]
+            lines.append("exec " + shlex.join(argv))
+            _write_private(path, "\n".join(lines) + "\n", 0o700)
         handle = self._host().open(self.lane.id, path, cwd)
         (self.term_dir / f"{self.lane.id}.handle").write_text(handle, encoding="utf-8")
 
@@ -803,7 +840,7 @@ class Terminal:
         lid = self.lane.id
         for f in self.term_dir.iterdir():
             note = f.suffix == ".md" and f.stem.startswith(f"{lid}-") and f.stem[len(lid) + 1:].isdigit()
-            if note or f.name in (f"{lid}.handle", f"{lid}.json"):
+            if note or f.name in (f"{lid}.handle", f"{lid}.json", f"{lid}.env", f"{lid}.env.cmd"):
                 try:
                     f.unlink(missing_ok=True)
                 except OSError:  # Windows: still open by the window's process; the next open retries
@@ -831,6 +868,9 @@ class TerminalSession(Terminal):
     def send(self, sid: str, text: str) -> None:
         if self.status() in ("busy", "asking"):
             raise RuntimeFailure(f"{self.lane.id}: still busy")
+        self._type(text)
+
+    def send_queued(self, sid: str, text: str) -> None:
         self._type(text)
 
     def close(self) -> None:
@@ -900,11 +940,12 @@ class ClaudeTerm(TerminalSession, Claude):
         argv += [d for d in self._tower_outside() for d in ("--add-dir", d)]
         hook = [{"hooks": [{"type": "command", "command": self._hook_command()}]}]
         settings = self.term_dir / f"{self.lane.id}.settings.json"
-        settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
-                                                  "Notification": hook, **hooks_mod.claude_hooks()}}), encoding="utf-8")
+        hooks_mod.write_if_changed(settings, json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook,
+                                                                   "Stop": hook, "Notification": hook,
+                                                                   **hooks_mod.claude_hooks()}}))
         return [*argv, "--settings", str(settings), *extra]
 
-    def compact(self, sid: str, focus: str, then: str) -> str | None:
+    def compact(self, sid: str, focus: str) -> str | None:
         if self.status() in ("busy", "asking"):
             raise RuntimeFailure(f"{self.lane.id}: still busy")
         handle = self._handle()
@@ -930,8 +971,7 @@ class ClaudeTerm(TerminalSession, Claude):
         sid = self.store.lane(self.lane.id).get("session")
         if not sid:
             return ""
-        base = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-        return str(base / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
+        return str(claude_base() / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(self.cwd.resolve())) / f"{sid}.jsonl")
 
     def _transcript(self, whole: bool = False) -> list[dict[str, Any]]:
         path = self._transcript_path()
@@ -1167,7 +1207,7 @@ class Runtimes:
     def owned(self, lane: str) -> bool:
         return self._a(lane).owned()
 
-    def questions(self, lane: str) -> list[dict[str, Any]]:
+    def questions(self, lane: str) -> list[dict[str, Any]] | None:
         return self._a(lane).questions()
 
     def reply_question(self, lane: str, qid: str, answers: list[list[str]]) -> None:
@@ -1188,14 +1228,17 @@ class Runtimes:
     def send(self, lane: str, sid: str, text: str) -> None:
         self._a(lane).send(sid, text)
 
+    def send_queued(self, lane: str, sid: str, text: str) -> None:
+        self._a(lane).send_queued(sid, text)
+
     def close(self, lane: str) -> None:
         self._a(lane).close()
 
     def context_k(self, lane: str, sid: str | None) -> int:
         return self._a(lane).context_k(sid)
 
-    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
-        return self._a(lane).compact(sid, focus, then)
+    def compact(self, lane: str, sid: str, focus: str) -> str | None:
+        return self._a(lane).compact(sid, focus)
 
     def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
         return self._a(lane).usage(sid)

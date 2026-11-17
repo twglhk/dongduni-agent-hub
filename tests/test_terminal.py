@@ -104,7 +104,7 @@ import json, os, re, subprocess, sys, time
 args = sys.argv[1:]
 with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
     f.write(json.dumps({"argv": args, "lane": os.environ.get("TOWER_LANE"), "home": os.environ.get("TOWER_HOME"),
-                        "cwd": os.getcwd()}) + "\n")
+                        "cwd": os.getcwd(), "secret": os.environ.get("SECRET_TOKEN")}) + "\n")
 hooks = json.load(open(args[args.index("--settings") + 1]))["hooks"]
 sid = args[args.index("--session-id") + 1]
 transcript = os.path.join(os.environ["FAKE_TERM_DIR"], sid + ".jsonl")
@@ -296,12 +296,27 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.cfg.state_dir / "term").glob("hub*")),
                          ["hub.settings.json", "hub.sh"])  # notes, handle and signal are gone
 
+    def test_lane_env_reaches_the_agent_but_is_not_written_into_the_launcher(self) -> None:
+        data = json.loads((self.cfg.home / ".tower/tower.json").read_text())
+        data["lanes"]["hub"]["env"] = {"SECRET_TOKEN": "s3cr3t-value"}
+        (self.cfg.home / ".tower/tower.json").write_text(json.dumps(data))
+        cfg = config_mod.load(self.cfg.home)
+        rt = Runtimes(cfg, self.s)
+        rt.open("hub", "first")
+        wait_for(lambda: self.calls() and self.calls()[0]["secret"] == "s3cr3t-value")
+        term = cfg.state_dir / "term"
+        launcher = term / "hub.sh"
+        self.assertNotIn("s3cr3t-value", launcher.read_text(encoding="utf-8"))
+        self.assertEqual(launcher.stat().st_mode & 0o777, 0o700)
+        wait_for(lambda: not (term / "hub.env").exists())
+        rt.close("hub")
+
     def test_claude_in_a_window_types_only_compact_and_returns_at_once(self) -> None:
         sid = self.rt.open("hub", "first")
         wait_for(lambda: self.rt.last_text("hub") == ["did: first"])
         self.settle()
         started = time.monotonic()
-        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on now"), "typed")
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan"), "typed")
         self.assertLess(time.monotonic() - started, 1.0)
         wait_for(lambda: self.rt.last_text("hub", 2) == ["did: first", "did: /compact keep the plan"])
         self.rt.send("hub", sid, "go on now")
