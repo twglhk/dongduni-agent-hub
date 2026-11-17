@@ -63,7 +63,8 @@
     "reports": "報告",
     "closed": "作業",
     "memos": "インフラへの依頼",
-    "requests": "ハブへの依頼"
+    "requests": "ハブへの依頼",
+    "work": "作業"
   },
   "memo": {
     "wait": "待ち",
@@ -411,5 +412,42 @@
     "newestReport": "最新の報告",
     "noWork": "このセッションはまだ仕事を受け持っていません。",
     "hidden": "このセッションの直近の仕事は他の人のものです。"
+  },
+  "work": {
+    "task": "タスク",
+    "memo": "インフラメモ",
+    "decision": "インフラ決定",
+    "report": "報告",
+    "by": "依頼元",
+    "requester": "依頼した人",
+    "took": "所要時間",
+    "line": "工程",
+    "stage": "ステージ",
+    "oldRow": "旧行",
+    "brief": "指示",
+    "reports": "報告",
+    "replies": "インフラの返信",
+    "commits": "コミット",
+    "files": "ファイル",
+    "cards": "カード",
+    "cost": "ロス",
+    "corrected": "修正",
+    "rule": "ルール",
+    "state": {
+      "queued": "待機中",
+      "running": "実行中",
+      "wrapping": "仕上げ中",
+      "done": "完了",
+      "closed": "終了",
+      "cancelled": "取り消し"
+    },
+    "mode": {
+      "prepare": "準備",
+      "make": "制作",
+      "fix": "修正"
+    },
+    "min": "{n}分",
+    "hr": "{h}時間{m}分",
+    "sec": "1分未満"
   }
 }

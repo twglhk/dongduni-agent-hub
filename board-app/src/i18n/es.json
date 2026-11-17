@@ -63,7 +63,8 @@
     "reports": "Informes",
     "closed": "Tareas",
     "memos": "Peticiones a infra",
-    "requests": "Peticiones al hub"
+    "requests": "Peticiones al hub",
+    "work": "Trabajo"
   },
   "memo": {
     "wait": "Esperando",
@@ -411,5 +412,42 @@
     "newestReport": "Último informe",
     "noWork": "Esta sesión aún no ha tenido trabajo.",
     "hidden": "El último trabajo de esta sesión es de otra persona."
+  },
+  "work": {
+    "task": "Tarea",
+    "memo": "Memo de infra",
+    "decision": "Decisión de infra",
+    "report": "Informe",
+    "by": "de",
+    "requester": "para",
+    "took": "duración",
+    "line": "Proceso",
+    "stage": "etapa",
+    "oldRow": "fila antigua",
+    "brief": "Encargo",
+    "reports": "Informes",
+    "replies": "Respuestas de infra",
+    "commits": "Commits",
+    "files": "Archivos",
+    "cards": "Tarjetas",
+    "cost": "Coste",
+    "corrected": "Corregido",
+    "rule": "Regla",
+    "state": {
+      "queued": "En cola",
+      "running": "En curso",
+      "wrapping": "Cerrando",
+      "done": "Hecho",
+      "closed": "Cerrado",
+      "cancelled": "Cancelado"
+    },
+    "mode": {
+      "prepare": "preparar",
+      "make": "hacer",
+      "fix": "corregir"
+    },
+    "min": "{n} min",
+    "hr": "{h} h {m} min",
+    "sec": "menos de un minuto"
   }
 }

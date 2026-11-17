@@ -6,7 +6,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /old/                      the single-file board (board/index.html) that came before the React app
   GET  /api/state                 lanes · each lane's queue (`queues`) · open items · tasks · reports · memos · counts
                                   (a member gets only the cards, memos and files visibility.py allows)
-  GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
+  GET  /api/history?kind=K&offset=N   requests | decided | work (also reports | closed | memos), 20 per page
   GET  /api/items/<id>
   GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
   GET  /api/engines               every engine: id, label, lanes, library rows
@@ -431,9 +431,11 @@ def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[s
 
 def counts_view(g: vis.Gate) -> dict[str, int]:
     out = {}
-    for k in (*Store.HISTORY, *Store.MEMO_HISTORY):
+    for k in (*Store.HISTORY, *Store.MEMO_HISTORY, Store.WORK):
         if k == "decided":
             out[k] = vis.decided_count(g)
+        elif k == Store.WORK:
+            out[k] = vis.work_count(g)
         elif k in Store.MEMO_HISTORY:
             out[k] = vis.memo_count(g, Store.MEMO_HISTORY[k])
         else:
@@ -446,6 +448,8 @@ def history_rows(g: vis.Gate, kind: str, offset: int) -> list[dict[str, Any]]:
         return vis.decided(g, offset, PAGE)
     if kind in Store.MEMO_HISTORY:
         return vis.memos(g, Store.MEMO_HISTORY[kind], PAGE, offset)
+    if kind == Store.WORK:
+        return vis.work(g, offset, PAGE)
     return g.s.history(kind, offset, PAGE)
 
 

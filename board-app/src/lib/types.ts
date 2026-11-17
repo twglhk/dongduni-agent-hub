@@ -54,6 +54,15 @@ export interface Report {
   id: number; lane: string; kind: string; text: string; attachments?: string[]; task_id?: number | null; created?: number;
 }
 
+export interface WorkReport { id: number; lane: string; kind: string; text: string; created: number; attachments: string[]; retro: { cost?: string; corrected?: string; rule?: string } | null }
+export interface WorkLine { row: string; full: string | null; sub: string | null; stage?: string | null; mode?: string | null }
+export interface WorkRow {
+  src: 'task' | 'infra' | 'report'; id: number; kind?: string; item_id?: number | null; at: number; lane: string; title: string; brief: string;
+  state: string; by: string | null; requester: string | null; paths: string[]; line?: WorkLine | null; started: number | null; ended: number | null;
+  cards: { id: number; title: string; kind: string; state: string }[]; reports: WorkReport[]; replies?: { text: string; created: number }[];
+  commits: string[]; files: string[];
+}
+
 export interface RuntimeUse { runtime: string; tokens_in: number; tokens_out: number; cost?: number | null }
 
 export interface MyHubState {
