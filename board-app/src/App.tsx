@@ -69,7 +69,7 @@ export function App() {
 
   const view = !data ? <Empty>{L.empty.loading}</Empty>
     : r.view === 'hub' ? <HubView d={data} />
-    : r.view === 'lanes' ? <LanesView d={data} onImage={onImage} />
+    : r.view === 'lanes' ? <LanesView d={data} onImage={onImage} onAdd={() => openMenu('newlane')} />
     : r.view === 'engine' ? <EngineView />
     : r.view === 'history' ? <HistoryView d={data} onImage={onImage} />
     : r.view === 'info' ? <InfoView />

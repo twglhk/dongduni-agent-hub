@@ -15,7 +15,7 @@ import type { BoardState } from '../lib/types';
 import { useFold, usePrefs } from '../state/prefs';
 import { useCap } from '../state/useSettings';
 
-export function LanesView({ d, onImage }: { d: BoardState; onImage: (imgs: string[], i: number) => void }) {
+export function LanesView({ d, onImage, onAdd }: { d: BoardState; onImage: (imgs: string[], i: number) => void; onAdd: () => void }) {
   const { L } = useL();
   const { busy, setCap } = useCap();
   const cap = d.lane_cap;
@@ -39,7 +39,7 @@ export function LanesView({ d, onImage }: { d: BoardState; onImage: (imgs: strin
           <>
             {d.lanes.length ? <div className="grid grid-cols-1 gap-3 min-[600px]:grid-cols-2">{d.lanes.map(l => <LaneCard key={l.lane} l={l} />)}</div> : <Empty>{L.empty.lanes}</Empty>}
             {cap && <div className="px-1 pt-2 text-t6 leading-normal text-ink-3">{L.cap.hint}</div>}
-            <LaneAdd d={d} />
+            <LaneAdd onOpen={onAdd} />
           </>
         )}
       </section>

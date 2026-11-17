@@ -146,26 +146,6 @@
     "ask": "Pedir al hub que lo configure",
     "memo": "Que infra haga que pueda abrir el tablero desde el móvil. Compara las opciones que encajan con esta máquina (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), publica una decisión con tu recomendación y configura la que elija."
   },
-  "lane": {
-    "add": "Añadir un carril",
-    "id": "ID del carril",
-    "idPh": "p. ej. docs",
-    "idHelp": "Letras, números, - y _. Se usa en comandos y nombres de archivo.",
-    "idBad": "Usa solo letras, números, - y _",
-    "idDup": "Ya existe un carril con este ID",
-    "runtime": "Runtime",
-    "label": "Nombre visible (opcional)",
-    "labelPh": "p. ej. Docs",
-    "role": "Rol",
-    "rolePh": "Qué le toca, con qué archivos trabaja, cuándo está hecho, qué no debe tocar",
-    "model": "Modelo (opcional)",
-    "agent": "Agente (opcional)",
-    "optPh": "Vacío usa el valor por defecto",
-    "send": "Pedir al hub que lo añada",
-    "sent": "Enviado al hub",
-    "hint": "El hub encarga a infra crear el carril y rellenar su archivo de rol, y te avisa con una tarjeta para confirmar.",
-    "memo": "Que infra añada un carril: {id}\n- Runtime: {runtime}\n- Nombre visible: {label}\n- Modelo: {model}\n- Agente: {agent}\n\nRol:\n{role}\n\nEjecuta `dah lane add {id} --runtime {runtime}{flags}` y luego rellena `.tower/lanes/{id}.md` con este rol: qué le toca, los archivos con los que trabaja, criterios de terminado y qué no debe tocar."
-  },
   "cap": {
     "at": "A la vez",
     "less": "Uno menos",
@@ -337,5 +317,14 @@
     "tipNew": "nuevo",
     "tip": "Puedes personalizar esta pantalla. Pídele al hub cosas como «abre primero la pestaña Historial» o «haz el texto más grande».",
     "allHidden": "Todas las secciones están ocultas. Vuelve a mostrarlas en los ajustes de pantalla."
+  },
+  "nl": {
+    "add": "Añadir un carril",
+    "title": "Pedir un carril al hub",
+    "label": "¿Qué debe hacer el nuevo carril?",
+    "ph": "p. ej. Un carril que escribe notas de versión: se encarga de docs/releases y termina cuando se revisan las notas",
+    "hint": "El hub propone el carril (id, rol, runtime) en una tarjeta para que la confirmes; solo entonces se crea. Si lo dejas vacío, el hub te preguntará.",
+    "send": "Pedir al hub",
+    "sent": "Enviado al hub. En breve llegará una tarjeta con la propuesta a la pestaña Hub."
   }
 }

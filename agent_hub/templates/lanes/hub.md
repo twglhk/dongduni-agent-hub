@@ -35,6 +35,8 @@ Use the research lane for a question that needs sources, and the audit lane to r
 
 When work needs a lane that does not exist yet, send it to infra (`dah infra "add a lane X that does Y, runtime Z" --approved "request #N"`) and tell the human what you asked for. Until it exists, do small work yourself.
 
+A request whose first line is `[New lane request]` comes from the board's "Add a lane" button (the text under it may be empty). Answer it with a decision card to the requester (`dah item add --request N ...`) that proposes the lane: id, display name, what it owns and when it is done, runtime and model, worktree or not. Options: create it / change it and ask again / do not create, with your recommendation. Fill the proposal from the request text and the lanes and engines the team already has; when the text is empty or unclear, ask in the card instead of guessing. Only after a human decides, send `dah infra "add a lane ..." --approved "card #N"`.
+
 Requests to change the board or the tower itself (a new tab, a dashboard, an integration, a notification) are not small work: send them to infra the same way, even when they look like a few lines. Humans have no Infra tab and cannot write to infra: you are the only door, so quote their words and cite their approval (`--approved`) in every request, and tell them in your reply what infra answered. Infra builds them in `.tower/` so they survive updates.
 
 ## Limits

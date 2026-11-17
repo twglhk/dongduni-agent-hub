@@ -146,26 +146,6 @@
     "ask": "Ask the hub to set it up",
     "memo": "Have infra make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick."
   },
-  "lane": {
-    "add": "Add a lane",
-    "id": "Lane ID",
-    "idPh": "e.g. docs",
-    "idHelp": "Letters, numbers, - and _. Used in commands and file names.",
-    "idBad": "Use letters, numbers, - and _ only",
-    "idDup": "A lane with this ID already exists",
-    "runtime": "Runtime",
-    "label": "Display name (optional)",
-    "labelPh": "e.g. Docs",
-    "role": "Role",
-    "rolePh": "What it owns, the files it works on, when it is done, what it must not touch",
-    "model": "Model (optional)",
-    "agent": "Agent (optional)",
-    "optPh": "Empty uses the default",
-    "send": "Ask the hub to add it",
-    "sent": "Sent to the hub",
-    "hint": "The hub has infra create the lane and fill in its role file, then sends you a card to confirm.",
-    "memo": "Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\nRun `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch."
-  },
   "cap": {
     "at": "At once",
     "less": "One fewer",
@@ -337,5 +317,14 @@
     "tipNew": "new",
     "tip": "You can make this screen your own. Ask your hub things like “open the History tab first” or “make the text bigger”.",
     "allHidden": "All sections are hidden. Show them again in screen settings."
+  },
+  "nl": {
+    "add": "Add a lane",
+    "title": "Ask the hub for a lane",
+    "label": "What should the new lane do?",
+    "ph": "e.g. A lane that writes release notes: it owns docs/releases and is done when the notes are reviewed",
+    "hint": "Your hub proposes the lane (id, role, runtime) as a card for you to confirm; only then does infra create it. You can leave this empty and the hub will ask.",
+    "send": "Ask the hub",
+    "sent": "Sent to the hub. A card with its proposal will arrive on the Hub tab shortly."
   }
 }
