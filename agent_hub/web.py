@@ -129,7 +129,7 @@ def fixing_of(t: dict[str, Any] | None, blame: dict[str, Any] | None, view: dict
     return None
 
 
-def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
+def lane_view(cfg: Config, s: Store, lid: str, g: vis.Gate | None = None) -> dict[str, Any]:
     ln = cfg.all_lanes[lid]
     row = s.lane(lid)
     live = row.get("status") not in (None, "closed")
@@ -141,19 +141,23 @@ def lane_view(cfg: Config, s: Store, lid: str) -> dict[str, Any]:
     recent = s.lane_tasks(lid, 6) if ln.kind == "team" else []
     cur = next((t for t in recent if t["state"] in ("running", "wrapping")), None)
     shown = cur or (recent[0] if recent else None)
-    view = engines_mod.row_view(rows, shown.get("line_row") if shown else None,
-                                (shown.get("stage_now") or shown.get("line_stage")) if shown else None)
-    blame = s.blames().get(cur["id"]) if cur else None
+    shown_hidden = bool(g and shown and not vis.task_visible(g, shown))
+    cur_hidden = bool(g and cur and not vis.task_visible(g, cur))
+    view = engines_mod.row_view(rows, shown.get("line_row") if shown and not shown_hidden else None,
+                                (shown.get("stage_now") or shown.get("line_stage")) if shown and not shown_hidden else None)
+    blame = s.blames().get(cur["id"]) if cur and not cur_hidden else None
     return {"lane": lid, "label": ln.label or lid, "kind": ln.kind, "runtime": ln.runtime, "engine": ln.engine or None,
             "model": ln.model or None, "status": row.get("status") or "closed", "live": live,
             "skills": engines_mod.lane_skills(role, skills_dir, rows, lid) if ln.kind == "team" else [],
-            "task": ({"id": shown["id"], "title": shown["title"], "state": shown["state"], "model": shown["model"],
+            "task": ({"id": shown["id"], "hidden": True} if shown_hidden else
+                     {"id": shown["id"], "title": shown["title"], "state": shown["state"], "model": shown["model"],
                       "effort": shown["effort"], "line_row": shown["line_row"], "line_stage": shown["line_stage"],
                       "line_mode": shown["line_mode"], "stage_now": shown["stage_now"], "tokens": tok(shown)}
                      if shown else None),
-            "process": view, "fixing": fixing_of(cur, blame, view),
+            "process": view, "fixing": None if cur_hidden else fixing_of(cur, blame, view),
             "days": s.usage_days(lid, 7),
-            "recent": [{"id": t["id"], "title": t["title"], "state": t["state"], "model": t["model"], "effort": t["effort"],
+            "recent": [{"id": t["id"], "hidden": True, "state": t["state"]} if g and not vis.task_visible(g, t) else
+                       {"id": t["id"], "title": t["title"], "state": t["state"], "model": t["model"], "effort": t["effort"],
                         "line_row": t["line_row"], "tokens": tok(t)} for t in recent]}
 
 
@@ -333,19 +337,30 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Ga
         task = s.live_task(lid) if ln.kind == "team" else None
         doing = None
         memo = None
+        hidden = False
         status = row.get("status") or "closed"
         live = status != "closed"
         if ln.kind == HUB and live and row.get("doing") and (row.get("doing_at") or 0) >= (row.get("opened") or 0):
-            doing = clip(row["doing"], 80)
+            if g is None or not ln.owner or vis.sees_scoped(g, ln.owner):
+                doing = clip(row["doing"], 80)
+            else:
+                hidden = True
         elif ln.kind == INFRA and live and row.get("active_message") is not None:
             try:
                 m = s.message(int(row["active_message"]))
-                doing = clip(f"#{m['id']} {m['text']}", 80)
-                memo = {"id": m["id"], "kind": m["kind"], "title": memo_title(m["text"])}
+                if g is None or vis.memo_visible(g, m):
+                    doing = clip(f"#{m['id']} {m['text']}", 80)
+                    memo = {"id": m["id"], "kind": m["kind"], "title": memo_title(m["text"])}
+                else:
+                    hidden = True
                 if status == "idle":
                     status = "busy"
             except StoreError:
                 pass
+        if task and g is not None and not vis.task_visible(g, task):
+            hidden = True
+            task = {**task, "title": None, "requester": None, "line_row": None, "stage_now": None, "line_stage": None,
+                    "line_mode": None, "id_only": True}
         proc = None
         if task and task["line_row"]:
             rows = libs.get(ln.engine) if ln.engine in libs else libs.setdefault(ln.engine, engine_rows(cfg, lid)[0])
@@ -357,12 +372,13 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Ga
                     "base": ln.base or None, "branch": cfg.branch_of(lid) or None,
                     "sessions": None if ln.base or ln.kind == HUB else cfg.instance_cap(lid),
                     "engine": ln.engine or None,
+                    "hidden": hidden,
                     "task_id": task["id"] if task else None, "task_title": task["title"] if task else None,
                     "requester": task["requester"] if task else None,
                     "model": task["model"] if task else None, "effort": task["effort"] if task else None,
                     "line_row": task["line_row"] if task else None, "process": proc,
                     "stage": (task["stage_now"] or task["line_stage"]) if task else None,
-                    "fixing": bool(task and (task["line_mode"] == "fix" or task["id"] in blamed)),
+                    "fixing": bool(task and not task.get("id_only") and (task["line_mode"] == "fix" or task["id"] in blamed)),
                     "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid),
@@ -408,7 +424,12 @@ def history_rows(g: vis.Gate, kind: str, offset: int) -> list[dict[str, Any]]:
         return vis.memos(g, Store.MEMO_HISTORY[kind], PAGE, offset)
     if kind == Store.WORK:
         return vis.work(g, offset, PAGE)
-    return g.s.history(kind, offset, PAGE)
+    rows = g.s.history(kind, offset, PAGE)
+    if kind == "closed":
+        return [vis.task_row(g, t) for t in rows]
+    if kind == "reports":
+        return [vis.report_row(g, r) for r in rows]
+    return rows
 
 
 def with_hubs(s: Store, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -467,8 +488,8 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "lanes": lanes_view(cfg, s, used, g),
         "queues": queues_view(cfg, s, tasks, g, read_waits(cfg.state_dir)),
         "items": with_hubs(s, vis.mine(g, s.items(state="open", limit=500)) + vis.decided(g, 0, PREVIEW)),
-        "tasks": tasks + s.history("closed", 0, PREVIEW),
-        "reports": s.history("reports", 0, PREVIEW),
+        "tasks": [vis.task_row(g, t) for t in tasks + s.history("closed", 0, PREVIEW)],
+        "reports": [vis.report_row(g, r) for r in s.history("reports", 0, PREVIEW)],
         "memos": {INFRA: vis.memos(g, INFRA, PREVIEW), HUB: vis.memos(g, my_hub, PREVIEW)},
         "counts": counts_view(g),
     }
@@ -815,7 +836,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 lid = unquote(m.group(1))
                 if lid not in c.lanes and lid not in c.person_hubs:
                     return self._json(404, {"error": f"no lane {lid}"})
-                return self._json(200, lane_view(c, st, lid))
+                gate = vis.Gate.of(c, st, me)
+                owner = c.all_lanes[lid].owner
+                if owner and not vis.sees_scoped(gate, owner):
+                    return self._json(404, {"error": f"no lane {lid}"})
+                return self._json(200, lane_view(c, st, lid, gate))
             m = re.fullmatch(r"/api/sessions/([^/]+)", path)
             if m:
                 got = session_view(c, st, unquote(m.group(1)), vis.Gate.of(c, st, me))

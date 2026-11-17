@@ -29,7 +29,7 @@ export interface Usage { tokens_in?: number; tokens_out?: number; cost?: number 
 
 export interface Lane {
   lane: string; label?: string; status: string; kind?: string; runtime?: string; engine?: string | null;
-  doing?: string | null; task_id?: number | null; task_title?: string | null; model?: string | null; effort?: string | null;
+  hidden?: boolean; doing?: string | null; task_id?: number | null; task_title?: string | null; model?: string | null; effort?: string | null;
   process?: string | null; stage?: string | number | null; fixing?: boolean; task_tokens?: Tokens | null; ctx_k?: number | null;
   usage?: Usage | null;
   requester?: string | null;
@@ -49,11 +49,11 @@ export interface Reply { text: string; created?: number }
 export interface Memo { id: number; text: string; sender?: string; created?: number; delivered?: number | null; replies?: Reply[] }
 
 export interface Task {
-  id: number; lane: string; title: string; state: string; created?: number; started?: number | null; closed?: number | null;
+  id: number; hidden?: boolean; lane: string; title?: string; state: string; created?: number; started?: number | null; closed?: number | null;
 }
 
 export interface Report {
-  id: number; lane: string; kind: string; text: string; attachments?: string[]; task_id?: number | null; created?: number;
+  id: number; hidden?: boolean; lane: string; kind: string; text?: string; attachments?: string[]; task_id?: number | null; created?: number;
 }
 
 export interface WorkReport { id: number; lane: string; kind: string; text: string; created: number; attachments: string[]; retro: { cost?: string; corrected?: string; rule?: string } | null }

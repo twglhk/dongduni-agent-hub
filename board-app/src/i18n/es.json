@@ -97,6 +97,7 @@
     "note": "Nota",
     "answer": "Respuesta",
     "attachments": "Adjuntos",
+    "otherWork": "Trabajo de otra persona",
     "noTask": "Sin tarea",
     "cap": "{u}/{c} ocupados",
     "paused": "En pausa",

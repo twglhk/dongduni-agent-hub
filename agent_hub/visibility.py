@@ -7,8 +7,9 @@ from typing import Any, Callable
 
 from . import worklog
 from .config import INFRA, Config
+from .fair import task_who
 from .requester import visible_to_requester
-from .store import HOLD, HUMAN, Store, item_view
+from .store import HOLD, HUMAN, Store, StoreError, item_view
 from .uploads import TAIL
 
 Viewer = dict[str, Any] | None
@@ -24,13 +25,23 @@ def sees_all(me: Viewer) -> bool:
 
 
 class Gate:
-    def __init__(self, s: Store, me: Viewer, requester: bool = False, person_hubs: Mapping[str, str] | None = None):
+    def __init__(self, s: Store, me: Viewer, requester: bool = False, person_hubs: Mapping[str, str] | None = None,
+                 lane_owners: Mapping[str, str] | None = None):
         self.s, self.me, self.requester = s, me, requester
         self.person_hubs = dict(person_hubs or {})
+        self.lane_owners = dict(lane_owners or {})
 
     @classmethod
     def of(cls, cfg: Config, s: Store, me: Viewer) -> Gate:
-        return cls(s, me, cfg.requester, {lid: ln.owner for lid, ln in cfg.person_hubs.items() if ln.owner})
+        return cls(s, me, cfg.requester, {lid: ln.owner for lid, ln in cfg.person_hubs.items() if ln.owner},
+                   {lid: ln.owner or "" for lid, ln in cfg.all_lanes.items()})
+
+    def who_of(self, key: str) -> str | None:
+        if not key:
+            return None
+        if key in self.lane_owners:
+            return self.lane_owners[key] or None
+        return self.person_hubs.get(key, key)
 
     @property
     def name(self) -> str:
@@ -86,6 +97,58 @@ def sees_scoped(g: Gate, who: str | None) -> bool:
     if not (g.person_hubs or g.requester) or not who:
         return True
     return who == g.name
+
+
+def task_visible(g: Gate, t: dict[str, Any]) -> bool:
+    return sees_scoped(g, g.who_of(task_who(t)))
+
+
+def _masked(row: dict[str, Any], *keep: str) -> dict[str, Any]:
+    return {"id": row["id"], "hidden": True, **{k: row.get(k) for k in keep}}
+
+
+def task_row(g: Gate, t: dict[str, Any]) -> dict[str, Any]:
+    if task_visible(g, t):
+        return t
+    return _masked(t, "lane", "state", "created", "started", "closed")
+
+
+def memo_visible(g: Gate, memo: dict[str, Any]) -> bool:
+    if g.owner:
+        return True
+    if not g.me:
+        return False
+    if not (g.person_hubs or g.requester):
+        return True
+    return can_see_memo(g, INFRA, memo)
+
+
+def report_visible(g: Gate, r: dict[str, Any]) -> bool:
+    if g.owner:
+        return True
+    if not g.me:
+        return False
+    if not (g.person_hubs or g.requester):
+        return True
+    if r.get("task_id") is not None:
+        try:
+            return task_visible(g, g.s.task(int(r["task_id"])))
+        except StoreError:
+            return False
+    if r.get("message_id") is not None:
+        try:
+            m = g.s.message(int(r["message_id"]))
+        except StoreError:
+            return False
+        return can_see_memo(g, str(m.get("target") or INFRA), m)
+    owner = g.person_hubs.get(str(r.get("lane") or ""))
+    return bool(owner) and owner == g.name
+
+
+def report_row(g: Gate, r: dict[str, Any]) -> dict[str, Any]:
+    if report_visible(g, r):
+        return r
+    return _masked(r, "lane", "kind", "created")
 
 
 def can_see(g: Gate, it: dict[str, Any]) -> bool:

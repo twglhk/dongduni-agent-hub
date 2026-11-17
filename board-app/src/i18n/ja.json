@@ -97,6 +97,7 @@
     "note": "メモ",
     "answer": "回答",
     "attachments": "添付",
+    "otherWork": "他の人の作業",
     "noTask": "担当作業なし",
     "cap": "{u}/{c} 使用中",
     "paused": "一時停止",

@@ -16,7 +16,7 @@ import { useFold, usePrefs } from '../state/prefs';
 
 function Doing({ l }: { l: Lane }) {
   const { L } = useL();
-  const text = l.doing || (l.task_title ? `#${l.task_id} ${l.task_title}` : '');
+  const text = l.hidden ? L.label.otherWork : l.doing || (l.task_title ? `#${l.task_id} ${l.task_title}` : '');
   const live = l.status === 'busy' || l.status === 'asking';
   return (
     <div className={`mb-6 flex items-start gap-3 rounded-card px-5 py-4 ${live ? 'bg-blue-weak' : 'bg-surface'}`}>

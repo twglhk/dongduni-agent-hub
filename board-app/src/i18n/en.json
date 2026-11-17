@@ -97,6 +97,7 @@
     "note": "Note",
     "answer": "Answer",
     "attachments": "Attachments",
+    "otherWork": "Someone else's work",
     "noTask": "No task",
     "cap": "{u}/{c} busy",
     "paused": "Paused",

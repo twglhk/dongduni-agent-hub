@@ -97,6 +97,7 @@
     "note": "备注",
     "answer": "回答",
     "attachments": "附件",
+    "otherWork": "其他人的工作",
     "noTask": "暂无任务",
     "cap": "{u}/{c} 使用中",
     "paused": "已暂停",

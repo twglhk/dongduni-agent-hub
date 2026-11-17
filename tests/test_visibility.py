@@ -443,6 +443,115 @@ class WorkFeedFlagsOffTest(ScopeCase):
         self.assertEqual(len(self.get("/api/history?kind=work", "bo")[1]["rows"]), 5)
 
 
+class OthersWorkHiddenTest(unittest.TestCase):
+    FLAGS = ((True, True), (True, False), (False, True))
+
+    def build(self, requester: bool, person_hubs: bool) -> None:
+        self.b = scoped_board(requester, person_hubs)
+        s = self.b.s
+        self.t = {}
+        for w in ("bo", "cy"):
+            tid = s.add_task("docs", f"{w} title", f"{w} brief", requester=w, hub=f"hub-{w}" if person_hubs else "hub")
+            s.update_task(tid, state="closed", closed=5.0, paths=f"{w}/path", handoff=f"{w} handoff")
+            self.t[w] = tid
+            s.add_report(tid, "docs", "done", f"{w} report text", [])
+        self.live = s.add_task("docs", "cy live title", "cy live brief", requester="cy",
+                               hub="hub-cy" if person_hubs else "hub")
+        s.claim_task(self.live)
+        s.set_lane("docs", status="busy", session="s1")
+        s.set_lane("hub-cy", status="busy", session="s2", doing="cy private doing", doing_at=9e9, opened=1)
+        self.mid = s.push(INFRA, "hub-cy" if person_hubs else HUB, "memo", "cy infra secret memo")
+        s.claim_inbox("infra")
+        s.set_lane("infra", status="busy", session="s3")
+        s.add_report(None, "infra", "wrapped", "cy orphan wrapped", [])
+
+    def tearDown(self) -> None:
+        self.b.srv.shutdown()
+
+    def get(self, path: str, who: str):
+        return self.b.req("GET", path, headers={H: f"{who}@x.com"})
+
+    def test_a_member_never_gets_anothers_text_on_any_route(self) -> None:
+        secrets = ("cy title", "cy brief", "cy report text", "cy live", "cy private doing", "cy infra secret",
+                   "cy handoff", "cy/path", "cy orphan")
+        for flags in self.FLAGS:
+            self.build(*flags)
+            try:
+                paths = ["/api/state", "/api/history?kind=closed", "/api/history?kind=reports",
+                         "/api/history?kind=work", "/api/lanes/docs", "/api/sessions/docs", "/api/sessions/infra"]
+                for path in paths:
+                    code, body, _ = self.get(path, "bo")
+                    for text in secrets:
+                        self.assertNotIn(text, json.dumps(body, ensure_ascii=False), (flags, path, text))
+            finally:
+                self.b.srv.shutdown()
+
+    def test_hidden_rows_keep_count_and_layout(self) -> None:
+        self.build(True, True)
+        _, st, _ = self.get("/api/state", "bo")
+        mine = next(t for t in st["tasks"] if t["id"] == self.t["bo"])
+        other = next(t for t in st["tasks"] if t["id"] == self.t["cy"])
+        self.assertEqual(mine["title"], "bo title")
+        self.assertEqual((other["hidden"], other["lane"]), (True, "docs"))
+        self.assertNotIn("title", other)
+        self.assertEqual(len(st["tasks"]), len(self.b.s.tasks(("queued", "running", "wrapping"), 200)) + 2)
+        rep = [r for r in st["reports"] if r.get("hidden")]
+        self.assertTrue(rep)
+        lane = next(x for x in st["lanes"] if x["lane"] == "docs")
+        self.assertEqual((lane["hidden"], lane["task_id"], lane["task_title"], lane["requester"]),
+                         (True, self.live, None, None))
+        hub = next(x for x in st["lanes"] if x["lane"] == "hub-cy")
+        self.assertEqual((hub["hidden"], hub["doing"]), (True, None))
+        infra = next(x for x in st["lanes"] if x["lane"] == "infra")
+        self.assertEqual((infra["hidden"], infra["doing"], infra["memo"]), (True, None, None))
+
+    def test_the_owner_and_the_owner_of_the_work_see_everything(self) -> None:
+        for flags in self.FLAGS:
+            self.build(*flags)
+            try:
+                _, st, _ = self.get("/api/state", "ana")
+                self.assertIn("cy title", json.dumps(st))
+                self.assertIn("cy private doing" if flags[1] else "cy infra secret", json.dumps(st))
+                _, st, _ = self.get("/api/state", "cy")
+                self.assertIn("cy title", json.dumps(st))
+                _, h, _ = self.get("/api/history?kind=closed", "cy")
+                self.assertTrue(all("hidden" not in r or r["id"] == self.t["bo"] for r in h["rows"]))
+                self.assertEqual(self.get("/api/lanes/docs", "cy")[1]["task"]["title"], "cy live title")
+            finally:
+                self.b.srv.shutdown()
+
+    def test_flags_off_is_as_before(self) -> None:
+        self.build(False, False)
+        _, st, _ = self.get("/api/state", "bo")
+        self.assertIn("cy title", json.dumps(st))
+        self.assertNotIn("hidden", json.dumps(st["tasks"]))
+        _, h, _ = self.get("/api/history?kind=reports", "bo")
+        self.assertIn("cy report text", json.dumps(h))
+
+    def test_lane_sheet_of_another_persons_hub_is_refused(self) -> None:
+        self.build(True, True)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "bo")[0], 404)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "cy")[0], 200)
+        self.assertEqual(self.get("/api/lanes/hub-cy", "ana")[0], 200)
+
+    def test_session_report_is_the_one_of_the_shown_task(self) -> None:
+        self.build(True, False)
+        s = self.b.s
+        s.update_task(self.live, state="closed", closed=9.0)
+        mine = s.add_task("docs", "bo now", "b", requester="bo", hub="hub")
+        s.claim_task(mine)
+        d = self.get("/api/sessions/docs", "bo")[1]
+        self.assertEqual((d["hidden"], d["work"]["id"], d["report"]), (False, mine, None))
+        s.add_report(mine, "docs", "done", "bo own report", [])
+        self.assertEqual(self.get("/api/sessions/docs", "bo")[1]["report"]["text"], "bo own report")
+
+    def test_shared_hub_infra_memo_follows_the_memo_rule(self) -> None:
+        self.build(True, False)
+        code, d, _ = self.get("/api/sessions/infra", "bo")
+        self.assertEqual(code, 404)
+        self.assertEqual(self.get("/api/sessions/infra", "ana")[1]["work"]["id"], self.mid)
+
+
 class LocalModeSeesAllTest(unittest.TestCase):
     def test_local_owner(self) -> None:
         b = Board()
