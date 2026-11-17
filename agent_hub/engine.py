@@ -264,6 +264,15 @@ class Engine:
         return (f"[tower] You are the hub lane.\n\n{self._read_first(HUB)}{hand}\n\nThen run `dah status` and handle "
                 f"what is open.")
 
+    @staticmethod
+    def _memo_opts(msg: dict[str, Any]) -> dict[str, str]:
+        """A hub memo's own `model:` / `effort:` lines (`dah infra --model/--effort`); a decision on an infra card carries
+        a person's words, so only memos are read."""
+        if msg.get("kind") != "memo":
+            return {}
+        model, effort = stagemodel.resolve(None, str(msg.get("text") or ""))
+        return {k: v for k, v in (("model", model), ("effort", effort)) if v}
+
     def inbox_prompt(self, msg: dict[str, Any]) -> str:
         body = (f"Memo #{msg['id']} from {msg['sender']}:\n{msg['text']}" if msg["kind"] == "memo" else msg["text"])
         return f"[tower] You are the infra lane.\n\n{self._read_first(INFRA)}\n\n{body}\n\n{WRAP_RULE}"
@@ -1099,7 +1108,7 @@ class Engine:
                 self.store.finish_inbox(INFRA)
                 return
         try:
-            self.rt.open(INFRA, self.inbox_prompt(msg))
+            self.rt.open(INFRA, self.inbox_prompt(msg), **self._memo_opts(msg))
         except Exception as e:
             self.log(f"infra: message #{msg['id']} failed to open: {e}")
             self.store.mark_delivered([msg["id"]])

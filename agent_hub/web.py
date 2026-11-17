@@ -45,7 +45,7 @@ from urllib.parse import parse_qs, unquote
 from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
-from . import rating
+from . import rating, sessinfo
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -226,7 +226,8 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                     "fixing": bool(task and (task["line_mode"] == "fix" or task["id"] in blamed)),
                     "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
-                    "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
+                    "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid),
+                    "run": sessinfo.for_lane(cfg, s, lid, ln.runtime, ln.model, row.get("session") if live else None)})
     return out
 
 

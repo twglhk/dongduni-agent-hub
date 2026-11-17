@@ -836,6 +836,19 @@ class Store:
         with self.conn() as con:
             return _rows(con.execute("SELECT * FROM tasks WHERE lane=? ORDER BY id DESC LIMIT ?", (lane, limit)))
 
+    def recent_sessions(self, lane: str, limit: int = 5) -> list[str]:
+        """Session ids the lane ran most recently, newest first (usage readings and task activity)."""
+        with self.conn() as con:
+            rows = con.execute(
+                "SELECT session FROM (SELECT session, updated AS at FROM usage WHERE lane=? UNION ALL "
+                "SELECT session, COALESCE(closed, last_signal, started) FROM tasks WHERE lane=? AND session IS NOT NULL) "
+                "WHERE session IS NOT NULL ORDER BY at DESC LIMIT ?", (lane, lane, limit * 3)).fetchall()
+        out: list[str] = []
+        for r in rows:
+            if r[0] not in out:
+                out.append(r[0])
+        return out[:limit]
+
     def set_session_ctx(self, lane: str, session: str, ctx_k: int) -> None:
         """Overwrite a session's last context reading (after a compaction the old one no longer holds)."""
         with self.conn() as con:

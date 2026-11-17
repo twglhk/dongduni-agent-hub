@@ -73,6 +73,8 @@ dah update --all      # every workspace on this machine
 
 It upgrades the package the way you installed it (uv tool, pipx, a project venv), then brings each workspace to the new version without losing your setup: protocol and lane files whose template you only added to get the new template with your sections kept, files you edited get the new template beside them as `.new` and a request to infra to merge them, and known `tower.json` fixes are applied. The tower loop restarts on the new code; lane sessions keep running. You can also ask infra on the board to do it. Nothing updates by itself.
 
+`dah restart` restarts only the tower loop on the current code (a service manager that restarts it is waited for); lane sessions keep running. `dah infra "..." --model opus --effort high` opens the infra session for that request with them. The board's state lists each lane's real model and effort (read from its Claude Code transcript) under `run`, and `/api/machine` lists each data disk's usage under `machine.disks`.
+
 Package files someone changed in place (the installed board, its Python) are kept before the upgrade replaces them: copies and a diff against the release go to `.tower/patches/<version>/`, and infra gets a request to rebuild them as extensions. `dah update --dry-run` lists them.
 
 To go back to a release: `uv tool install --force dongduni-agent-hub==X.Y.Z` (or `pipx install --force ...`), then `dah update --no-upgrade`.

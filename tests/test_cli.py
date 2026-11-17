@@ -223,3 +223,47 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RestartTest(unittest.TestCase):
+    """`dah restart`: stops the tower loop only, then starts it here unless a service brings it back."""
+
+    def setUp(self) -> None:
+        from unittest import mock
+        from agent_hub import cli
+        from tests.helpers import make_home
+        self.cli, self.cfg = cli, make_home()
+        self.calls: list[str] = []
+        patches = [mock.patch.object(cli, "cfg", return_value=self.cfg),
+                   mock.patch.object(cli, "start_tower", side_effect=lambda c: self.calls.append("start")),
+                   mock.patch.object(cli.time, "sleep")]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.mock = mock
+
+    def run_restart(self, stopped: int | None, pids: list[int | None]) -> str:
+        import contextlib
+        import io
+        out = io.StringIO()
+        with self.mock.patch.object(self.cli, "stop_loop", return_value=stopped), \
+                self.mock.patch.object(self.cli, "tower_pid", side_effect=pids + [pids[-1]] * 400), \
+                contextlib.redirect_stdout(out):
+            self.cli.cmd_restart(None)  # type: ignore[arg-type]
+        return out.getvalue()
+
+    def test_a_running_tower_is_stopped_and_started_here(self) -> None:
+        out = self.run_restart(4242, [None])
+        self.assertIn("tower stopped (pid 4242); lane sessions keep running", out)
+        self.assertEqual(self.calls, ["start"])
+
+    def test_a_service_that_brings_it_back_is_left_alone(self) -> None:
+        out = self.run_restart(4242, [None, None, 5151])
+        self.assertIn("tower back (pid 5151), started by its service", out)
+        self.assertEqual(self.calls, [])
+
+    def test_a_tower_that_was_not_running_is_started_without_waiting(self) -> None:
+        out = self.run_restart(None, [None])
+        self.assertIn("the tower was not running", out)
+        self.assertEqual(self.calls, ["start"])
+        self.assertEqual(self.cli.time.sleep.call_count, 0)  # type: ignore[attr-defined]

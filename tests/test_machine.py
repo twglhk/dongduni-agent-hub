@@ -71,6 +71,21 @@ class GradeTest(unittest.TestCase):
             self.assertIsNone(g[k], k)
         self.assertEqual(machine.read_raw("plan9")["cpu"], None)
 
+    def test_mounts_keep_real_disks_root_first(self) -> None:
+        text = ("/dev/nvme0n1p16 /boot ext4 rw 0 0\n/dev/nvme0n1p15 /boot/efi vfat rw 0 0\n/dev/sdb1 /data xfs rw 0 0\n"
+                "/dev/root / ext4 rw 0 0\ntmpfs /run tmpfs rw 0 0\n/dev/loop3 /snap/core/1 squashfs ro 0 0\n"
+                "/dev/sdb1 /mnt/again xfs rw 0 0\n/dev/sdc1 /mnt/my\\040disk ext4 rw 0 0\n")
+        self.assertEqual(machine.parse_mounts(text), ["/", "/data", "/mnt/my disk"])
+        self.assertEqual(machine.parse_mounts(""), ["/"])
+
+    def test_disk_grade_by_used_share_and_not_in_the_machine_dot(self) -> None:
+        disk = lambda used: {"mount": "/", "total_gb": 100.0, "used_gb": used, "free_gb": 100.0 - used}
+        g = machine.grade({"cores": 4, "load": 0.1, "cpu": 5, "disks": [disk(10), disk(90), disk(96)]})
+        self.assertEqual([d["lv"] for d in g["disks"]], ["g", "a", "r"])
+        self.assertEqual(g["disks"][1]["used_pct"], 90)
+        self.assertEqual(g["lv"], "g")
+        self.assertEqual(machine.grade({"cores": 1})["disks"], [])
+
     def test_this_machine_reads_without_errors(self) -> None:
         g = machine.grade(machine.read_raw())
         self.assertGreaterEqual(g["cores"], 1)
@@ -79,6 +94,7 @@ class GradeTest(unittest.TestCase):
         if sys.platform == "darwin" or sys.platform.startswith("linux"):
             self.assertIsNotNone(g["ram_gb"])
             self.assertIsNotNone(g["load"])
+        self.assertTrue(g["disks"] and g["disks"][0]["total_gb"] > 0)
 
     def test_a_reader_that_breaks_gives_unknown(self) -> None:
         def boom() -> dict:
@@ -130,6 +146,7 @@ class WaitsTest(unittest.TestCase):
             srv.server_close()
         self.assertGreaterEqual(body["machine"]["cores"], 1)
         self.assertIn("lv", body["machine"])
+        self.assertTrue({"mount", "total_gb", "used_gb", "free_gb", "used_pct", "lv"} <= set(body["machine"]["disks"][0]))
         self.assertEqual(body["waits"], {"5": "every slot is busy"})
         self.assertIsNone(body["usage"])  # the Claude percent is off unless tower.json turns it on
 
