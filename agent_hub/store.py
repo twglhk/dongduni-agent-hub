@@ -410,6 +410,24 @@ class Store:
                                      "ORDER BY COALESCE(rank, id), id", (target,)))
             return _in_turns(con, rows) if fair else rows
 
+    def cancel_message(self, message_id: int, target: str, text: str, by: str) -> dict[str, Any]:
+        now = self.clock()
+        with self.tx() as con:
+            row = _one(con.execute("SELECT * FROM messages WHERE id=? AND target=? AND delivered IS NULL "
+                                   "AND kind IN ('memo','decision')", (message_id, target)))
+            if not row:
+                raise StoreError(f"#{message_id} is not a memo or decision waiting in the {target} queue")
+            held = con.execute("SELECT lane FROM lanes WHERE active_message=?", (message_id,)).fetchone()
+            if held:
+                raise StoreError(f"#{message_id} is already held by {held[0]}; that session answers it")
+            con.execute("UPDATE messages SET delivered=? WHERE id=?", (now, message_id))
+            con.execute("INSERT INTO reports(task_id, lane, kind, text, attachments, created) VALUES(NULL,?,?,?,?,?)",
+                        (target, "note", f"#{message_id}: {text}", "[]", now))
+            if row["kind"] == "memo":
+                con.execute("INSERT INTO messages(target, sender, kind, item_id, text, created, delivered) "
+                            "VALUES(?,?,?,?,?,?,?)", (HUMAN, by, "memo_reply", message_id, text, now, now))
+        return row
+
     def held_messages(self, lanes: Iterable[str]) -> dict[str, dict[str, Any]]:
         out: dict[str, dict[str, Any]] = {}
         with self.conn() as con:

@@ -40,7 +40,7 @@ If the workspace's own rules say a reinstall or restart needs a person's approva
 1. Read the memo. It comes from the hub and quotes a human's words. A request that changes instruction or role files must cite that approval (`approved: request #N` or the human's words); without it, change nothing and say so in your reply.
 2. Unclear, or it needs a choice? Use your live `ask` if the runtime has one, or post an item with options (`dah item add`) and wrap; the decision opens a fresh session.
 3. Do it. Verify it for real (run the tests, hit the URL, read the config back).
-4. Answer: `dah memo reply ID "what you did · how you checked"` in one or two lines, in the board language.
+4. Answer: `dah memo reply ID "what you did · how you checked"` in one or two lines, in the board language. If the same work also settled other memos or decisions that are still waiting in the queue, name them: `dah memo reply ID "..." --covers N M`; they leave the queue so no session opens just to find them done.
 5. Finish: `dah report wrapped "one line"`. The tower closes the session.
 
 ## Rules

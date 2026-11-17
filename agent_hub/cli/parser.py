@@ -101,11 +101,17 @@ def build_parser() -> argparse.ArgumentParser:
                    "`all` = everyone")
     p = sub.add_parser("cancel", help="hub: cancel a task")
     p.add_argument("task", type=int)
-    p = sub.add_parser("memo", help="hub/infra: reply, forward or send memos")
+    p = sub.add_parser("memo", help="hub/infra: reply, forward, send or cancel memos")
     msub = p.add_subparsers(dest="sub", required=True)
     q = msub.add_parser("reply")
     q.add_argument("id", type=int)
     q.add_argument("text")
+    q.add_argument("--covers", type=int, nargs="+", metavar="N",
+                   help="infra: waiting memos or decisions this answer also handled; they leave the infra queue")
+    q = msub.add_parser("cancel", help="hub: take a waiting infra memo or decision out of the queue (not one a "
+                                       "session already holds)")
+    q.add_argument("id", type=int)
+    q.add_argument("--why", required=True, help="the reason; it shows on the board and goes to the sending hub")
     q = msub.add_parser("bump", help="hub: move a waiting infra memo or decision to the front of the infra queue")
     q.add_argument("id", type=int)
     q = msub.add_parser("forward")

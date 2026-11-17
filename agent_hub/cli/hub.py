@@ -7,7 +7,8 @@ import time
 from .. import stagemodel
 from ..config import HUB, INFRA, Config, base_lane, is_infra
 from ..engine import clip
-from ..requester import escalation_audience, infra_reply_text, member_name, requester_for
+from ..requester import (cancelled_text, covered_text, escalation_audience, infra_reply_text, member_name,
+                         requester_for)
 from ..store import Store, StoreError
 from .common import TowerError, cfg, need, need_team, store, verdict_text, who
 
@@ -194,6 +195,8 @@ def cmd_memo(args: argparse.Namespace) -> None:
             memo_paths(c, s, me, args.id, args.paths, args.alone)
             return
         if args.sub == "reply":
+            if args.covers and not is_infra(me):
+                raise TowerError("only infra marks other memos as covered by its answer")
             memo = s.memo(args.id)
             asker = member_name(s, str(memo["sender"])) if c.requester else None
             card = s.reply_memo(args.id, args.text, INFRA if is_infra(me) else me, set(c.all_lanes),
@@ -203,6 +206,15 @@ def cmd_memo(args: argparse.Namespace) -> None:
             if is_infra(me) and c.requester and c.is_hub(str(memo["sender"])):
                 s.push(str(memo["sender"]), INFRA, "infra_reply", infra_reply_text(args.id, args.text),
                        item_id=args.id)
+            for n in args.covers or []:
+                try:
+                    cancel_waiting(c, s, me, n, covered_text(c.lang, args.id))
+                except StoreError as e:
+                    print(f"#{n} not taken out: {e}")
+        elif args.sub == "cancel":
+            if not c.is_hub(me):
+                raise TowerError("only a hub cancels a waiting infra memo or decision")
+            cancel_waiting(c, s, me, args.id, args.why)
         elif args.sub == "bump":
             if not c.is_hub(me):
                 raise TowerError("only the hub reorders the infra queue")
@@ -220,6 +232,18 @@ def cmd_memo(args: argparse.Namespace) -> None:
             send_infra(c, s, me, args.text, args.approved, args.paths, args.alone)
     except StoreError as e:
         raise TowerError(str(e))
+
+
+def cancel_waiting(c: Config, s: Store, me: str, mid: int, why: str) -> None:
+    why = why.strip()
+    if not why:
+        raise TowerError("say why with --why: it stays on the board")
+    msg = s.cancel_message(mid, INFRA, cancelled_text(c.lang, me, why), me)
+    sender = str(msg["sender"])
+    told = c.is_hub(sender) and sender != me
+    if told:
+        s.push(sender, me, "memo_cancelled", f"Infra {msg['kind']} #{mid} left the queue ({me}): {clip(why, 700)}")
+    print(f"#{mid} is out of the infra queue; the reason shows on the board" + (f" and went to {sender}." if told else "."))
 
 
 def memo_paths(c: Config, s: Store, me: str, mid: int, given: list[str], alone: bool = False) -> None:

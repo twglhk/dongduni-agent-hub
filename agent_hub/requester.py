@@ -96,3 +96,16 @@ def infra_wrapped_text(s: Store, msg: dict[str, Any], text: str) -> str:
         f" (item #{msg['item_id']})" if msg.get("item_id") else "")
     return f"Wrapped: infra {what}: {clip(text, 700)}"
 
+
+CANCELLED = {"en": "Cancelled ({by}): {why}", "ko": "취소됨 ({by}): {why}", "ja": "取り消し ({by}): {why}",
+             "zh": "已取消（{by}）：{why}", "es": "Cancelado ({by}): {why}"}
+COVERED = {"en": "handled together in #{memo}", "ko": "#{memo}에서 함께 처리함", "ja": "#{memo} でまとめて対応",
+           "zh": "已在 #{memo} 中一并处理", "es": "atendido junto en #{memo}"}
+
+
+def cancelled_text(lang: str, by: str, why: str) -> str:
+    return CANCELLED.get(lang, CANCELLED["en"]).format(by=by, why=why)
+
+
+def covered_text(lang: str, memo: int) -> str:
+    return COVERED.get(lang, COVERED["en"]).format(memo=memo)
