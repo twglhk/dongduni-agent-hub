@@ -28,13 +28,16 @@ Other registered workspaces are served under /w/<slug>/ with the same routes, so
 project on the machine. Each workspace keeps its own auth; a `local` workspace is only served next to another
 `local` one (local mode trusts whoever reaches it).
 
-Every POST must carry `x-tower: 1` (a custom header forces a CORS preflight, so other sites cannot post forms).
+Every request must carry a Host the board knows (loopback with its port, the public_url host, or the bind address; else 421:
+DNS rebinding). Every POST must carry `x-tower: 1` and, when the browser says where it came from (Origin, Sec-Fetch-Site),
+come from the board's own origin.
 """
 
 from __future__ import annotations
 
 import getpass
 import hashlib
+import ipaddress
 import json
 import mimetypes
 import os
@@ -43,7 +46,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
-from urllib.parse import parse_qs, unquote
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import __version__
 from . import config as config_mod
@@ -57,29 +60,69 @@ from .store import HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BOARD_NEXT = Path(__file__).resolve().parent / "board_next"
-BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "credentials", "id_rsa", "id_ed25519"}
-BLOCKED_SUFFIXES = {".db", ".sqlite", ".pem", ".key", ".p12"}
+BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "secrets.yaml", "secrets.yml", "secret.json",
+                 "credentials", "credentials.json", "token.json", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "kubeconfig",
+                 "known_hosts", "terraform.tfvars"}
+BLOCKED_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pem", ".key", ".p12", ".pfx", ".pkcs12", ".ppk",
+                    ".jks", ".keystore", ".gpg", ".kdbx", ".tfstate", ".tfvars"}
+BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials.")
 MAX_BODY = 64 * 1024
 PREVIEW = 3
 PAGE = 20
 COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
+XML_TYPES = ("image/svg+xml", "application/xhtml+xml", "application/xml", "text/xml")
+PAGE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+            "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
+            "form-action 'self'; frame-ancestors 'none'")
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css")):
     mimetypes.add_type(_type, _ext)  # the Windows registry can say text/plain
 
 
+def blocked_name(name: str) -> bool:
+    low = name.lower()
+    return (low.startswith(".") or low in BLOCKED_NAMES or low.endswith(tuple(BLOCKED_SUFFIXES))
+            or low.startswith(BLOCKED_PREFIXES) or ".tfstate" in low)
+
+
 def safe_file(root: Path, rel: str) -> Path | None:
     parts = Path(unquote(rel)).parts
-    if not parts or any(p.startswith(".") or p == ".." for p in parts):
+    if not parts or any(blocked_name(p) or p == ".." for p in parts):
         return None
-    full = (root / Path(*parts)).resolve()
-    if root.resolve() not in full.parents or not full.is_file():
+    base = root.resolve()
+    full = (base / Path(*parts)).resolve()
+    try:
+        shown = full.relative_to(base).parts
+    except ValueError:
         return None
-    if full.name in BLOCKED_NAMES or full.suffix.lower() in BLOCKED_SUFFIXES:
+    if not shown or any(blocked_name(p) for p in shown) or not full.is_file():
         return None
     return full
+
+
+def mime(name: str) -> str:
+    ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    if ctype.startswith(("text/", "application/json")) and "charset" not in ctype:
+        ctype += "; charset=utf-8"
+    return ctype
+
+
+def host_name(value: str) -> tuple[str, int | None]:
+    try:
+        u = urlsplit("//" + value.strip())
+        return (u.hostname or "").lower(), u.port
+    except ValueError:
+        return "", None
+
+
+def is_ip(name: str) -> bool:
+    try:
+        ipaddress.ip_address(name)
+    except ValueError:
+        return False
+    return True
 
 
 def engine_rows(cfg: Config, lane: str) -> tuple[list[dict[str, Any]], Path]:
@@ -358,7 +401,42 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
         return site
 
     def reachable(site: Site) -> bool:
-        return site is own or site.cfg.auth_mode != "local" or cfg.auth_mode == "local"
+        mode = site.cfg.auth_mode
+        if site is own or mode == "token":
+            return True
+        if mode == "local":
+            return cfg.auth_mode == "local"
+        return cfg.auth_mode == "header" and cfg.auth_header.lower() == site.cfg.auth_header.lower()
+
+    public_host = host_name(cfg.public_url.split("://", 1)[-1])[0] if cfg.public_url else ""
+    bind_host = cfg.web_host.strip("[]").lower()
+    wildcard = bind_host in ("", "0.0.0.0", "::")
+    exposed = bind_host not in ("127.0.0.1", "localhost", "::1")
+
+    def host_ok(value: str, port: int) -> bool:
+        name, got = host_name(value)
+        if not name:
+            return False
+        if public_host and name == public_host:
+            return True
+        if got is None:
+            got = 80
+        if got != port:
+            return False
+        if name in ("127.0.0.1", "localhost", "::1"):
+            return True
+        if exposed:
+            return name == bind_host or (wildcard and is_ip(name))
+        return False
+
+    def same_origin(headers: Any) -> bool:
+        site = (headers.get("sec-fetch-site") or "").lower()
+        if site and site not in ("same-origin", "none"):
+            return False
+        origin = headers.get("origin")
+        if origin and origin != "null":
+            return urlsplit(origin).netloc.lower() == (headers.get("host") or "").lower()
+        return origin is None
 
     def workspaces_view(current: Site) -> list[dict[str, Any]]:
         regs = config_mod.workspaces()
@@ -380,9 +458,25 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
     class Handler(BaseHTTPRequestHandler):
         site: Site = own
         route = "/"
+        timeout = 30
+
+        def version_string(self) -> str:
+            return "dah"
 
         def log_message(self, format: str, *args: Any) -> None:
             pass
+
+        def _guard(self) -> bool:
+            if not host_ok(self.headers.get("host") or "", self.server.server_address[1]):
+                self._json(421, {"error": "unknown Host: open the board by its own address (public_url in tower.json)"})
+                return False
+            return True
+
+        def _hardening(self, frame_only: bool = False, csp: str | None = None) -> None:
+            self.send_header("x-content-type-options", "nosniff")
+            self.send_header("x-frame-options", "DENY")
+            self.send_header("referrer-policy", "no-referrer")
+            self.send_header("content-security-policy", csp or ("frame-ancestors 'none'" if frame_only else PAGE_CSP))
 
         def _resolve(self) -> bool:
             """Pick the workspace from the path. False when a response (redirect, 404) was already sent."""
@@ -402,6 +496,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 self.send_response(308)
                 self.send_header("location", f"/w/{m.group(1)}/" + (f"?{query}" if query else ""))
                 self.send_header("content-length", "0")
+                self._hardening(frame_only=True)
                 self.end_headers()
                 return False
             self.site, self.route, self.query = site, m.group(2), query
@@ -447,6 +542,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.send_header("content-type", "application/json; charset=utf-8")
             self.send_header("cache-control", "no-store")
             self.send_header("content-length", str(len(data)))
+            self._hardening(frame_only=True)
             for k, v in (headers or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -459,6 +555,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.send_response(304 if self.headers.get("if-none-match") == tag else 200)
             self.send_header("etag", tag)
             self.send_header("cache-control", "no-cache")
+            self._hardening(frame_only=True)
             if self.headers.get("if-none-match") == tag:
                 self.send_header("content-length", "0")
                 self.end_headers()
@@ -468,32 +565,44 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
             self.wfile.write(data)
 
-        def _static(self, path: Path, ctype: str, cache: str = "no-cache") -> None:
+        def _contained(self, name: str, ctype: str) -> None:
+            self.send_header("x-content-type-options", "nosniff")
+            self.send_header("referrer-policy", "no-referrer")
+            self.send_header("content-security-policy", "sandbox allow-scripts" if ctype.startswith("text/html") else "sandbox")
+            xml = ctype.startswith(XML_TYPES) or name.lower().endswith((".svg", ".xml", ".xhtml", ".xht"))
+            if xml and (self.headers.get("sec-fetch-dest") or "").lower() != "image":
+                self.send_header("content-disposition", "attachment")
+
+        def _static(self, path: Path, ctype: str, cache: str = "no-cache", page: str = "app") -> None:
             data = path.read_bytes()
             self.send_response(200)
             self.send_header("content-type", ctype)
             self.send_header("cache-control", cache)
             self.send_header("content-length", str(len(data)))
+            if page == "file":
+                self._contained(path.name, ctype)
+            else:
+                self._hardening(frame_only=page != "app")
             self.end_headers()
             self.wfile.write(data)
 
         # ----- GET -----
 
         def do_GET(self) -> None:
-            if not self._resolve():
+            if not self._guard() or not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
             if path == "/api/goals" or path.startswith("/api/goals/"):
                 return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             if path in ("/", "/index.html"):
                 page = None if "builtin" in parse_qs(self.query, keep_blank_values=True) else board_override(c.home)
-                return self._static(page, "text/html; charset=utf-8") if page else self._next("")
+                return self._static(page, "text/html; charset=utf-8", page="frame") if page else self._next("")
             if path.startswith("/assets/"):
                 return self._next(path[1:])
             if path == "/old":
                 return self._redirect("/old/")
             if path in ("/old/", "/old/index.html"):
-                return self._static(BOARD, "text/html; charset=utf-8")
+                return self._static(BOARD, "text/html; charset=utf-8", page="frame")
             if path == "/manifest.webmanifest":
                 return self._json(200, {"name": c.name, "short_name": c.name[:12], "start_url": "./",
                                         "display": "standalone", "background_color": "#17171c",
@@ -546,10 +655,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 full = safe_file(board_dir(c.home), path[3:])
                 if not full or full.suffix.lower() not in STATIC_SUFFIXES:
                     return self._json(404, {"error": "not found"})
-                ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
-                if ctype.startswith(("text/", "application/json")) and "charset" not in ctype:
-                    ctype += "; charset=utf-8"
-                return self._static(full, ctype)
+                return self._static(full, mime(full.name), page="file")
             if path.startswith("/api/x/"):
                 return self._ext("GET", path[7:], me, {})
             self._json(404, {"error": "not found"})
@@ -558,16 +664,14 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.send_response(302)
             self.send_header("location", self.site.prefix + to + (f"?{self.query}" if self.query else ""))
             self.send_header("content-length", "0")
+            self._hardening(frame_only=True)
             self.end_headers()
 
         def _next(self, rel: str) -> None:
             full = BOARD_NEXT / "index.html" if rel in ("", "index.html") else safe_file(BOARD_NEXT, rel)
             if not full or not full.is_file() or (full.suffix.lower() not in STATIC_SUFFIXES and full.suffix != ".html"):
                 return self._json(404, {"error": "not found"})
-            ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
-            if ctype.startswith("text/") and "charset" not in ctype:
-                ctype += "; charset=utf-8"
-            self._static(full, ctype, "public, max-age=31536000, immutable" if rel.startswith("assets/") else "no-cache")
+            self._static(full, mime(full.name), "public, max-age=31536000, immutable" if rel.startswith("assets/") else "no-cache")
 
         def _ext(self, method: str, name: str, me: dict[str, Any], body: dict[str, Any]) -> None:
             fn = self.site.ext.routes().get((method, name.strip("/")))
@@ -588,12 +692,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             full = safe_file(self.site.cfg.workdir, rel)
             if not full:
                 return self._json(404, {"error": "not found"})
-            ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
-            if ctype.startswith("text/") and "charset" not in ctype:
-                ctype += "; charset=utf-8"
+            ctype = mime(full.name)
             size = full.stat().st_size
             start, end = 0, size - 1
             rng = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("range", ""))
+            partial = bool(rng and size)
             if rng and size:
                 if rng.group(1):
                     start = int(rng.group(1))
@@ -604,16 +707,16 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if start > end:
                     self.send_response(416)
                     self.send_header("content-range", f"bytes */{size}")
+                    self.send_header("content-length", "0")
                     self.end_headers()
                     return
-            self.send_response(206 if rng else 200)
+            self.send_response(206 if partial else 200)
             self.send_header("content-type", ctype)
             self.send_header("accept-ranges", "bytes")
             self.send_header("content-length", str(end - start + 1 if size else 0))
-            if rng:
+            if partial:
                 self.send_header("content-range", f"bytes {start}-{end}/{size}")
-            if ctype.startswith("text/html"):
-                self.send_header("content-security-policy", "sandbox allow-scripts")
+            self._contained(full.name, ctype)
             self.end_headers()
             with full.open("rb") as f:
                 f.seek(start)
@@ -628,15 +731,22 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
         # ----- POST -----
 
         def do_POST(self) -> None:
+            if not self._guard():
+                return
             if self.headers.get("x-tower") != "1":
                 return self._json(403, {"error": "missing x-tower header"})
+            if not same_origin(self.headers):
+                return self._json(403, {"error": "cross-site request"})
             if not self._resolve():
                 return
             c, st, path = self.site.cfg, self.site.s, self.route
             if path == "/api/goals" or path.startswith("/api/goals/"):
                 return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
-            n = int(self.headers.get("content-length") or 0)
-            if n > MAX_BODY:
+            try:
+                n = int(self.headers.get("content-length") or 0)
+            except ValueError:
+                return self._json(400, {"error": "invalid content-length"})
+            if not 0 <= n <= MAX_BODY:
                 return self._json(413, {"error": "too large"})
             try:
                 body = json.loads(self.rfile.read(n) or b"{}")
@@ -679,6 +789,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
                 if path == "/api/settings":
+                    if me.get("role") != "owner":
+                        return self._json(403, {"error": "only an owner changes settings"})
                     raw = body.get("max_lanes")
                     if isinstance(raw, bool) or not isinstance(raw, int) or not 1 <= raw <= MAX_LANES_LIMIT:
                         raise StoreError(f"max_lanes must be a whole number from 1 to {MAX_LANES_LIMIT}")
