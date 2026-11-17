@@ -6,8 +6,9 @@ the checks are opencode's: https://opencode.ai/docs/skills/
 
     python3 tools/skill_lint.py [repo_root]
 
-Skills are found by globbing `.opencode/skills/*/` and `.agents/skills/*/` (never a list, so a new
-skill can't slip past). Per skill:
+Standard library only. It lives in `tools/` of the agent-hub repository and is not part of the installed
+package: run it from a clone. Skills are found by globbing `.opencode/skills/*/`, `.agents/skills/*/` and
+`.claude/skills/*/` (never a list, so a new skill can't slip past). Per skill:
   FAIL  no SKILL.md; frontmatter missing or not YAML; `name` missing, not
         ^[a-z0-9]+(-[a-z0-9]+)*$, over 64 chars, or not the folder name;
         `description` missing or not 1-1024 chars; description cut short by
@@ -24,11 +25,11 @@ item is OK or WARN and at least one skill was scanned.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
-
-import yaml
+from typing import Any
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 LINK_RE = re.compile(r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
@@ -36,6 +37,119 @@ KNOWN_KEYS = {"name", "description", "license", "compatibility", "metadata"}
 SKILL_DIRS = (".opencode/skills", ".agents/skills", ".claude/skills")  # `.agents/skills` is where `dah engine add` puts an engine's skills
 BODY_BUDGET = 150
 REF_BUDGET = 300
+
+
+class FrontmatterError(ValueError):
+    pass
+
+
+INT_RE = re.compile(r"[-+]?(0|[1-9][0-9_]*)$")
+FLOAT_RE = re.compile(r"[-+]?([0-9][0-9_]*)?\.[0-9]+([eE][-+]?[0-9]+)?$")
+KEY_RE = re.compile(r"""("[^"]*"|'[^']*'|[^\s:#'"\[\]{},&*!|>%@`-][^:]*?)\s*:(?:\s+(.*))?$""")
+
+
+def plain_scalar(text: str) -> Any:
+    low = text.lower()
+    if low in ("", "~", "null"):
+        return None
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    if INT_RE.match(text):
+        return int(text.replace("_", ""))
+    if FLOAT_RE.match(text):
+        return float(text.replace("_", ""))
+    return text
+
+
+def quoted_scalar(text: str) -> str:
+    quote = text[0]
+    i = 1
+    while i < len(text):
+        if quote == "'" and text.startswith("''", i):
+            i += 2
+            continue
+        if quote == '"' and text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == quote:
+            break
+        i += 1
+    else:
+        raise FrontmatterError("unterminated quoted string")
+    rest = text[i + 1 :].strip()
+    if rest and not rest.startswith("#"):
+        raise FrontmatterError("text after a closing quote")
+    inner = text[1:i]
+    if quote == "'":
+        return inner.replace("''", "'")
+    try:
+        return json.loads('"' + inner + '"')
+    except ValueError:
+        raise FrontmatterError("unsupported escape in a double-quoted string")
+
+
+def block_scalar(style: str, block: list[str]) -> str:
+    body = list(block)
+    while body and not body[-1].strip():
+        body.pop()
+    indent = min((len(ln) - len(ln.lstrip()) for ln in body if ln.strip()), default=0)
+    text = "\n".join(ln[indent:] for ln in body)
+    if style.startswith("|"):
+        return text
+    return "\n".join(" ".join(para.split("\n")) for para in text.split("\n\n"))
+
+
+def value_of(rest: str, block: list[str]) -> Any:
+    if rest[:1] in ("|", ">"):
+        return block_scalar(rest, block)
+    if not rest:
+        body = [ln for ln in block if ln.strip() and not ln.lstrip().startswith("#")]
+        if not body:
+            return None
+        if body[0].lstrip().startswith("- "):
+            return [plain_scalar(ln.lstrip()[2:].strip()) for ln in body if ln.lstrip().startswith("- ")]
+        indent = len(body[0]) - len(body[0].lstrip())
+        return parse_mapping([ln[indent:] if ln.strip() else "" for ln in block])
+    if rest[0] in ("'", '"'):
+        return quoted_scalar(" ".join([rest, *(ln.strip() for ln in block if ln.strip())]))
+    text = " ".join([rest, *(ln.strip() for ln in block if ln.strip())])
+    text = re.split(r"\s#", text, maxsplit=1)[0].strip()
+    if text[:1] in ("@", "`", "%", "*", "&"):
+        raise FrontmatterError(f"a value cannot start with {text[0]!r}; quote it")
+    if ": " in text or text.endswith(":"):
+        raise FrontmatterError("mapping values are not allowed here (a colon and a space inside an unquoted value; quote it)")
+    if text.startswith("[") and text.endswith("]"):
+        return [plain_scalar(x.strip().strip("'\"")) for x in text[1:-1].split(",") if x.strip()]
+    return plain_scalar(text)
+
+
+def parse_mapping(lines: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if not ln.strip() or ln.lstrip().startswith("#"):
+            i += 1
+            continue
+        if ln[0] in " \t":
+            raise FrontmatterError(f"unexpected indentation: {ln.strip()[:40]!r}")
+        m = KEY_RE.match(ln.rstrip())
+        if not m:
+            raise FrontmatterError(f"not a `key: value` line: {ln.strip()[:40]!r}")
+        key = m.group(1).strip("'\"")
+        i += 1
+        block: list[str] = []
+        while i < len(lines) and (not lines[i].strip() or lines[i][0] in " \t"):
+            block.append(lines[i])
+            i += 1
+        out[key] = value_of((m.group(2) or "").strip(), block)
+    return out
+
+
+def parse_frontmatter(front: str) -> Any:
+    return parse_mapping(front.splitlines())
 
 
 def split_frontmatter(text: str) -> tuple[str, str] | None:
@@ -83,11 +197,9 @@ def lint_skill(folder: Path) -> tuple[str, list[str]]:
         return "FAIL", ["no frontmatter block (--- … ---)"]
     front, body = parts
     try:
-        meta = yaml.safe_load(front)
-    except yaml.YAMLError as err:
-        return "FAIL", [f"frontmatter is not YAML: {err}".splitlines()[0]]
-    if not isinstance(meta, dict):
-        return "FAIL", ["frontmatter is not a mapping"]
+        meta = parse_frontmatter(front)
+    except FrontmatterError as err:
+        return "FAIL", [f"frontmatter is not YAML: {err}"]
 
     name = meta.get("name")
     if not isinstance(name, str) or not name:
@@ -134,9 +246,9 @@ def lint_rule(rule: Path, root: Path) -> tuple[str, list[str]]:
     if parts is None:
         return "FAIL", ["no frontmatter block"]
     try:
-        meta = yaml.safe_load(parts[0]) or {}
-    except yaml.YAMLError as err:
-        return "FAIL", [f"frontmatter is not YAML: {err}".splitlines()[0]]
+        meta = parse_frontmatter(parts[0])
+    except FrontmatterError as err:
+        return "FAIL", [f"frontmatter is not YAML: {err}"]
     patterns = meta.get("paths") or meta.get("globs")
     if isinstance(patterns, str):
         patterns = [patterns]

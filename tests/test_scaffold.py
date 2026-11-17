@@ -107,10 +107,6 @@ class ScaffoldTest(unittest.TestCase):
         self.assertIn("no model and no effort line", warn.stderr)
 
     def test_scaffolded_skills_pass_skill_lint(self) -> None:
-        try:
-            import yaml  # noqa: F401
-        except ImportError:
-            self.skipTest("PyYAML is not installed")
         for kind in engine_kinds():
             self.tower("engine", "add", f"{kind}-two", "--from", kind, "--label", f"{kind.title()} two")
         p = subprocess.run([sys.executable, str(ROOT / "tools" / "skill_lint.py"), str(self.home)], capture_output=True, text=True)
