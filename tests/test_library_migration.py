@@ -10,7 +10,7 @@ from agent_hub import config as config_mod, engines, line, processes, stagemodel
 from agent_hub.install import refresh
 from agent_hub.store import Store
 from tests.helpers import make_home
-from tests.test_process import PROCESS, make_engine_home
+from tests.test_process import FRAMES, PROCESS, make_engine_home
 
 ROOT = Path(__file__).resolve().parents[1]
 NEW = "processes/full/anim.md"
@@ -226,6 +226,68 @@ class SharedPatternCardTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (home / "processes/sub/anim-storyboard/patterns").iterdir()), ["beats.md", "frames.md"])
         rows = engines.build(home / NEW, home / SKILLS)
         self.assertIn("layout", [s["name"] for s in engines.lane_skills("", home / SKILLS, rows, "story")])
+
+
+SHARED_LIBRARY = """# Pattern library
+
+| # | Type | Lane · skill | Process | Pattern | Model · effort |
+|---|---|---|---|---|---|
+| 1 | Storyboard | story · layout | confirmed v2 (process/storyboard.md) | confirmed | sonnet/medium |
+| 2 | Animatic | story · layout | confirmed v2 (process/storyboard.md) | confirmed | opus/high |
+| 3 | Sound cue | story · layout | confirmed v1 (process/cue.md) | confirmed | haiku/low |
+"""
+
+
+class SharedCardsTest(OldWorkspace):
+    def setUp(self) -> None:
+        super().setUp()
+        (self.home / OLD).write_text(SHARED_LIBRARY, encoding="utf-8")
+        cue = self.home / ".agents/skills/layout/references/process/cue.md"
+        cue.write_text(cue.read_text(encoding="utf-8").replace("patterns/pick.md", "patterns/frames.md"), encoding="utf-8")
+
+    def subs(self) -> list[str]:
+        return sorted(p.name for p in (self.home / "processes/sub").iterdir())
+
+    def test_rows_sharing_a_process_card_become_one_sub_process(self) -> None:
+        self.update()
+        self.assertEqual(self.subs(), ["anim-sound-cue", "anim-storyboard"])
+        steps = processes.parse_full((self.home / NEW).read_text(encoding="utf-8"), "anim")["steps"]
+        self.assertEqual([(s["old"], s["sub"], s["model"]) for s in steps],
+                         [("1", "anim-storyboard", "sonnet/medium"), ("2", "anim-storyboard", "opus/high"), ("3", "anim-sound-cue", "haiku/low")])
+        self.assertIn("processes/sub/anim-storyboard/process.md", (self.home / CARD).read_text(encoding="utf-8"))
+
+    def test_each_old_row_keeps_its_sub_process_and_model(self) -> None:
+        s = Store(self.cfg.db)
+        tids = {n: s.add_task("story", f"row {n}", "x", "anim", None) for n in ("1", "2")}
+        for n, tid in tids.items():
+            s.update_task(tid, line_row=n)
+        self.update()
+        self.assertEqual({Store(self.cfg.db).task(t)["line_row"] for t in tids.values()}, {"anim/anim-storyboard"})
+        cfg = config_mod.load(self.home)
+        table, library = stagemodel.table_for(cfg, "story"), stagemodel.library_for(cfg)
+        self.assertEqual(stagemodel.resolve(table, "Line: #1 Storyboard · stage 1 · make", library), ("sonnet", "medium"))
+        self.assertEqual(stagemodel.resolve(table, "Line: #2 Animatic · stage 1 · make", library), ("opus", "high"))
+        legacy = processes.lane_full(cfg, "story")
+        for row in ("1", "2"):
+            self.assertEqual(engines.line_fields(f"Line: #{row} X · stage 2 · make", legacy)["line_row"], "anim/anim-storyboard")
+        out = self.dah("task", "story", "--title", "t", "Line: #2 Animatic · stage 2 · make\nx", lane="hub")
+        self.assertIn("anim / anim-storyboard", out)
+
+    def test_a_pattern_card_shared_by_two_sub_processes_is_copied_and_the_stub_names_both(self) -> None:
+        out = self.update()
+        frames = (self.home / ".agents/skills/layout/references/patterns/frames.md").read_text(encoding="utf-8")
+        for sub in ("anim-storyboard", "anim-sound-cue"):
+            self.assertEqual((self.home / f"processes/sub/{sub}/patterns/frames.md").read_text(encoding="utf-8"), FRAMES)
+            self.assertIn(f"processes/sub/{sub}/patterns/frames.md", frames)
+        shared = [ln for ln in out.splitlines() if "shared by 2 sub-processes" in ln]
+        self.assertEqual(len(shared), 1)
+        self.assertIn(".agents/skills/layout/references/patterns/frames.md", shared[0])
+
+    def test_a_second_update_changes_nothing(self) -> None:
+        self.update()
+        first = tree(self.home)
+        self.update()
+        self.assertEqual(tree(self.home), first)
 
 
 if __name__ == "__main__":

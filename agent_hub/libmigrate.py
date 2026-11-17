@@ -15,6 +15,7 @@ This engine's processes are in the process library now: the full process `{full}
 Edit the process library, not this file.
 """
 STUB = "Moved to `{dest}` (the process library) by `dah update`. Edit it there.\n"
+SPLIT_STUB = "Copied by `dah update` into every sub-process of the process library that used it: {dests}. Edit the copies there.\n"
 FULL = """# Full process: {label}
 
 Deliverable: the deliverables of the {label}, converted from the pattern library `{library}`.
@@ -106,35 +107,48 @@ def _plan(cfg: Config, eid: str, library_rel: str, rows: list[dict[str, Any]], s
     files: dict[Path, str] = {}
     stubs: dict[Path, str] = {}
     ids: dict[str, str] = {}
+    by_card: dict[Path, str] = {}
+    copies: dict[Path, list[str]] = {}
     table = []
     label = cfg.engines[eid].label or eid
     for r in rows:
-        base = f"{fid}-{slug(r['type']) or 'row-' + slug(r['n'])}"
-        sid, n = base, 2
-        while sid in taken:
-            sid, n = f"{base}-{n}", n + 1
-        taken.add(sid)
-        ids[r["n"]] = sid
-        dest = home / processes.DIR / "sub" / sid
         proc = r["process"]
         card = Path(os.path.normpath(skills / proc["path"])) if proc else None
         text = _read(card) if card else ""
-        if text:
-            new, moved = _convert_card(text, card, r, skills)
-            files[dest / "process.md"] = new
-            stubs[card] = STUB.format(dest=f"{processes.DIR}/sub/{sid}/process.md")
-            for src, name in moved:
-                files[dest / "patterns" / name] = _read(src)
-                stubs.setdefault(src, STUB.format(dest=f"{processes.DIR}/sub/{sid}/patterns/{name}"))
+        if text and card in by_card:
+            sid = ids[r["n"]] = by_card[card]
         else:
-            files[dest / "process.md"] = SKELETON.format(
-                title=r["type"], skill=r["skill"] or "none", n=r["n"], library=library_rel, process=r["process_text"] or "-", pattern=r["pattern_text"] or "-")
+            base = f"{fid}-{slug(r['type']) or 'row-' + slug(r['n'])}"
+            sid, n = base, 2
+            while sid in taken:
+                sid, n = f"{base}-{n}", n + 1
+            taken.add(sid)
+            ids[r["n"]] = sid
+            dest = home / processes.DIR / "sub" / sid
+            if text:
+                by_card[card] = sid
+                new, moved = _convert_card(text, card, r, skills)
+                files[dest / "process.md"] = new
+                stubs[card] = STUB.format(dest=f"{processes.DIR}/sub/{sid}/process.md")
+                for src, name in moved:
+                    files[dest / "patterns" / name] = _read(src)
+                    copies.setdefault(src, []).append(f"{processes.DIR}/sub/{sid}/patterns/{name}")
+            else:
+                files[dest / "process.md"] = SKELETON.format(
+                    title=r["type"], skill=r["skill"] or "none", n=r["n"], library=library_rel, process=r["process_text"] or "-", pattern=r["pattern_text"] or "-")
         table.append(f"| {len(table) + 1} | {r['n']} |  | `{sid}` | {r['type'].replace('|', '/')} | {r['model_text'].replace('|', '/')} |")
+    for src, dests in copies.items():
+        stubs[src] = STUB.format(dest=dests[0]) if len(dests) == 1 else SPLIT_STUB.format(dests=", ".join(f"`{d}`" for d in dests))
+    shared = {_shown(home, src): dests for src, dests in copies.items() if len(dests) > 1}
     files[home / full_rel] = FULL.format(label=label, library=library_rel, rows="\n".join(table))
     for path, text in files.items():
         if path.exists() and _read(path) != text:
             raise Skipped(f"{path.relative_to(home).as_posix()} already exists")
-    return {"fid": fid, "full": full_rel, "files": files, "stubs": stubs, "ids": ids}
+    return {"fid": fid, "full": full_rel, "files": files, "stubs": stubs, "ids": ids, "shared": shared}
+
+
+def _shown(home: Path, path: Path) -> str:
+    return path.relative_to(home).as_posix() if path.is_relative_to(home) else path.as_posix()
 
 
 def _add_lane_sections(cfg: Config, eid: str, rows: list[dict[str, Any]], fid: str, full_rel: str) -> list[str]:
@@ -179,8 +193,11 @@ def _convert(cfg: Config, eid: str, rows: list[dict[str, Any]], library_rel: str
         Store(cfg.db).remap_line_rows(eid, {r["n"]: f"{fid}/{plan['ids'][r['n']]}" for r in rows})
     for src, text in plan["stubs"].items():
         src.write_text(text, encoding="utf-8")
-    out = [f"{library_rel}: converted into the process library: {full_rel} and {len(rows)} sub-process(es) in "
+    subs = len(set(plan["ids"].values()))
+    out = [f"{library_rel}: converted into the process library: {full_rel} with {len(rows)} step(s) and {subs} sub-process(es) in "
            f"{processes.DIR}/sub/ ({library_rel}.bak keeps the original table; the old card files now point to their new place)"]
+    out += [f"{src}: shared by {len(dests)} sub-processes, so each got its own copy: {', '.join(dests)}"
+            for src, dests in plan["shared"].items()]
     out += [f"{p}: lists `{fid}` under `## Processes used`" for p in lanes]
     return out
 

@@ -134,7 +134,10 @@ def _from_library(library: Path, brief: str, table: Path | None) -> tuple[str | 
         return None, None
     a, _, b = (p["stage"] or "").partition("-")
     first = int(a) if a else None
-    return _pick(_entries(processes.step_model(home, p["full"], p["sub"])), first, int(b) if b else first)
+    old = line.old_row(head)
+    step = next((s for s in legacy[1] if s["old"] == old), None) if legacy and old else None
+    cell = step["model"] if step else processes.step_model(home, p["full"], p["sub"])
+    return _pick(_entries(cell), first, int(b) if b else first)
 
 
 def resolve(table: Path | None, brief: str, library: Path | None = None) -> tuple[str | None, str | None]:
