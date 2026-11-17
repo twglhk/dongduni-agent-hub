@@ -1,7 +1,7 @@
 """Scratch the tower makes, and the sweep that removes it once nobody needs it.
 
 Everything here lives under one dah-owned root outside the project: `scratch_root` in tower.json, or
-`<system temp>/dah-<hash of the workspace path>`. It holds the done gate's one persistent worktree (donegate.py,
+`<user cache dir>/agent-hub/dah-<hash of the workspace path>`. It holds the done gate's one persistent worktree (donegate.py,
 never swept) and the per-task scratch `dah scratch` hands out: a plain folder, or with `--worktree` a detached git
 worktree of the lane's HEAD. Each one is written to `<root>/scratch.json` with its task id.
 
@@ -20,11 +20,12 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
+import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 if TYPE_CHECKING:
     from .config import Config
@@ -32,17 +33,52 @@ if TYPE_CHECKING:
 
 DEFAULT_GRACE = 600
 SWEEP_SECONDS = 120
+LOCK_WAIT = 30.0
+LOCK_STALE = 60.0
 MANIFEST = "scratch.json"
 DONE_STATES = ("closed", "cancelled")
 
 
-def dah_root(cfg: "Config") -> Path:
-    """The folder the tower owns for gate worktrees and task scratch. Outside the project, one per workspace."""
+def user_cache_dir() -> Path:
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = str(Path.home() / "Library" / "Caches")
+    else:
+        base = os.environ.get("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base)
+
+
+def _root_path(cfg: "Config") -> Path:
     if cfg.scratch_root:
         p = Path(cfg.scratch_root).expanduser()
-        return (p if p.is_absolute() else cfg.home / p).resolve()
+        return p if p.is_absolute() else cfg.home / p
     digest = hashlib.sha1(str(cfg.home.resolve()).encode("utf-8")).hexdigest()[:10]
-    return Path(tempfile.gettempdir()).resolve() / f"dah-{digest}"
+    return user_cache_dir() / "agent-hub" / f"dah-{digest}"
+
+
+def dah_root(cfg: "Config") -> Path:
+    """The folder the tower owns for gate worktrees and task scratch. Outside the project, one per workspace."""
+    return _root_path(cfg).resolve()
+
+
+def secure_root(cfg: "Config") -> Path:
+    """dah_root, created private (0700) and refused when it is a symlink or belongs to someone else."""
+    raw = _root_path(cfg)
+    check_root(raw, cfg.workdir)
+    raw.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        raw.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    st = raw.lstat()
+    if raw.is_symlink():
+        raise ValueError(f"{raw} is a symlink; the scratch root must be a folder of your own")
+    if os.name != "nt":
+        if st.st_uid != os.getuid():
+            raise ValueError(f"{raw} belongs to another user; the scratch root must be a folder of your own")
+        os.chmod(raw, 0o700)
+    return raw.resolve()
 
 
 def check_root(root: Path, workdir: Path) -> None:
@@ -96,10 +132,37 @@ def write_manifest(root: Path, rows: list[dict[str, Any]]) -> None:
     os.replace(tmp, root / MANIFEST)
 
 
+@contextmanager
+def manifest_lock(root: Path) -> Iterator[None]:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / (MANIFEST + ".lock")
+    deadline = time.monotonic() + LOCK_WAIT
+    while True:
+        try:
+            path.mkdir()
+            break
+        except FileExistsError:
+            try:
+                if time.time() - path.stat().st_mtime > LOCK_STALE:
+                    path.rmdir()
+                    continue
+            except OSError:
+                continue
+            if time.monotonic() > deadline:
+                raise OSError(f"the scratch list is locked ({path})")
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+
+
 def make(cfg: "Config", task_id: int, repo: Path, worktree: bool = False, clock: Callable[[], float] = time.time) -> Path:
     """A fresh scratch folder (or a detached worktree of repo's HEAD) for a task, recorded for the sweep."""
-    root = dah_root(cfg)
-    check_root(root, cfg.workdir)
+    root = secure_root(cfg)
     base = root / "scratch"
     base.mkdir(parents=True, exist_ok=True)
     n = 1
@@ -112,10 +175,11 @@ def make(cfg: "Config", task_id: int, repo: Path, worktree: bool = False, clock:
             raise RuntimeError(f"git worktree add failed: {(p.stderr or p.stdout).strip()[:300]}")
     else:
         path.mkdir()
-    rows = read_manifest(root)
-    rows.append({"path": str(path), "task": int(task_id), "kind": "worktree" if worktree else "dir",
-                 "repo": str(repo), "made": clock()})
-    write_manifest(root, rows)
+    with manifest_lock(root):
+        rows = read_manifest(root)
+        rows.append({"path": str(path), "task": int(task_id), "kind": "worktree" if worktree else "dir",
+                     "repo": str(repo), "made": clock()})
+        write_manifest(root, rows)
     return path
 
 
@@ -151,18 +215,19 @@ class ScratchSweep:
         if not rows:
             return []
         done = self.finished(now)
-        keep: list[dict[str, Any]] = []
+        gone: set[str] = set()
         removed: list[tuple[str, float]] = []
         repos: set[str] = set()
         for r in rows:
             path = Path(r["path"])
             if r["task"] not in done:
-                keep.append(r)
                 continue
             if not inside(path, root):  # never a path outside the dah root, whatever the manifest says
                 self.say(f"scratch: {path} is outside {root}; dropped from the list, not removed")
+                gone.add(r["path"])
                 continue
             if not path.exists():
+                gone.add(r["path"])
                 continue
             mb = self.size(path)
             if r.get("kind") == "worktree" and r.get("repo"):
@@ -172,14 +237,15 @@ class ScratchSweep:
                 shutil.rmtree(path, ignore_errors=True)
             if path.exists():
                 self.say(f"scratch: could not remove {path}")
-                keep.append(r)
                 continue
+            gone.add(r["path"])
             removed.append((str(path), mb))
             self.record(f"{r.get('kind', 'dir')} {path} task #{r['task']} {mb:.0f} MB")
         for repo in repos:
             git(Path(repo), "worktree", "prune")
-        if len(keep) != len(rows):
-            write_manifest(root, keep)
+        if gone:
+            with manifest_lock(root):
+                write_manifest(root, [r for r in read_manifest(root) if r["path"] not in gone])
         return removed
 
     def _lane_leftovers(self) -> list[tuple[str, float]]:

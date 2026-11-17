@@ -231,6 +231,9 @@ class PendingTest(unittest.TestCase):
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0][0]["text"], "did it")
         self.assertEqual(got[0][1]["state"], "pass")
+        self.assertTrue(donegate.running(self.cfg, 7))
+        self.assertEqual(len(donegate.poll(self.cfg, alive=lambda pid: True)), 1)
+        donegate.settle(self.cfg, got[0][0])
         self.assertFalse(donegate.running(self.cfg, 7))
         self.assertEqual(donegate.poll(self.cfg), [])
 
@@ -249,6 +252,106 @@ class PendingTest(unittest.TestCase):
             time.sleep(0.5)
         self.assertTrue(got, "the gate runner never answered")
         self.assertEqual(got[0][1]["state"], "pass", got[0][1])
+
+
+class PendingFilesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.cfg = workspace({"paths": ["src"], "command": check("")})
+        commit(self.cfg, "src/a.txt", "two\n")
+        self.task = {"id": 7, "started": time.time() - 60, "title": "t"}
+
+    def test_the_pending_file_is_written_whole_or_not_at_all(self) -> None:
+        real = os.replace
+        seen: list[str] = []
+
+        def spy(src, dst):
+            seen.append(Path(dst).name)
+            self.assertFalse(str(src).endswith(".pending"))
+            real(src, dst)
+        with mock.patch("agent_hub.donegate.os.replace", spy):
+            donegate.start(self.cfg, self.task, "docs", "t", [], spawn=lambda argv, cwd: 1)
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all(n.endswith(".pending") for n in seen))
+
+    def test_an_unreadable_pending_file_is_skipped_and_kept(self) -> None:
+        d = donegate.gate_dir(self.cfg)
+        d.mkdir(parents=True)
+        bad = d / "9-abc.pending"
+        bad.write_text("{half", encoding="utf-8")
+        self.assertEqual(donegate.poll(self.cfg, alive=lambda pid: False), [])
+        self.assertTrue(bad.exists())
+
+    def test_poll_leaves_the_files_until_the_verdict_is_handled(self) -> None:
+        donegate.start(self.cfg, self.task, "docs", "t", [], spawn=lambda argv, cwd: 4242)
+        pend = donegate.pending(self.cfg, 7)[0]
+        pend.with_suffix(".json").write_text(json.dumps({"state": "pass", "log": "/l", "tail": []}), encoding="utf-8")
+        got = donegate.poll(self.cfg, alive=lambda pid: True)
+        self.assertTrue(pend.exists() and pend.with_suffix(".json").exists())
+        donegate.settle(self.cfg, got[0][0])
+        self.assertFalse(pend.exists() or pend.with_suffix(".json").exists())
+
+    def test_poll_uses_the_clock_it_is_given_for_a_runner_with_no_pid(self) -> None:
+        d = donegate.gate_dir(self.cfg)
+        d.mkdir(parents=True)
+        (d / "9-abc.pending").write_text(json.dumps({"task": 9, "lane": "docs", "sha": "abc", "at": 1000.0}),
+                                         encoding="utf-8")
+        self.assertEqual(donegate.poll(self.cfg, now=lambda: 1000.0 + donegate.NO_PID_GRACE - 1), [])
+        self.assertEqual(len(donegate.poll(self.cfg, now=lambda: 1000.0 + donegate.NO_PID_GRACE + 1)), 1)
+
+
+class LockTakeoverTest(unittest.TestCase):
+    def test_a_dead_holders_lock_is_moved_aside_before_it_is_removed(self) -> None:
+        path = Path(tempfile.mkdtemp()) / "gate.lock"
+        path.mkdir()
+        (path / "pid").write_text("4242", encoding="utf-8")
+        renames: list[tuple[str, str]] = []
+        real = os.rename
+
+        def spy(a, b):
+            renames.append((str(a), str(b)))
+            real(a, b)
+        lock = donegate.Lock(path, alive=lambda pid: pid == os.getpid(), sleep=lambda s: None)
+        with mock.patch("agent_hub.donegate.os.rename", spy):
+            lock.acquire()
+        self.assertEqual(len(renames), 1)
+        self.assertEqual((path / "pid").read_text(encoding="utf-8"), str(os.getpid()))
+        self.assertEqual([p.name for p in path.parent.iterdir()], ["gate.lock"])
+
+    def test_a_live_lock_that_another_waiter_just_made_is_put_back(self) -> None:
+        path = Path(tempfile.mkdtemp()) / "gate.lock"
+        path.mkdir()
+        (path / "pid").write_text("1111", encoding="utf-8")
+        lock = donegate.Lock(path, alive=lambda pid: pid == 2222, sleep=lambda s: None)
+        (path / "pid").write_text("2222", encoding="utf-8")
+        lock._take_over(1111)
+        self.assertEqual((path / "pid").read_text(encoding="utf-8"), "2222")
+
+
+class GateRootTest(unittest.TestCase):
+    def test_a_gate_worktree_of_another_repository_is_not_touched(self) -> None:
+        cfg = workspace({"command": check("")})
+        other = workspace({"command": check("")})
+        sha = donegate.head(cfg.home)
+        wt = dah_root(cfg) / "done-gate"
+        wt.parent.mkdir(parents=True, exist_ok=True)
+        git(other.home, "worktree", "add", "--detach", str(wt), "HEAD")
+        (wt / "precious.txt").write_text("someone else's work", encoding="utf-8")
+        with open(os.devnull, "w", encoding="utf-8") as log:
+            why = donegate.prepare(cfg.home, wt, sha, [], log)
+        self.assertIn("another repository", why)
+        self.assertEqual((wt / "precious.txt").read_text(encoding="utf-8"), "someone else's work")
+
+    def test_a_gate_refuses_a_root_that_is_a_symlink(self) -> None:
+        cfg = workspace({"command": check("")})
+        target = Path(tempfile.mkdtemp())
+        link = Path(tempfile.mkdtemp()) / "root-link"
+        link.symlink_to(target)
+        cfg.scratch_root = str(link)
+        d = Path(tempfile.mkdtemp())
+        r = donegate.run_gate(cfg, donegate.head(cfg.home), d / "r.json", d / "r.log")
+        self.assertEqual(r["state"], "fail")
+        self.assertIn("symlink", r["why"])
+        self.assertEqual(list(target.iterdir()), [])
 
 
 class ReportAndEngineTest(unittest.TestCase):
@@ -292,6 +395,18 @@ class ReportAndEngineTest(unittest.TestCase):
         self.assertEqual(len(done), 1)
         self.assertIn("fixed a", done[0]["text"])
         self.assertTrue(any("passed" in m["text"] for m in self.s.pending("docs")))
+
+    def test_a_verdict_that_fails_to_deliver_is_kept_for_the_next_tick(self) -> None:
+        self.report("fixed a")
+        pend = donegate.pending(self.cfg, self.tid)[0]
+        pend.with_suffix(".json").write_text(json.dumps({"state": "pass", "log": "/l", "tail": []}), encoding="utf-8")
+        with mock.patch.object(self.s, "add_report", side_effect=RuntimeError("db busy")):
+            with self.assertRaises(RuntimeError):
+                self.e._done_gates()
+        self.assertTrue(pend.exists())
+        self.e._done_gates()
+        self.assertFalse(donegate.running(self.cfg, self.tid))
+        self.assertEqual([r["kind"] for r in self.s.reports(self.tid)], ["done"])
 
     def test_fail_tells_the_lane_and_it_can_resend(self) -> None:
         self.report("fixed a")

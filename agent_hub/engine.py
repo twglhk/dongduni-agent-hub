@@ -570,14 +570,16 @@ class Engine:
     def _done_gates(self) -> None:
         """Finished done gates (donegate.py): pass -> the held `done` goes to the hub; fail -> a tell to the lane."""
         from . import donegate
-        for info, r in donegate.poll(self.cfg):
+        for info, r in donegate.poll(self.cfg, now=self.clock):
             lane, tid = info["lane"], info["task"]
             try:
                 task = self.store.task(tid)
             except StoreError:
+                donegate.settle(self.cfg, info)
                 continue
             if task["state"] not in ("running", "wrapping"):
                 self.log(f"{lane}: done gate {r.get('state')} for task #{tid}, which is no longer live")
+                donegate.settle(self.cfg, info)
                 continue
             if r.get("state") == "pass":
                 atts = info.get("atts") or []
@@ -590,6 +592,7 @@ class Engine:
                                 "back to this session.", tid)
             else:
                 self.store.push(lane, TOWER, "tell", donegate.refusal(info, r), tid)
+            donegate.settle(self.cfg, info)
             self.log(f"{lane}: done gate {r.get('state')} (task #{tid})")
 
     def _scratch(self) -> None:

@@ -2,10 +2,12 @@
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from agent_hub import config as config_mod
 from agent_hub import scratch
@@ -141,11 +143,68 @@ class LaneWorktreeTest(unittest.TestCase):
         self.assertEqual(len([ln for ln in log if "kept lane worktree" in ln]), 1)  # said once
 
 
+class ScratchRootTest(unittest.TestCase):
+    def test_default_root_is_under_the_user_cache_dir(self) -> None:
+        cache = Path(tempfile.mkdtemp(prefix="cache-"))
+        cfg = workspace()
+        cfg.scratch_root = ""
+        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": str(cache), "LOCALAPPDATA": str(cache)}), \
+                mock.patch("agent_hub.scratch.sys.platform", "linux"):
+            root = dah_root(cfg)
+        self.assertIn(cache.resolve(), root.parents)
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions")
+    def test_the_root_is_made_private(self) -> None:
+        cfg = workspace()
+        root = scratch.secure_root(cfg)
+        self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+
+    def test_a_symlinked_root_is_refused(self) -> None:
+        cfg = workspace()
+        target = Path(tempfile.mkdtemp())
+        link = Path(tempfile.mkdtemp()) / "link"
+        link.symlink_to(target)
+        cfg.scratch_root = str(link)
+        with self.assertRaises(ValueError):
+            scratch.secure_root(cfg)
+        with self.assertRaises(ValueError):
+            scratch.make(cfg, 1, cfg.home)
+        self.assertEqual(list(target.iterdir()), [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX owners")
+    def test_a_root_that_belongs_to_someone_else_is_refused(self) -> None:
+        cfg = workspace()
+        with mock.patch("agent_hub.scratch.os.getuid", return_value=os.getuid() + 1):
+            with self.assertRaises(ValueError):
+                scratch.secure_root(cfg)
+
+    def test_the_sweep_keeps_an_entry_made_while_it_was_removing_others(self) -> None:
+        cfg = workspace()
+        clock = Clock(2_000_000.0)
+        s = Store(cfg.db, clock=clock)
+        a = s.add_task("docs", "t", "b")
+        s.claim_task(a)
+        da = scratch.make(cfg, a, cfg.home, clock=clock)
+        s.update_task(a, state="closed", closed=clock())
+        clock.tick(scratch.DEFAULT_GRACE + 1)
+        newer: list[Path] = []
+        real = shutil.rmtree
+
+        def rmtree_and_add(path, *args, **kw):
+            real(path, *args, **kw)
+            if not newer:
+                newer.append(scratch.make(cfg, 99, cfg.home, clock=clock))
+        sweep = ScratchSweep(cfg, s, lambda _: None, clock, size=lambda p: 1.0)
+        with mock.patch("agent_hub.scratch.shutil.rmtree", rmtree_and_add):
+            sweep.sweep(clock())
+        self.assertFalse(da.exists())
+        self.assertEqual([r["task"] for r in scratch.read_manifest(dah_root(cfg))], [99])
+
+
 class CliScratchTest(unittest.TestCase):
     def test_dah_scratch_needs_a_live_task(self) -> None:
         import io
         from contextlib import redirect_stderr, redirect_stdout
-        from unittest import mock
         from agent_hub import cli
         cfg = workspace()
         s = Store(cfg.db)

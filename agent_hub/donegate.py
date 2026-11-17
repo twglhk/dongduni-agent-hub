@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from . import procs
-from .scratch import check_root, dah_root, git
+from .scratch import check_root, dah_root, git, secure_root
 
 if TYPE_CHECKING:
     from .config import Config
@@ -137,17 +137,23 @@ def start(cfg: "Config", task: dict[str, Any], lane: str, text: str, atts: list[
     pend, res, log = d / f"{stem}.pending", d / f"{stem}.json", d / f"{stem}.log"
     res.unlink(missing_ok=True)
     info = {"task": task["id"], "lane": lane, "text": text, "atts": atts, "sha": sha, "at": time.time(), "log": str(log)}
-    pend.write_text(json.dumps(info), encoding="utf-8")
+    _write_json(pend, info)
     argv = [sys.executable, "-m", "agent_hub.donegate", str(cfg.home), sha, str(res), str(log)]
     try:
         info["pid"] = (spawn or _spawn)(argv, cfg.home)
     except OSError as e:
         pend.unlink(missing_ok=True)
         raise RuntimeError(f"could not start the done gate: {e}")
-    pend.write_text(json.dumps(info), encoding="utf-8")
+    _write_json(pend, info)
     return (f"Report received. The done gate runs `{_show(cfg.done_gate['command'])}` on a clean worktree of "
             f"{sha[:8]} (one gate at a time). Pass: the done goes to the hub. Fail: the last lines and the log path come "
             "to this session. Only committed work is tested. You may end your turn.")
+
+
+def _write_json(path: Path, data: dict[str, Any]) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _show(cmd: str | list[str]) -> str:
@@ -174,7 +180,7 @@ def tail(log: Path, n: int = TAIL) -> list[str]:
 
 def poll(cfg: "Config", alive: Callable[[int | None], bool] | None = None,
          now: Callable[[], float] = time.time) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Finished gates as (pending info, result); both files are consumed. A runner that died without a result is a fail."""
+    """Finished gates as (pending info, result); the files stay until `settle`. A runner that died without a result is a fail."""
     alive = alive or procs.alive
     out: list[tuple[dict[str, Any], dict[str, Any]]] = []
     d = gate_dir(cfg)
@@ -183,14 +189,12 @@ def poll(cfg: "Config", alive: Callable[[int | None], bool] | None = None,
         try:
             info = json.loads(pend.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            pend.unlink(missing_ok=True)
             continue
         if res.exists():
             try:
                 r = json.loads(res.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue  # still being written
-            res.unlink(missing_ok=True)
         else:
             pid = info.get("pid")
             gone = (not alive(pid)) if pid else now() - float(info.get("at") or 0) > NO_PID_GRACE
@@ -199,9 +203,14 @@ def poll(cfg: "Config", alive: Callable[[int | None], bool] | None = None,
             log = Path(info.get("log") or "")
             r = {"state": "fail", "sha": info.get("sha"), "log": str(log),
                  "why": "the gate runner stopped without a verdict", "tail": tail(log)}
-        pend.unlink(missing_ok=True)
         out.append((info, r))
     return out
+
+
+def settle(cfg: "Config", info: dict[str, Any]) -> None:
+    stem = f"{info['task']}-{str(info.get('sha') or '')[:10]}"
+    for suffix in (".json", ".pending"):
+        (gate_dir(cfg) / f"{stem}{suffix}").unlink(missing_ok=True)
 
 
 def refusal(info: dict[str, Any], r: dict[str, Any]) -> str:
@@ -306,15 +315,46 @@ class Lock:
             except OSError:
                 continue
             if (pid and not self.alive(pid)) or stale:
-                shutil.rmtree(self.path, ignore_errors=True)
+                self._take_over(pid)
                 continue
             if not told:
                 told = True
                 say(f"waiting for the gate lock {self.path} (held by pid {pid or '?'})")
             self.sleep(3)
 
+    def _take_over(self, seen: int) -> None:
+        aside = self.path.with_name(f"{self.path.name}.stale-{os.getpid()}-{time.monotonic_ns()}")
+        try:
+            os.rename(self.path, aside)
+        except OSError:
+            return
+        try:
+            holder = int((aside / "pid").read_text(encoding="utf-8").strip() or 0)
+        except (OSError, ValueError):
+            holder = 0
+        if holder != seen and holder and self.alive(holder):
+            try:
+                os.rename(aside, self.path)
+            except OSError:
+                shutil.rmtree(aside, ignore_errors=True)
+            return
+        shutil.rmtree(aside, ignore_errors=True)
+
     def release(self) -> None:
         shutil.rmtree(self.path, ignore_errors=True)
+
+
+def common_dir(at: Path) -> Path | None:
+    p = git(at, "rev-parse", "--git-common-dir")
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    out = Path(p.stdout.strip())
+    return (out if out.is_absolute() else at / out).resolve()
+
+
+def same_repo(repo: Path, wt: Path) -> bool:
+    mine, theirs = common_dir(repo), common_dir(wt)
+    return mine is not None and mine == theirs
 
 
 def prepare(repo: Path, wt: Path, sha: str, sparse: list[str], log: Any) -> str:
@@ -325,6 +365,10 @@ def prepare(repo: Path, wt: Path, sha: str, sparse: list[str], log: Any) -> str:
         log.flush()
         return p.returncode == 0
 
+    if wt.is_symlink():
+        return f"{wt} is a symlink; the gate worktree must be a folder of ours"
+    if (wt / ".git").exists() and not same_repo(repo, wt):
+        return f"{wt} is a worktree of another repository; remove it and the gate makes a new one"
     if not (wt / ".git").exists():
         g("worktree", "prune", at=repo)
         if wt.exists():
@@ -359,7 +403,7 @@ def run_gate(cfg: "Config", sha: str, result: Path, log_path: Path, lock: Lock |
             log.write(line + "\n")
             log.flush()
         try:
-            check_root(root, cfg.workdir)
+            secure_root(cfg)
             lock.acquire(say)
         except (ValueError, OSError) as e:
             why = str(e)
