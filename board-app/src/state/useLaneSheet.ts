@@ -8,6 +8,7 @@ import { useBoard } from './board';
 import { closeItem } from './route';
 import { useToast } from './toast';
 import { usePoll } from './usePoll';
+import { useProcesses } from './useProcesses';
 
 const LANE_MS = 10000;
 
@@ -16,8 +17,9 @@ export function useLaneSheet(id: string | null): SheetContent | null {
   const { data } = useBoard();
   const toast = useToast();
   const detail = usePoll<LaneDetail>(id ? 'api/lanes/' + encodeURIComponent(id) : null, LANE_MS);
+  const lib = useProcesses(!!id);
   useEffect(() => { if (id && detail.missing) { toast(L.msg.notFound, true); closeItem(); } }, [id, detail.missing]);
   useEffect(() => { if (id && detail.failed && !detail.data) toast(L.msg.loadFail, true); }, [id, detail.failed]);
   if (!id) return null;
-  return laneSheet({ id, label: laneLabel(data, id), d: detail.data });
+  return laneSheet({ id, label: laneLabel(data, id), d: detail.data, lib: lib.data });
 }

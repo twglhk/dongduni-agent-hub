@@ -103,11 +103,14 @@ class BoardNextTest(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertIn("machine", m)
         self.assertEqual(self.b.req("GET", "/api/engines")[0], 200)
+        code, pv, _ = self.b.req("GET", "/api/processes")
+        self.assertEqual(code, 200)
+        self.assertTrue({"full", "sub", "lanes", "problems"} <= set(pv))
         self.assertEqual(self.b.req("GET", "/api/workspaces")[0], 200)
 
     def test_the_build_calls_the_routes_it_needs(self) -> None:
         js = "".join((BOARD_NEXT / a).read_text(encoding="utf-8") for a in self.assets if a.endswith(".js"))
-        for route in ("api/state", "api/machine", "api/history?kind=", "api/lanes/", "api/engines", "/map", "/doc?path=",
+        for route in ("api/state", "api/machine", "api/history?kind=", "api/lanes/", "api/processes", "api/processes/doc?path=",
                       "api/items/", "/decide", "api/memo", "api/settings", "api/login", "api/logout", "api/workspaces"):
             self.assertIn(route, js, route)
         for gone in ("api/uploads", "api/me/prefs", "api/x/lane-rows"):

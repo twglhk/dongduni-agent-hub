@@ -4,15 +4,17 @@ import { fmt } from '../../lib/format';
 import type { LaneDetail } from '../../lib/laneTypes';
 import { rtName, tok } from '../../lib/machine';
 import type { Tokens } from '../../lib/types';
-import { closeItem } from '../../state/route';
+import type { ProcLib } from '../../lib/procTypes';
+import { closeItem, openFull } from '../../state/route';
 import { Chip } from '../Chips';
+import { Row } from '../procs/Row';
 import { DaysChart } from '../DaysChart';
 import { Empty } from '../Section';
 import { SkelLines } from '../Skeleton';
 import { SheetHead, type SheetContent } from '../Sheet';
 import { StatusChip } from './StatusChip';
 
-function Label({ children }: { children: ReactNode }) {
+export function Label({ children }: { children: ReactNode }) {
   return <h3 className="mt-7 mb-2 text-t6 font-semibold text-ink-3 first:mt-3">{children}</h3>;
 }
 
@@ -33,7 +35,23 @@ function useTokens() {
     ? fmt(L.use.task, { n: tok(k.new), c: tok(k.cache), o: tok(k.out), t: k.turns || 0 }) : null;
 }
 
-function Body({ d }: { d: LaneDetail }) {
+function Uses({ id, lib }: { id: string; lib: ProcLib | null }) {
+  const { L } = useL();
+  const ids = lib?.lanes[id];
+  if (!ids) return null;
+  return (
+    <>
+      <Label>{L.pl.laneUses}</Label>
+      {ids.length ? ids.map(fid => {
+        const f = lib!.full.find(x => x.id === fid);
+        return <Row key={fid} title={f?.title || fid} sub={f ? fmt(L.pl.subsN, { n: f.steps.length }) : undefined}
+          onClick={f ? () => openFull(fid) : undefined} label={fmt(L.pl.open, { name: f?.title || fid })} />;
+      }) : <Row title={L.pl.laneEmpty} />}
+    </>
+  );
+}
+
+function Body({ id, d, lib }: { id: string; d: LaneDetail; lib: ProcLib | null }) {
   const { L } = useL();
   const tokens = useTokens();
   const t = d.task, p = d.process, f = d.fixing;
@@ -52,6 +70,7 @@ function Body({ d }: { d: LaneDetail }) {
           {tk && <Kv k={L.lv.tokens} v={tk} />}
         </div>
       )}
+      <Uses id={id} lib={lib} />
       <Label>{L.lv.process}</Label>
       {p ? (
         <>
@@ -96,10 +115,10 @@ function Body({ d }: { d: LaneDetail }) {
   );
 }
 
-export function laneSheet({ id, label, d }: { id: string; label: string; d: LaneDetail | null }): SheetContent {
+export function laneSheet({ id, label, d, lib }: { id: string; label: string; d: LaneDetail | null; lib: ProcLib | null }): SheetContent {
   return {
     id: 'l-' + id, label,
     head: <SheetHead onClose={closeItem}><div className="min-w-0 flex-1 truncate text-t3 font-bold leading-snug">{label}</div></SheetHead>,
-    body: d ? <Body d={d} /> : <SkelLines />,
+    body: d ? <Body id={id} d={d} lib={lib} /> : <SkelLines />,
   };
 }
