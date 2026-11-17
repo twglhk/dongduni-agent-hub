@@ -2,6 +2,8 @@
 
 Status: draft
 
+- Skill: `ENGINE-storyboard`
+
 How a storyboard is made in the {label}. Edit the stages to match how your team really works, then confirm the card
 (`Status: confirmed`) once a few tasks have run it.
 

@@ -5,4 +5,4 @@ description: "Method for the {label}: how a deliverable is briefed, made and rev
 
 # {label} craft
 
-Start from the process card in [references/process/deliverable.md](references/process/deliverable.md). Each stage has a pattern card in `references/patterns/`; follow its recipe and checks.
+Start from the process card in `processes/sub/ENGINE-deliverable/process.md`. Each stage has a pattern card in its `patterns/` folder; follow its recipe and checks.

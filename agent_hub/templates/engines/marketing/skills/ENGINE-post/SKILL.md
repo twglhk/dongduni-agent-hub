@@ -5,4 +5,4 @@ description: "Posts and threads for the {label}: angle, draft, review. Use befor
 
 # Posts
 
-Short posts follow [references/process/short-post.md](references/process/short-post.md); threads follow [references/process/launch-thread.md](references/process/launch-thread.md).
+Short posts follow `processes/sub/ENGINE-short-post/process.md`; threads follow `processes/sub/ENGINE-launch-thread/process.md`.

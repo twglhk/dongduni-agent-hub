@@ -12,6 +12,9 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
                                   engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
   GET  /api/engines/<id>/doc?path=P   {path, text}: a card or skill document the map names (nothing else is served)
+  GET  /api/processes             the process library (processes.view): full processes with their sub-processes, each
+                                  sub-process's stages and skills, who uses what, and each step's and stage's rating (ETag)
+  GET  /api/processes/doc?path=P  {path, text}: a document the library names (nothing else is served)
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /api/machine               load, CPU, memory, swap graded g/a/r (machine.py) · why queued tasks wait ·
                                   Claude usage percent when tower.json sets usage_percent (claudeusage.py)
@@ -51,6 +54,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
+from . import processes as processes_mod
 from . import rating, sessinfo
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
@@ -220,7 +224,7 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
         st = s.lane(lid)
         task = s.live_task(lid)
         lanes.append({"lane": lid, "label": ln.label or lid, "status": st.get("status") or "closed", "skills": sk,
-                      "rows": [r["n"] for r in rows if r["lane"] == lid], "task_id": task["id"] if task else None,
+                      "rows": [r["n"] for r in rows if lid in (r.get("lanes") or [r["lane"]])], "task_id": task["id"] if task else None,
                       "process": next((r["type"] for r in rows if task and r["n"] == task["line_row"]), None)})
     pipes = []
     for r in rows:
@@ -263,6 +267,37 @@ def engine_doc(cfg: Config, s: Store, eid: str, path: str) -> dict[str, Any] | N
     named = {p["card"] for p in m["pipelines"]} | {st["card"]["path"] for p in m["pipelines"] for st in p["stages"] if st["card"]}
     named |= {x["doc"] for x in m["skills"]}
     if not path or path not in named:
+        return None
+    try:
+        return {"path": path, "text": (cfg.home / path).read_text(encoding="utf-8")}
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _rating(g: dict[str, Any] | None, keys: tuple[str, ...]) -> dict[str, Any] | None:
+    return {k: g[k] for k in keys} if g and g.get("n") else None
+
+
+def process_view(cfg: Config, s: Store) -> dict[str, Any]:
+    v = processes_mod.view(cfg.home)
+    for f in v["full"]:
+        rated: dict[str, Any] = {}
+        for eid, e in cfg.engines.items():
+            if e.library and Path(e.library).as_posix() == f["file"]:
+                skills_dir = engines_mod.skills_root(cfg.home, e.skills)
+                rows = engines_mod.build(cfg.home / e.library, skills_dir)
+                rated = {r["row"]: r for r in rating.attach({eid: rows}, s, cfg.home, {eid: skills_dir})}
+                break
+        for st in f["steps"]:
+            g = rated.get(f"{f['id']}/{st['sub']}")
+            st["rating"] = _rating(g["process"], ("n", "pct", "state", "color", "fixes")) if g else None
+            st["stages"] = {x["n"]: {**(_rating(x["rating"], ("n", "pct", "state", "color")) or {}), "weakest": x["weakest"]}
+                            for x in g["stages"] if x["rating"] and x["rating"].get("n")} if g else {}
+    return v
+
+
+def process_doc(cfg: Config, path: str) -> dict[str, Any] | None:
+    if not path or path not in processes_mod.docs(processes_mod.view(cfg.home)):
         return None
     try:
         return {"path": path, "text": (cfg.home / path).read_text(encoding="utf-8")}
@@ -636,6 +671,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if m:
                 eid = unquote(m.group(1))
                 got = engine_doc(c, st, eid, (parse_qs(self.query).get("path") or [""])[0]) if eid in c.engines else None
+                return self._json(200, got) if got else self._json(404, {"error": "no such document"})
+            if path == "/api/processes":
+                return self._json_tagged(process_view(c, st))
+            if path == "/api/processes/doc":
+                got = process_doc(c, (parse_qs(self.query).get("path") or [""])[0])
                 return self._json(200, got) if got else self._json(404, {"error": "no such document"})
             m = re.fullmatch(r"/api/lanes/([^/]+)", path)
             if m:

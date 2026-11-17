@@ -63,11 +63,12 @@ A patch: every answer to a request reaches a person as a review card.
 - **Hub answers are review cards.** `dah memo reply N "..."` from the hub, to a request a person wrote in the board's box, now also posts a review card for humans (title: their request, body: the answer and the request quoted; push notification as for other human items). A second reply to the same request revises the open card; after it is decided, a new reply posts a new card. Infra replies and replies to non-human senders are unchanged. Confirming a card (`ok`, no note) wakes nobody; any other verdict, or a note, reaches the hub as a decision.
 - The blue "last reply" strip above the request box is gone from the board (and the thread sheet it opened); the box stays.
 - The request box is a floating island over the page instead of a full-width band.
+- **Process library.** Processes live in one library, `processes/`: sub-processes (a process card and its pattern cards) and full processes (sub-processes in order, with model and effort); a lane file lists the full processes it uses under `## Processes used`. A brief says `Line: <full> / <sub> · stage 2 · make`. `dah engine add` writes the library layout. The Engine tab is the library (`GET /api/processes`, `GET /api/processes/doc?path=P`); `/api/engines*` and `/old/` are unchanged. `dah guide engines` explains it.
 - The Engine tab no longer lists lanes: an engine shows its method (pipelines, changes, skills, tools, experiments); lanes, the workers, stay on the Lanes tab. `/api/engines/<id>` still returns `lanes`.
 
 **Upgrade**
 
-`dah update` refreshes `lanes/hub.md` and `PROTOCOL.md` when untouched; an edited `hub.md` gets a `.new` next to it to merge by hand. Database: `items.memo_id` is added (nullable); columns are only added, so a downgrade to 0.9.x still opens it.
+`dah update` converts an engine whose `library` is a pattern-library table into the process library (a full process with one step per row, a sub-process per row, `pattern-library.md.bak` keeps the table; old `Line: #3 …` headers still work through the `Old #` column; run twice it changes nothing; `dah guide engines` has the steps). It refreshes `lanes/hub.md` and `PROTOCOL.md` when untouched; an edited `hub.md` gets a `.new` next to it to merge by hand. Database: `items.memo_id` is added (nullable); columns are only added, so a downgrade to 0.9.x still opens it.
 
 ### 0.9.3
 

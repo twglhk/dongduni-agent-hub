@@ -497,6 +497,13 @@ class Store:
             with self.conn() as con:
                 self._assign(con, "tasks", "id", task_id, fields)
 
+    def remap_line_rows(self, engine: str, rows: dict[str, str]) -> int:
+        n = 0
+        with self.tx() as con:
+            for old, new in rows.items():
+                n += con.execute("UPDATE tasks SET line_row=? WHERE engine=? AND line_row=?", (new, engine, old)).rowcount
+        return n
+
     def signal(self, task_id: int | None) -> None:
         if task_id is not None:
             self.update_task(task_id, last_signal=self.clock(), nudges=0)

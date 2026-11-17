@@ -5,7 +5,7 @@ description: "Method for the {label} research lane: study one question against t
 
 # {label} research
 
-Run the process card [references/process/research-note.md](references/process/research-note.md); each stage has a pattern card in `references/patterns/`.
+Run the process card `processes/sub/ENGINE-research-note/process.md`; each stage has a pattern card in its `patterns/` folder.
 
 ## Source tiers
 

@@ -8,7 +8,7 @@ You run several agent sessions. Each time, you re-explain the context, spawn sub
 
 ## What you get
 
-- **An engine, not a prompt pile.** A pattern library lists your deliverable types. Each row names a process card (stages, who does each, which model and effort) and pattern cards (what a good result looks like at that stage). A brief says `Line: #3 … stage 2`, and the lane runs that stage with that card. `dah engine add NAME --from blank|animation|marketing` scaffolds one to edit; several engines can live in one install, each with its own lanes and skills.
+- **An engine, not a prompt pile.** A process library holds sub-processes (a process card with its stages, who does each, and a pattern card per stage saying what a good result looks like) and full processes (one deliverable: sub-processes in order, with model and effort). A lane lists the full processes it runs. A brief says `Line: <full> / <sub> · stage 2 · make`, and the lane runs that stage with that card. `dah engine add NAME --from blank|animation|marketing` scaffolds one to edit; several engines can live in one install, each with its own lanes and skills.
 - **Ratings that point at the weak stage.** `dah deliverable` records what the human did with a result; `dah blame` names the stage that should have caught a failure. The Engine tab shows per stage and per process whether it is new, good, best, or needs fixing, how often it was sent back, and what a task cost in tokens. A weekly snapshot lists what changed in lanes, skills and cards.
 - **A hub that runs the team.** It turns a request into tasks, starts a fresh session per task, nudges stalled lanes, reviews results against the real output, and decides what is inside the approved scope. Humans reach infra only through the hub.
 - **Lanes that work on their own.** Each lane is your agent as you configured it, with your instruction files, skills, MCP servers, hooks and subagents. It reports `done`, `blocked` or posts a decision; it never waits in chat. Tasks that declare `paths:` run in parallel when they do not overlap; a memory guard renews bloated sessions when they are idle.
@@ -124,8 +124,9 @@ Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 
 | | |
 | --- | --- |
-| **engine** | a set of lanes that share one method: a pattern library (deliverable types), the skills holding each type's process card and pattern cards, and an engine review lane. An install with no `engines` in `tower.json` has one implicit engine, `default`. |
-| **process card** | the stages of one deliverable type: who does each, the model and effort per stage, the gate to leave it. Briefs name it with a `Line:` header. |
+| **engine** | a set of lanes around one full process of the process library (`processes/`), the skills its cards name, and an engine review lane. An install with no `engines` in `tower.json` has one implicit engine, `default`. |
+| **full process** | one deliverable: the sub-processes it runs in order (`processes/full/<id>.md`), with model and effort for each. Owned by no lane; a lane file lists the full processes it uses under `## Processes used`. |
+| **sub-process** | a process card (`processes/sub/<id>/process.md`): the stages of one kind of work, who does each, the gate to leave it. Several full processes may share one. Briefs name it with a `Line:` header. |
 | **pattern card** | what a good result looks like at one stage: the recipe and the checks. Status runs draft, collecting, confirmed, tuned. |
 | **hub** | the always-on lane. Turns requests into tasks, reviews results, decides inside approved scope, escalates the rest to people. |
 | **lane** | a role with its own session: `hub`, `infra`, and any team lanes you add (`dah lane add docs --runtime codex`). A lane is not a new agent: it is a role file (`.tower/lanes/<lane>.md`, edit freely) put on the agent you already use, with your hooks, skills and plugins. Every lane also gets a `/dah-<lane>` shortcut so you can open the role by hand in Claude Code, OpenCode or Codex. |

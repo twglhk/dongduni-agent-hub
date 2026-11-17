@@ -3,5 +3,13 @@
   "lanes": {
     "story": "Writes storyboards: beats, then frames.",
     "render": "Renders and checks shots from approved storyboards."
+  },
+  "skills": {
+    "story": [
+      "storyboard"
+    ],
+    "render": [
+      "render"
+    ]
   }
 }

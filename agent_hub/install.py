@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import starter
+from . import libmigrate, starter
 from .config import CONFIG_NAME, DEFAULT_ENGINE, HUB, INFRA, TOWER_DIR, Config, free_ports, from_raw, template
 
 TEMPLATES = Path(__file__).resolve().parent / "templates"
@@ -402,13 +402,15 @@ def _safe_lane_fixes(data: dict, report: dict[str, list[str]]) -> None:
 
 def refresh(cfg: Config) -> dict[str, list[str]]:
     """Make an existing workspace match the installed version: templates, tower.json fixes, missing shortcuts."""
-    report: dict[str, list[str]] = {"created": [], "updated": [], "merge": [], "pending": [], "config": [], "shortcuts": []}
+    report: dict[str, list[str]] = {"created": [], "updated": [], "merge": [], "pending": [], "config": [], "shortcuts": [],
+                                    "converted": []}
     home, versions = cfg.home, shipped()
     _refresh_file(home / TOWER_DIR / "PROTOCOL.md", versions["PROTOCOL.md"], report, home)
     for lid in cfg.lanes:
         texts = [t.replace("{lane}", lid).replace("{skill}", lid) for t in versions[_template_key(lid)]]
         _refresh_file(cfg.instructions(lid), texts, report, home)
     edit_config(home, lambda d: _safe_lane_fixes(d, report))
+    report["converted"] += libmigrate.migrate(cfg)
     write_shims(cfg, list(cfg.lanes), False, report["shortcuts"])
     starter.refresh(cfg, versions, report, _refresh_file)  # neutral subagents and skills, kept like PROTOCOL.md
     for role in REQUIRED_LANES:
@@ -672,17 +674,38 @@ ENGINE_TEMPLATES = TEMPLATES / "engines"
 ENGINE_ID = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 REVIEW_ROLE = "review"
 REQUIRED_SKILLS = {"research": "ENGINE-research", "audit": "ENGINE-audit"}
-RESEARCH_ROW = "| {n} | Research note | {id}-research · {id}-research | draft v1 (process/research-note.md) | draft | opus/medium |"
+REQUIRED_SUBS = {"research": "research-note"}
 
 
 def required_skill_files(home: Path, role: str, prefix: str, label: str, skills_dir: str) -> dict[Path, str]:
-    """The skill folder of a required lane: `{prefix}-{role}`, or plain `{role}` when prefix == role (no engine)."""
+    """The skill folder of a required lane: `{prefix}-{role}`, or plain `{role}` when prefix == role (no engine). An engine's
+    research lane also gets its sub-process and a full process of its own in `processes/`; without an engine the cards stay
+    in the skill's `references/` folder, so `dah init` and `dah update` never add to a workspace's process library."""
+    from . import processes
     src = ENGINE_TEMPLATES / "required" / "skills" / REQUIRED_SKILLS[role]
     name = role if prefix == role else f"{prefix}-{role}"
+    sub = REQUIRED_SUBS.get(role)
+    skill_root = home / (skills_dir or ".agents/skills") / name
+
+    def fill(text: str) -> str:
+        text = text.replace("{label}", label).replace("ENGINE-" + role, name)
+        if sub and prefix == role:
+            text = text.replace(f"`processes/sub/{name}-note/process.md`", f"[references/process/{sub}.md](references/process/{sub}.md)")
+            text = text.replace("in its `patterns/` folder", "in `references/patterns/`")
+        return text
+
     out: dict[Path, str] = {}
     for f in sorted(src.rglob("*.md")):
-        text = f.read_text(encoding="utf-8").replace("{label}", label).replace("ENGINE-" + role, name)
-        out[home / (skills_dir or ".agents/skills") / name / f.relative_to(src).as_posix()] = text
+        out[skill_root / f.relative_to(src).as_posix()] = fill(f.read_text(encoding="utf-8"))
+    if sub:
+        sdir = ENGINE_TEMPLATES / "required" / "sub" / sub
+        for f in sorted(sdir.rglob("*.md")):
+            rel = f.relative_to(sdir).as_posix()
+            dest = (skill_root / "references" / (f"process/{sub}.md" if rel == "process.md" else rel)) if prefix == role else \
+                home / processes.DIR / "sub" / f"{name}-note" / rel
+            out[dest] = fill(f.read_text(encoding="utf-8"))
+        if prefix != role:
+            out[home / processes.DIR / "full" / f"{name}.md"] = fill((ENGINE_TEMPLATES / "required" / "research-full.md").read_text(encoding="utf-8"))
     return out
 
 
@@ -691,10 +714,11 @@ def engine_kinds() -> list[str]:
 
 
 def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, skills: str = "", cap: str = "") -> dict:
-    """Create engine `eid` from template `kind`: a library, an `engine.json`, skills with process and pattern cards (all
-    `draft`), a lane per role and an engine review lane, with their instruction files. Nothing is overwritten: an existing
-    file or engine is an error before anything is written. Returns {"entry", "lanes", "files"}; the caller writes tower.json."""
-    from . import engines as engines_mod
+    """Create engine `eid` from template `kind`: a full process `processes/full/<eid>.md` with its sub-processes
+    (`processes/sub/<eid>-<name>/`, process and pattern cards, all `draft`), an `engine.json`, skills, a lane per role and an
+    engine review lane, with their instruction files (each lists the full processes it uses). Nothing is overwritten: an
+    existing file or engine is an error before anything is written. Returns {"entry", "lanes", "files"}; the caller writes tower.json."""
+    from . import engines as engines_mod, processes
     if not ENGINE_ID.match(eid):
         raise ValueError("engine id for --from: lowercase letters, digits and single hyphens (it prefixes the skill and lane names)")
     if kind not in engine_kinds():
@@ -705,37 +729,38 @@ def scaffold_engine(cfg: Config, eid: str, kind: str, label: str, runtime: str, 
     meta = json.loads((src / "kind.json").read_text(encoding="utf-8"))
     skills_dir = skills or (".claude/skills" if runtime == "claude" else engines_mod.SKILLS_DEFAULT)
     edir = f"engines/{eid}"
-    library = f"{edir}/pattern-library.md"
-    lib_path = cfg.home / library
+    library = f"{processes.DIR}/full/{eid}.md"
 
     def fill(text: str, **extra: str) -> str:
         for k, v in {"id": eid, "label": label, **extra}.items():
             text = text.replace("{" + k + "}", v)
         return text.replace("ENGINE-", eid + "-")
 
-    files: dict[Path, str] = {cfg.home / edir / "pattern-library.md": fill((src / "pattern-library.md").read_text(encoding="utf-8")),
+    files: dict[Path, str] = {cfg.home / library: fill((src / "full.md").read_text(encoding="utf-8")),
                               cfg.home / edir / "engine.json": (src / "engine.json").read_text(encoding="utf-8")}
+    for f in sorted((src / "sub").rglob("*.md")):
+        rel = f.relative_to(src / "sub").as_posix()
+        files[cfg.home / processes.DIR / "sub" / f"{eid}-{rel}"] = fill(f.read_text(encoding="utf-8"))
     for f in sorted((src / "skills").rglob("*.md")):
         rel = fill(f.relative_to(src / "skills").as_posix())
         files[cfg.home / skills_dir / rel] = fill(f.read_text(encoding="utf-8"))
-    lib = files[lib_path].rstrip("\n")
-    n = max((int(r["n"]) for r in engines_mod.library_rows(lib) if r["n"].isdigit()), default=0) + 1
-    files[lib_path] = lib + "\n" + RESEARCH_ROW.format(n=n, id=eid) + "\n"
-    rows = engines_mod.library_rows(files[lib_path])
     roles = {f"{eid}-{r}": t for r, t in meta["lanes"].items()}
+    used = f"\n## Processes used\n\n- `{eid}` (`{library}`)\n"
     lanes: dict[str, str] = {}
     for lid, what in roles.items():
-        use = [r["skill"] for r in rows if r["lane"] == lid and r["skill"]]
+        use = [f"{eid}-{s}" for s in meta.get("skills", {}).get(lid[len(eid) + 1:], [])]
         text = lane_template(lid).replace(
             next(ln for ln in lane_template(lid).splitlines() if ln.startswith("(Infra or the hub")),
-            f"{what} It works the {label} pattern library at `{library}`." + "".join(f' Run `skill("{s}")` before each task.' for s in dict.fromkeys(use)))
-        lanes[lid] = text
+            f"{what} It runs the {label} full process at `{library}`." + "".join(f' Run `skill("{s}")` before each task.' for s in use))
+        lanes[lid] = text.rstrip("\n") + "\n" + used
     for role in REQUIRED_LANES:  # research and the engine auditor come with every engine
         lid = f"{eid}-{role}"
         lanes[lid] = required_lane_text(role, lid, lid)
         files.update(required_skill_files(cfg.home, role, eid, label, skills_dir))
+    lanes[f"{eid}-research"] = lanes[f"{eid}-research"].rstrip("\n") + "\n" + \
+        f"\n## Processes used\n\n- `{eid}-research` (`{processes.DIR}/full/{eid}-research.md`)\n"
     rid = f"{eid}-{REVIEW_ROLE}"
-    lanes[rid] = fill((ENGINE_TEMPLATES / "review-lane.md").read_text(encoding="utf-8"), lane=rid, library=library)
+    lanes[rid] = fill((ENGINE_TEMPLATES / "review-lane.md").read_text(encoding="utf-8"), lane=rid, library=library).rstrip("\n") + "\n" + used
     for lid, text in lanes.items():
         files[cfg.home / TOWER_DIR / "lanes" / f"{lid}.md"] = text
     clash = [p for p in files if p.exists()]

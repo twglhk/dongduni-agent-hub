@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_hub import config as config_mod, engines as engines_mod
+from agent_hub import config as config_mod, engines as engines_mod, processes
 from agent_hub.engine import Engine
 from agent_hub.install import engine_kinds
 from agent_hub.store import Store
@@ -52,9 +52,10 @@ class ScaffoldTest(unittest.TestCase):
                     self.assertTrue(r["process"] and r["process"]["stages"], r["type"])
                     for s in r["process"]["stages"]:
                         self.assertTrue(s["card"]["exists"], f"{r['type']} stage {s['n']} has no pattern card")
-                    self.assertIn(r["lane"], e.lanes)
+                    self.assertTrue(r["lanes"] and set(r["lanes"]) <= set(e.lanes), r["lanes"])
                     self.assertTrue((cfg.home / e.skills / r["skill"] / "SKILL.md").is_file())
-                    self.assertIn(f'skill("{r["skill"]}")', cfg.instructions(r["lane"]).read_text(encoding="utf-8"))
+                    self.assertTrue(any(f'skill("{r["skill"]}")' in cfg.instructions(lid).read_text(encoding="utf-8") for lid in r["lanes"]), r)
+                self.assertEqual(processes.load(cfg.home)["problems"], [])
                 self.assertIn("pipelines:", shown)
                 self.assertNotIn("no process card found", shown)
                 for lid in e.lanes:
@@ -74,9 +75,9 @@ class ScaffoldTest(unittest.TestCase):
                 self.assertEqual(cfg.lanes[lid].model, model)
                 self.assertTrue((cfg.home / e.skills / lid / "SKILL.md").is_file(), lid)
                 self.assertIn(f'skill("{lid}")', cfg.instructions(lid).read_text(encoding="utf-8"))
-            rows = engines_mod.build(cfg.home / e.library, cfg.home / e.skills)
+            rows = engines_mod.build(cfg.home / f"processes/full/{eid}-research.md", cfg.home / e.skills)
             row = next(r for r in rows if r["type"] == "Research note")
-            self.assertEqual(row["lane"], f"{eid}-research")
+            self.assertEqual(row["lanes"], [f"{eid}-research"])
             self.assertEqual(len(row["process"]["stages"]), 4)
             for s in row["process"]["stages"]:
                 self.assertTrue(s["card"]["exists"], s)
@@ -91,6 +92,11 @@ class ScaffoldTest(unittest.TestCase):
             where = ".claude/skills" if cfg.lanes[lid].runtime == "claude" else ".agents/skills"
             self.assertTrue((self.home / where / lid / "SKILL.md").is_file())
             self.assertIn(f'skill("{lid}")', cfg.instructions(lid).read_text(encoding="utf-8"))
+        research = self.home / (".claude/skills" if cfg.lanes["research"].runtime == "claude" else ".agents/skills") / "research"
+        self.assertTrue((research / "references/process/research-note.md").is_file())
+        self.assertTrue((research / "references/patterns/verdict.md").is_file())
+        self.assertIn("[references/process/research-note.md]", (research / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertFalse((self.home / "processes").exists())
 
     def test_models_guide_is_shipped(self) -> None:
         out = self.tower("guide", "models")
@@ -126,8 +132,8 @@ class ScaffoldTest(unittest.TestCase):
         self.assertIn("lowercase", self.tower("engine", "add", "Bad_Name", "--from", "blank", ok=False))
 
     def test_a_clash_writes_nothing(self) -> None:
-        (self.home / "engines/delta").mkdir(parents=True)
-        (self.home / "engines/delta/pattern-library.md").write_text("mine\n", encoding="utf-8")
+        (self.home / "processes/full").mkdir(parents=True)
+        (self.home / "processes/full/delta.md").write_text("mine\n", encoding="utf-8")
         before = (self.home / ".tower/tower.json").read_text(encoding="utf-8")
         self.assertIn("would overwrite", self.tower("engine", "add", "delta", "--from", "blank", ok=False))
         self.assertEqual((self.home / ".tower/tower.json").read_text(encoding="utf-8"), before)

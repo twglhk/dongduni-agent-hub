@@ -2,6 +2,8 @@
 
 Status: draft
 
+- Skill: `ENGINE-research`
+
 A question that blocks a decision, answered from the best sources in the field and the project's own numbers. Edit the stages to your project, then confirm the card once a few notes have run it.
 
 | # | Stage | Input | Output | Gate | Passed by | Pattern card |
