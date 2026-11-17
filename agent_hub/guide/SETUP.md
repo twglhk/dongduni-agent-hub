@@ -26,7 +26,7 @@ agent-hub is the Python package `dongduni-agent-hub` (Python 3.10+, no dependenc
   2. `dah skill install` shows the global `agent-hub-setup` skill (Claude Code, Codex) and command (OpenCode) it would write; with their yes, `dah skill install --yes`.
   3. If they named a workspace, or you are in one, continue with phase 1 for it. Every workspace set up this way is registered (`dah workspaces`), gets its own board port, and any of their boards switches to the others from its title.
 
-Installing software and writing global agent files are their call: show the command, get a yes. Upgrading later: `dah update` (it upgrades the package the way it was installed and brings each workspace along). If they plan to change agent-hub's own code rather than extend it, install from a clone instead (`git clone https://github.com/twglhk/dongduni-agent-hub`, then call its `bin/dah`) and update with `git pull`.
+Installing software and writing global agent files are their call: show the command, get a yes. Upgrading later: `dah update` (it upgrades the package the way it was installed and brings each workspace along). If they plan to change agent-hub's own code rather than extend it, install from a clone instead (`git clone https://github.com/twglhk/dongduni-agent-hub`, then call its `bin/dah`) and update with `git pull`. On a server that stays up, do not do that: install a fixed copy and follow the update checklist in `dah guide linux-server` (back up `tower.db`, no lane working, keep the old version to roll back).
 
 ## Phase 1 — Survey how they work
 

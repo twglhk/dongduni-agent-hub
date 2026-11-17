@@ -146,7 +146,7 @@ CPU is what grows with concurrent sessions: expect about one vCPU per two to thr
 
 ## 6. Safe update and reinstall
 
-Reinstalling the package under a live tower is the riskiest routine thing on a server. The short version:
+Reinstalling the package under a live tower is the riskiest routine thing on a server. The infra lane's instructions carry the same checklist ("Updating or reinstalling on a server"). The short version:
 
 1. Copy `tower.db` first (`sqlite3 .tower/state/tower.db ".backup /tmp/tower-before-update.db"`).
 2. Do it when no team lane is working (`dah status` shows none `busy`).
