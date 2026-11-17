@@ -6,7 +6,7 @@ import { XSections } from '../components/XHost';
 import { useL } from '../i18n/context';
 import { fmt } from '../lib/format';
 import { laneLabel } from '../lib/items';
-import { frameWord, plain, statusTone, statusWord } from '../lib/procs';
+import { frameWord, fullTone, fullWord, plain, statusTone, statusWord, waitWord } from '../lib/procs';
 import type { ProcLib } from '../lib/procTypes';
 import { useBoard } from '../state/board';
 import { openFull, openLane, openSub } from '../state/route';
@@ -29,8 +29,8 @@ export function EngineView() {
             {v.full.map(f => (
               <Row key={f.id} onClick={() => openFull(f.id)} label={fmt(P.open, { name: f.title })}
                 title={f.title} sub={plain(f.deliverable)}
-                meta={[fmt(P.subsN, { n: f.steps.length }), f.lanes.length ? f.lanes.map(lane).join(', ') : P.noLane].join(' · ')}
-                right={<Chip tone={statusTone(f.status)}>{statusWord(L, f.status)}</Chip>} />
+                meta={[fmt(P.subsN, { n: f.steps.length }), f.lanes.length ? f.lanes.map(lane).join(', ') : P.noLane, waitWord(L, f, sid => v.sub.find(x => x.id === sid)?.title || sid)].filter(Boolean).join(' · ')}
+                right={<Chip tone={fullTone(v, f)}>{fullWord(L, v, f)}</Chip>} />
             ))}
           </RowCard>
         ) : <EmptyLib />}

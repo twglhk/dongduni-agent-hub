@@ -81,11 +81,14 @@ class PushTest(unittest.TestCase):
             started.set()
             release.wait(5)
 
+        before = set(threading.enumerate())
         with mock.patch("agent_hub.notify._post", slow):
             notify.notifier(cfg)(ITEM)
             self.assertTrue(started.wait(5))
             self.assertNotEqual(seen[0], caller)
             release.set()
+            for sender in set(threading.enumerate()) - before:
+                sender.join(5)
 
     def test_desktop_is_on_for_json_true_and_for_the_string_one(self) -> None:
         for value, shown in ((True, 1), ("1", 1), ("true", 1), (False, 0), ("0", 0), ("", 0)):

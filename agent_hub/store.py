@@ -121,6 +121,20 @@ CREATE TABLE IF NOT EXISTS account_holds(
   title TEXT,
   since REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS process_checks(
+  id INTEGER PRIMARY KEY,
+  item_id INTEGER NOT NULL UNIQUE,
+  task_id INTEGER NOT NULL,
+  lane TEXT NOT NULL,
+  full TEXT NOT NULL,
+  sub TEXT NOT NULL,
+  run TEXT NOT NULL,
+  member TEXT,
+  state TEXT NOT NULL,        -- pending | next | redo | hold
+  fix_task INTEGER,
+  since REAL NOT NULL,
+  decided REAL
+);
 CREATE TABLE IF NOT EXISTS account_asks(
   member TEXT PRIMARY KEY,
   item_id INTEGER NOT NULL,
@@ -270,6 +284,7 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+PROCESS_CHECK_KEYS = {"id", "item_id", "task_id", "lane", "full", "sub", "run", "member", "state"}
 LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"), ("last_message", "INTEGER"))
 
 
@@ -823,23 +838,65 @@ class Store:
                 "SELECT * FROM items WHERE state='decided' AND delivered IS NULL AND question IS NULL ORDER BY decided"))]
 
     def route_decision(self, item_id: int, push: tuple[str, str] | None = None, follow: dict[str, Any] | None = None,
-                       paths: str | None = None, also: list[tuple[str, str]] = []) -> bool:
+                       paths: str | None = None, also: list[tuple[str, str]] = [],
+                       check: tuple[int, str] | None = None) -> bool:
         with self.tx() as con:
             row = con.execute("SELECT delivered FROM items WHERE id=?", (item_id,)).fetchone()
             if row is None or row[0] is not None:
                 return False
-            if follow:
-                tid = _id(con.execute("INSERT INTO tasks(lane, title, brief, state, created, engine, requester, hub) "
-                                      "VALUES(?,?,?,?,?,?,?,?)",
-                                      (follow["lane"], follow["title"], follow["brief"], "queued", self.clock(),
-                                       follow.get("engine"), follow.get("requester"), follow.get("hub"))))
-                self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
-            elif push:
-                self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con, paths=paths)
-                for target, text in also:
-                    self.push(target, TOWER, "decision", text, None, item_id, con=con)
+            self._deliver(con, item_id, push, follow, paths, also, check)
             con.execute("UPDATE items SET delivered=? WHERE id=?", (self.clock(), item_id))
             return True
+
+    def _deliver(self, con: sqlite3.Connection, item_id: int, push: tuple[str, str] | None,
+                 follow: dict[str, Any] | None, paths: str | None, also: list[tuple[str, str]],
+                 check: tuple[int, str] | None) -> None:
+        tid = None
+        if follow:
+            fields = {"lane": follow["lane"], "title": follow["title"], "brief": follow["brief"], "state": "queued",
+                      "created": self.clock(), "engine": follow.get("engine"), "requester": follow.get("requester"),
+                      "hub": follow.get("hub"), **follow.get("fields", {})}
+            tid = _id(con.execute(f"INSERT INTO tasks({', '.join(fields)}) VALUES({','.join('?' * len(fields))})",
+                                  tuple(fields.values())))
+            self.push(follow.get("hub") or HUB, TOWER, "decision", follow["text"](tid), follow.get("task_id"), item_id, con=con)
+        elif push:
+            self.push(push[0], TOWER, "decision", push[1], self._task_of(con, item_id), item_id, con=con, paths=paths)
+            for target, text in also:
+                self.push(target, TOWER, "decision", text, None, item_id, con=con)
+        if check:
+            con.execute("UPDATE process_checks SET state=?, decided=?, fix_task=COALESCE(?, fix_task) WHERE id=?",
+                        (check[1], self.clock(), tid, check[0]))
+
+    def add_process_check(self, item_id: int, task_id: int, lane: str, full: str, sub: str, run: str,
+                          member: str | None) -> int:
+        with self.conn() as con:
+            return _id(con.execute("INSERT INTO process_checks(item_id, task_id, lane, full, sub, run, member, state, "
+                                   "since) VALUES(?,?,?,?,?,?,?,?,?)",
+                                   (item_id, task_id, lane, full, sub, run, member, "pending", self.clock())))
+
+    def process_checks(self, **where: Any) -> list[dict[str, Any]]:
+        unknown = set(where) - PROCESS_CHECK_KEYS
+        if unknown:
+            raise StoreError(f"process_checks has no column {', '.join(sorted(unknown))}")
+        clause = " WHERE " + " AND ".join(f"{k}=?" for k in where) if where else ""
+        with self.conn() as con:
+            return _rows(con.execute(f"SELECT * FROM process_checks{clause} ORDER BY id", tuple(where.values())))
+
+    def settle_process_check(self, check_id: int, state: str, push: tuple[str, str] | None,
+                             follow: dict[str, Any] | None, item_id: int) -> bool:
+        with self.tx() as con:
+            row = con.execute("SELECT state FROM process_checks WHERE id=?", (check_id,)).fetchone()
+            if row is None or row[0] != "hold":
+                return False
+            self._deliver(con, item_id, push, follow, None, [], (check_id, state))
+            return True
+
+    def run_tasks(self, full: str, run: str | None = None) -> list[dict[str, Any]]:
+        sql, args = "SELECT * FROM tasks WHERE line_row LIKE ? AND deliverable IS NOT NULL AND state != 'cancelled'", [f"{full}/%"]
+        if run is not None:
+            sql, args = sql + " AND deliverable=?", [*args, run]
+        with self.conn() as con:
+            return _rows(con.execute(sql + " ORDER BY id", args))
 
     @staticmethod
     def _task_of(con: sqlite3.Connection, item_id: int) -> int | None:

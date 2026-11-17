@@ -31,7 +31,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         print(f"warning: {bad}", file=sys.stderr)
     from .. import engines as engines_mod, processes
     if c.require_line:
-        _gate_line(c, args.lane, args.brief)
+        _gate_line(c, args.lane, args.brief, args.deliverable)
     s = store(c)
     if args.goal is not None:
         print("notice: goals were removed in 0.8.0; --goal is ignored (send the work as requests and tasks)")
@@ -59,8 +59,8 @@ def cmd_task_bump(args: argparse.Namespace) -> None:
     print(f"task #{args.id} is first in the queue: the next free session of {base_lane(task['lane'])} takes it")
 
 
-def _gate_line(c: Config, lane: str, brief: str) -> None:
-    from .. import engines as engines_mod, line, processes
+def _gate_line(c: Config, lane: str, brief: str, deliverable: str | None = None) -> None:
+    from .. import engines as engines_mod, line, proccheck, processes
     legacy = processes.lane_full(c, lane)
     try:
         role = c.instructions(lane).read_text(encoding="utf-8")
@@ -68,10 +68,13 @@ def _gate_line(c: Config, lane: str, brief: str) -> None:
         role = ""
     uses = processes.lane_uses(role)
     if (c.home / processes.DIR).is_dir() and (uses is not None or legacy is not None):
+        lib = processes.load(c.home)
         try:
-            p = line.gate(line.translate_legacy(brief, legacy), processes.load(c.home))
+            p = line.gate(line.translate_legacy(brief, legacy), lib)
         except ValueError as e:
             raise TowerError(str(e))
+        if c.process_verification and (why := proccheck.run_required(lib, p, deliverable)):
+            raise TowerError(why)
         if line.old_row(brief):
             print(f"notice: `#{line.old_row(brief)}` is an old pattern-library row; it was read as `{p['full']} / {p['sub']}`. "
                   f"Write the process library form from now on.", file=sys.stderr)

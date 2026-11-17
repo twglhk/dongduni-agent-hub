@@ -196,6 +196,7 @@ class Config:
     stage_table: str = ""
     require_model_lines: bool = False
     require_line: bool = False
+    process_verification: bool = False
     engines: dict[str, Engine] = field(default_factory=dict)
     light_lanes: int | None = None
     max_instances: int = 1
@@ -609,7 +610,10 @@ def _extras(raw: dict[str, Any], home: Path, project: Any, kinds: dict[str, str]
     overlap = _bool(raw, "overlap_check")
     if overlap and not watch:
         raise ConfigError("overlap_check needs rule_watch.files: the shared files it protects")
-    return {"rule_watch": watch, "overlap_check": overlap, "done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules, "uploads": uploads,
+    verification = _bool(raw, "process_verification")
+    if verification and not _bool(raw, "require_line"):
+        raise ConfigError("process_verification needs require_line: a run is found through the task's `Line:` header")
+    return {"process_verification": verification, "rule_watch": watch, "overlap_check": overlap, "done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules, "uploads": uploads,
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
             "requester": _bool(raw, "requester"),

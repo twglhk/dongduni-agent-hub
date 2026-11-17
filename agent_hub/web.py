@@ -20,6 +20,7 @@ from . import accounthold
 from . import accounts as accounts_mod
 from . import config as config_mod
 from . import engines as engines_mod
+from . import proccheck
 from . import processes as processes_mod
 from . import prefs as prefs_mod
 from . import rating, sessinfo, uploadroutes
@@ -257,9 +258,13 @@ def _rating(g: dict[str, Any] | None, keys: tuple[str, ...]) -> dict[str, Any] |
     return {k: g[k] for k in keys} if g and g.get("n") else None
 
 
-def process_view(cfg: Config, s: Store) -> dict[str, Any]:
+def process_view(cfg: Config, s: Store, g: vis.Gate | None = None) -> dict[str, Any]:
     v = processes_mod.view(cfg.home)
+    v["verification"] = cfg.process_verification
     for f in v["full"]:
+        run = proccheck.run_view(s, f["id"], [st["sub"] for st in f["steps"]]) if cfg.process_verification else None
+        who = run.pop("who") if run else None
+        f["run"] = run if run and (g is None or vis.sees_scoped(g, who)) else None
         rated: dict[str, Any] = {}
         for eid, e in cfg.engines.items():
             if e.library and Path(e.library).as_posix() == f["file"]:
@@ -329,6 +334,16 @@ def account_fields(cfg: Config, s: Store, g: vis.Gate | None, lane: str, ln: Any
     return {"account": accounthold.shown_owner(owner, only), "held": held}
 
 
+def held_fields(cfg: Config, s: Store, g: vis.Gate | None, lane: str, ln: Any, session: str | None) -> dict[str, Any]:
+    out = account_fields(cfg, s, g, lane, ln, session)
+    if cfg.process_verification and ln.kind == "team" and not ln.base:
+        sees = None if g is None else (lambda who: vis.sees_scoped(g, who))
+        check = proccheck.lane_line(s, cfg.home, lane, cfg.lang, sees)
+        if check:
+            out["held"] = " · ".join(x for x in (out.get("held"), check) if x)
+    return out
+
+
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Gate | None = None) -> list[dict[str, Any]]:
     out = []
     blamed = set(s.blames())
@@ -385,7 +400,7 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]], g: vis.Ga
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
                     "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid),
                     "run": sessinfo.for_lane(cfg, s, lid, ln.runtime, ln.model, row.get("session") if live else None),
-                    **account_fields(cfg, s, g, lid, ln, row.get("session") if live else None)})
+                    **held_fields(cfg, s, g, lid, ln, row.get("session") if live else None)})
     return out
 
 
@@ -832,7 +847,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 got = engine_doc(c, st, eid, (parse_qs(self.query).get("path") or [""])[0]) if eid in c.engines else None
                 return self._json(200, got) if got else self._json(404, {"error": "no such document"})
             if path == "/api/processes":
-                return self._json_tagged(process_view(c, st))
+                return self._json_tagged(process_view(c, st, vis.Gate.of(c, st, me)))
             if path == "/api/processes/doc":
                 got = process_doc(c, (parse_qs(self.query).get("path") or [""])[0])
                 return self._json(200, got) if got else self._json(404, {"error": "no such document"})

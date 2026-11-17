@@ -6,7 +6,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import accounthold, engines as engines_mod, leftovers, overlap, procs, processes, rulewatch, schedules, stagemodel, uploads
+from . import accounthold, engines as engines_mod, leftovers, overlap, proccheck, procs, processes, rulewatch, schedules, stagemodel, uploads
 from .config import HUB, INFRA, Config, base_lane, instance_lane, is_infra
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -152,7 +152,8 @@ DECLARE_GRACE = 180
 MEMO_REF = re.compile(r"memo\s*#(\d+)", re.I)
 
 
-def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
+def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] = [], home: Path | None = None,
+                lang: str = "en") -> str | None:
     dep_id = after_of(task)
     if dep_id is not None:
         try:
@@ -167,6 +168,9 @@ def conflict_of(store: Store, task: dict[str, Any], also: list[dict[str, Any]] =
     signin = accounthold.hold_of(store, f"task:{task['id']}")
     if signin:
         return accounthold.held_text(signin["member"])
+    check = proccheck.hold_of(store, home, task) if home is not None else None
+    if check:
+        return proccheck.held_text(check, lang)
     b = task_block(store, task, also)
     if b is None:
         return None
@@ -398,6 +402,7 @@ class Engine:
         self.rules = rulewatch.RuleWatch(cfg.home, store, cfg.state_dir, cfg.rule_watch, cfg.lang, clock, log,
                                          lambda k: self.person_of(k)) if cfg.rule_watch else None
         self.accounts = accounthold.Gate(cfg, store, log)
+        self.checks = proccheck.Checks(cfg, store, log)
 
     def inherit(self, old: Engine) -> None:
         self.compacting, self.hub_asked = old.compacting, old.hub_asked
@@ -525,7 +530,7 @@ class Engine:
         return ln.owner if ln and ln.owner else None
 
     def conflict(self, task: dict[str, Any], also: list[dict[str, Any]] = []) -> str | None:
-        return conflict_of(self.store, task, also)
+        return conflict_of(self.store, task, also, self.cfg.home if self.cfg.process_verification else None, self.cfg.lang)
 
     def cap_reason(self, task: dict[str, Any]) -> str | None:
         lane = self.cfg.all_lanes.get(base_lane(str(task["lane"])))
@@ -743,6 +748,10 @@ class Engine:
             told = self.overlaps.route(it) if self.overlaps else None
             if told:
                 self.store.route_decision(it["id"], told[0], also=told[1:])
+                continue
+            checked = self.checks.route(it)
+            if checked:
+                self.store.route_decision(it["id"], **checked)
                 continue
             push, follow = self._route(it)
             self.store.route_decision(it["id"], push, follow, self._decision_paths(it) if push and push[0] == INFRA else None)
