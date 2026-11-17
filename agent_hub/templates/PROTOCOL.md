@@ -49,8 +49,8 @@ Lanes share one working tree unless a lane has its own worktree.
 | Who | Command | What it does |
 | --- | --- | --- |
 | any lane | `dah mine` | your task, its open items, decisions that arrived |
-| any lane | `dah item add --title T --body-file F [--option "Label=what it means"]... [--multi] [--attach PATH]...` | ask for a decision (2+ options) or a review (no options) |
-| any lane | `dah item update ID [--title] [--body-file] [--option ...] [--attach ...]` | fix an open item in place; never re-post it under a new number |
+| any lane | `dah item add --title T --body-file F [--option "Label=what it means"]... [--recommend LABEL] [--multi] [--attach PATH]...` | ask for a decision (2+ options; `--recommend` marks the option you recommend, the board shows it first) or a review (no options) |
+| any lane | `dah item update ID [--title] [--body-file] [--option ...] [--recommend LABEL] [--attach ...]` | fix an open item in place; never re-post it under a new number |
 | team lane, hub (`handoff` only) | `dah report done\|blocked\|note\|handoff\|wrapped "text" [--attach PATH]...` | tell the hub |
 | team lane | `dah stage N` | name the stage of your process card you are on (the brief's `Line:` header names the card) |
 | hub | `dah status` · `dah doing "one line"` | see everything · show what you are doing on the board |

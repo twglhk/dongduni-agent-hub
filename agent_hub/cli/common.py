@@ -87,6 +87,16 @@ def parse_options(raw: list[str]) -> list[dict[str, Any]]:
     return out
 
 
+def recommend(options: list[dict[str, Any]], label: str | None) -> list[dict[str, Any]]:
+    if label is None:
+        return options
+    labels = [o["label"] for o in options]
+    if label.strip() not in labels:
+        raise TowerError(f"--recommend {label!r} is not an option: {labels}")
+    return [{**{k: v for k, v in o.items() if k != "recommended"},
+             **({"recommended": True} if o["label"] == label.strip() else {})} for o in options]
+
+
 def hhmm(ts: float | None) -> str:
     return datetime.fromtimestamp(ts).strftime("%m-%d %H:%M") if ts else "-"
 

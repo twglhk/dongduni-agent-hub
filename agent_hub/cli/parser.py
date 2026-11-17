@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
         q.add_argument("--body")
         q.add_argument("--body-file")
         q.add_argument("--option", action="append", default=[], metavar="LABEL=MEANING")
+        q.add_argument("--recommend", metavar="LABEL", help="the option you recommend; the board shows it first")
         q.add_argument("--attach", action="append", default=[], metavar="PATH")
         if name == "add":
             q.add_argument("--kind", choices=("decision", "review"))

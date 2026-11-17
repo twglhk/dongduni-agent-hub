@@ -7,7 +7,7 @@ from .. import stats
 from ..config import HUB, INFRA
 from ..engine import clip
 from ..store import HUMAN, StoreError
-from .common import TowerError, body_of, cfg, check_paths, need, parse_options, store, verdict_text, who
+from .common import TowerError, body_of, cfg, check_paths, need, parse_options, recommend, store, verdict_text, who
 
 
 def cmd_mine(args: argparse.Namespace) -> None:
@@ -30,7 +30,7 @@ def cmd_item_add(args: argparse.Namespace) -> None:
     if not body.strip():
         raise TowerError("--body or --body-file is required (markdown with ## sections, see PROTOCOL.md)")
     atts = check_paths(c, args.attach)
-    options = parse_options(args.option)
+    options = recommend(parse_options(args.option), args.recommend)
     kind = args.kind or ("decision" if options else "review")
     task = s.live_task(me) if me in c.team() else None
     audience = HUB if me in c.team() else HUMAN  # hub and infra items go straight to humans
@@ -60,10 +60,13 @@ def cmd_item_update(args: argparse.Namespace) -> None:
         raise TowerError(f"#{args.id} is a live question")
     body = body_of(args)
     atts = check_paths(c, args.attach) if args.attach else None
-    if body is None and atts is None and not args.title and not args.option:
-        raise TowerError("nothing to change (--title, --body/--body-file, --option, --attach)")
+    if body is None and atts is None and not args.title and not args.option and args.recommend is None:
+        raise TowerError("nothing to change (--title, --body/--body-file, --option, --recommend, --attach)")
+    options = parse_options(args.option) if args.option else None
+    if args.recommend is not None:
+        options = recommend(options if options is not None else it["options"], args.recommend)
     try:
-        s.revise_item(args.id, args.title, body, parse_options(args.option) if args.option else None, atts)
+        s.revise_item(args.id, args.title, body, options, atts)
     except StoreError as e:
         raise TowerError(str(e))
     if me in c.team():

@@ -134,6 +134,17 @@ class BoardNextTest(unittest.TestCase):
         self.assertIn("tabs: { hub:", ui)
         self.assertNotIn("chat.open", flat(en))
 
+    def test_recommended_option_reaches_the_card_sheet(self) -> None:
+        from agent_hub.config import INFRA
+        from agent_hub.store import HUMAN
+        iid = self.b.s.add_item(INFRA, None, "decision", "Pick", "## a\nb", [{"label": "A", "desc": "a"},
+                                {"label": "B", "desc": "b", "recommended": True}], [], audience=HUMAN)
+        _, st, _ = self.b.req("GET", "/api/state")
+        it = next(i for i in st["items"] if i["id"] == iid)
+        self.assertEqual([o.get("recommended") for o in it["options"]], [None, True])
+        js = "".join((BOARD_NEXT / a).read_text(encoding="utf-8") for a in self.assets if a.endswith(".js"))
+        self.assertIn(".recommended", js)
+
 
 class UrlBuilderTest(unittest.TestCase):
     def run_node(self, script: str) -> str:

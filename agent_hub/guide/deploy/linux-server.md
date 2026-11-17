@@ -176,6 +176,20 @@ Optional team policy: require a human approval (a board item) before any reinsta
 | lanes died at every tower restart | `KillMode=process` missing in the unit |
 | out-of-memory kills (`journalctl -k \| grep -i oom`) | swap ([Swap](#4-swap)) and the number of concurrent sessions |
 
+## Screenshots (optional)
+
+A server has no desktop, so an agent that must show what a page looks like (the board on a phone, a web page it built) needs a headless browser. agent-hub does not depend on one; it ships a small helper, `shot.py`, next to the backup script. It is not imported by the package and needs Playwright with its own Chromium:
+
+```sh
+SRC="$(python3 -c 'import agent_hub, pathlib; print(pathlib.Path(agent_hub.__file__).parent / "guide/deploy/tools")')"
+mkdir -p .tower/tools && cp "$SRC/shot.py" .tower/tools/
+sudo apt-get install -y fonts-noto-cjk    # only if pages use Chinese, Japanese or Korean text; other scripts need their own font
+uv tool install playwright && playwright install chromium    # or: python3 -m pip install playwright && python3 -m playwright install chromium
+python3 .tower/tools/shot.py http://127.0.0.1:8787/ docs/board/home.png --phone --locale en-US
+```
+
+`--phone` is 390x844 at 2x, `--full` takes the whole page, `--wait MS` waits after load, and `--header NAME=VALUE` (repeatable) sends a header, for a board with `auth.mode` `header`: `--header X-Forwarded-Email=you@example.com`. Without Playwright the script prints the install line and exits `2`. Save pictures that go on board items outside dot folders (the board refuses `.tower/...`), for example under `docs/board/`.
+
 ## Backups
 
 All tower state is one SQLite file, `.tower/state/tower.db`. `dah guide tower-db-backup` ships a daily backup script (rclone, S3 or a folder) with systemd timer, restore steps and a failure notice for the hub: [tower-db-backup.md](tower-db-backup.md).

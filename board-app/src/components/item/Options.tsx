@@ -7,11 +7,12 @@ export function Options({ it, picks, busy, onPick }: { it: Item; picks: string[]
   const { L } = useL();
   const live = picks !== null;
   const chosen = picks ?? String(it.choice || '').split(' + ');
+  const shown = [...it.options.filter(o => o.recommended), ...it.options.filter(o => !o.recommended)];
   return (
     <>
       <H3>{L.label.options}{it.multi && live && <span className="font-medium text-ink-4">{L.label.pickMany}</span>}</H3>
       <div className="grid gap-2" role={it.multi ? 'group' : 'radiogroup'}>
-        {it.options.map(o => {
+        {shown.map(o => {
           const on = chosen.includes(o.label);
           return (
             <button key={o.label} type="button" role={it.multi ? 'checkbox' : 'radio'} aria-checked={on}
@@ -20,6 +21,7 @@ export function Options({ it, picks, busy, onPick }: { it: Item; picks: string[]
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <span className={`text-t4 font-semibold leading-snug ${on ? 'text-blue-ink' : ''}`}>{o.label}</span>
+                  {o.recommended && <span className={`rounded-[6px] px-1.5 py-0.5 text-t6 font-semibold leading-tight text-blue-ink ${on ? 'bg-surface' : 'bg-blue-weak'}`}>{L.label.recommended}</span>}
                 </span>
                 {o.desc && <span className="mt-0.5 block text-t5 leading-snug text-ink-2">{o.desc}</span>}
               </span>

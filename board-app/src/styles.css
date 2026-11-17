@@ -123,6 +123,7 @@
 .prose code { font: .88em ui-monospace, SFMono-Regular, Menlo, monospace; font-size: max(.8125rem, .88em); background: var(--surface-3); border-radius: 5px; padding: 1px 5px; }
 .prose pre { margin: 0 0 12px; padding: 12px 16px; background: var(--surface-3); border-radius: 12px; overflow-x: auto; line-height: 1.5; }
 .prose pre code { background: none; padding: 0; font-size: .8125rem; white-space: pre; }
+.prose.chat pre code { white-space: pre-wrap; }
 .prose blockquote { margin: 0 0 12px; padding: 12px 16px; background: var(--surface-2); border-radius: 12px; color: var(--text-2); font-size: .9375rem; }
 .prose.small { font-size: .9375rem; margin: 0; }
 

@@ -1,4 +1,4 @@
-export interface Option { label: string; desc?: string }
+export interface Option { label: string; desc?: string; recommended?: boolean }
 
 export interface Item {
   id: number;
