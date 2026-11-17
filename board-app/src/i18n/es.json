@@ -381,6 +381,21 @@
     "now": "Ahora",
     "waitingN": "En espera {n}",
     "more": "+{n}",
-    "sessionN": "sesión {n}"
+    "sessionN": "sesión {n}",
+    "laneOpen": "Abrir el carril {lane}",
+    "kinds": {
+      "memo": "Nota #{n}",
+      "decision": "Decisión #{n}",
+      "task": "Tarea #{n}"
+    },
+    "by": "de {who}",
+    "requestN": "petición #{n}",
+    "startedAt": "inicio {t}",
+    "endedAt": "fin {t}",
+    "last": "Último",
+    "fullText": "Texto completo",
+    "newestReport": "Último informe",
+    "noWork": "Esta sesión aún no ha tenido trabajo.",
+    "hidden": "El último trabajo de esta sesión es de otra persona."
   }
 }

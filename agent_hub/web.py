@@ -4,7 +4,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /                          board: the React app (board_next/, built from board-app/), or the workspace's
                                   .tower/board/index.html; /?builtin always opens the built-in one; /assets/<file>
   GET  /old/                      the single-file board (board/index.html) that came before the React app
-  GET  /api/state                 lanes · open items · tasks · reports · memos · counts
+  GET  /api/state                 lanes · each lane's queue (`queues`) · open items · tasks · reports · memos · counts
                                   (a member gets only the cards, memos and files visibility.py allows)
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
@@ -28,6 +28,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
                                    hubs stay at one session each) · written to tower.json, the tower picks it up
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
   GET  /x/<path>                  the workspace's .tower/board/ files (extra.js, extra.css, images, ...)
+  GET  /api/sessions/<key>        what a lane session (`docs`, `docs#2`, `infra#2`) holds or last held, and its newest report
   GET|POST /api/x/<name>          routes from the workspace's .tower/ext/*.py (see ext.py)
 
 Other registered workspaces are served under /w/<slug>/ with the same routes, so one exposed board reaches every
@@ -64,6 +65,7 @@ from . import rating, sessinfo
 from . import visibility as vis
 from .machine import read_waits
 from .queues import queues_view
+from .session_view import session_view
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -833,6 +835,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if lid not in c.lanes and lid not in c.person_hubs:
                     return self._json(404, {"error": f"no lane {lid}"})
                 return self._json(200, lane_view(c, st, lid))
+            m = re.fullmatch(r"/api/sessions/([^/]+)", path)
+            if m:
+                got = session_view(c, st, unquote(m.group(1)), vis.Gate.of(c, st, me))
+                return self._json(200, got) if got else self._json(404, {"error": "no such session"})
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:

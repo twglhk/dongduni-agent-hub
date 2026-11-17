@@ -252,7 +252,7 @@ def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"))
+LANE_COLUMNS = (("handoff", "TEXT"), ("handoff_session", "TEXT"), ("pid_start", "TEXT"), ("last_message", "INTEGER"))
 
 
 class _Connection(sqlite3.Connection):
@@ -473,7 +473,8 @@ class Store:
         with self.conn() as con:
             con.execute("UPDATE messages SET delivered=? WHERE delivered IS NULL "
                         "AND id=(SELECT active_message FROM lanes WHERE lane=?)", (self.clock(), lane))
-            con.execute("UPDATE lanes SET active_message=NULL, active_retries=0, closing=NULL WHERE lane=?", (lane,))
+            con.execute("UPDATE lanes SET last_message=COALESCE(active_message, last_message), active_message=NULL, "
+                        "active_retries=0, closing=NULL WHERE lane=?", (lane,))
 
     # ---------- memos: humans -> infra / hub; replies go to target=human with item_id = memo id ----------
 

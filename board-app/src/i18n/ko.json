@@ -381,6 +381,21 @@
     "now": "지금",
     "waitingN": "대기 {n}",
     "more": "+{n}",
-    "sessionN": "세션 {n}"
+    "sessionN": "세션 {n}",
+    "laneOpen": "{lane} 레인 열기",
+    "kinds": {
+      "memo": "메모 #{n}",
+      "decision": "결정 #{n}",
+      "task": "작업 #{n}"
+    },
+    "by": "{who} 요청",
+    "requestN": "요청 #{n}",
+    "startedAt": "시작 {t}",
+    "endedAt": "끝 {t}",
+    "last": "마지막",
+    "fullText": "전문",
+    "newestReport": "가장 최근 보고",
+    "noWork": "이 세션이 맡은 일이 아직 없어요.",
+    "hidden": "이 세션이 마지막에 한 일은 다른 사람의 것이에요."
   }
 }

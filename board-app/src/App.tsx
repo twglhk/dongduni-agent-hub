@@ -21,6 +21,7 @@ import { useHubWatch } from './state/hubWatch';
 import { useOpenPrefs } from './state/prefs';
 import { useToast } from './state/toast';
 import { useLaneSheet } from './state/useLaneSheet';
+import { useSessionSheet } from './state/useSessionSheet';
 import { useProcSheet } from './state/useProcSheet';
 import { EngineView } from './views/EngineView';
 import { HistoryView } from './views/HistoryView';
@@ -56,9 +57,10 @@ export function App() {
   useOpenPrefs(useCallback(() => setMenu('prefs'), []));
   const closeMenu = () => setMenu(null);
   const lane = useLaneSheet(r.lane);
+  const session = useSessionSheet(r.session);
   const proc = useProcSheet(r.full, r.sub);
   const doc = useDoc();
-  const content: SheetContent | null = menu ? menuSheet(menu, L, closeMenu) : it ? itemSheet(it, onImage) : lane || proc;
+  const content: SheetContent | null = menu ? menuSheet(menu, L, closeMenu) : it ? itemSheet(it, onImage) : session || lane || proc;
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {

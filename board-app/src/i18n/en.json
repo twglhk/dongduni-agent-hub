@@ -381,6 +381,21 @@
     "now": "Now",
     "waitingN": "Waiting {n}",
     "more": "+{n}",
-    "sessionN": "session {n}"
+    "sessionN": "session {n}",
+    "laneOpen": "Open lane {lane}",
+    "kinds": {
+      "memo": "Memo #{n}",
+      "decision": "Decision #{n}",
+      "task": "Task #{n}"
+    },
+    "by": "for {who}",
+    "requestN": "request #{n}",
+    "startedAt": "started {t}",
+    "endedAt": "ended {t}",
+    "last": "Last",
+    "fullText": "Full text",
+    "newestReport": "Newest report",
+    "noWork": "This session has not held any work yet.",
+    "hidden": "The last work of this session belongs to someone else."
   }
 }

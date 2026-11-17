@@ -3,8 +3,8 @@ import { useEffect, useState } from 'react';
 export const TABS = ['hub', 'engine', 'lanes', 'history', 'info'] as const;
 export type Tab = (typeof TABS)[number];
 export type View = Tab | `x-${string}`;
-export interface Route { view: View; item: number | null; lane: string | null; full: string | null; sub: string | null }
-const NONE = { item: null, lane: null, full: null, sub: null };
+export interface Route { view: View; item: number | null; lane: string | null; full: string | null; sub: string | null; session: string | null }
+const NONE = { item: null, lane: null, full: null, sub: null, session: null };
 
 const X_VIEW = /^x-[A-Za-z0-9_-]+$/;
 let pushed = false;
@@ -18,6 +18,8 @@ function parse(): Route {
   if (mi) return { ...NONE, view: lastView, item: Number(mi[1]) };
   const ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs);
   if (ml) return { ...NONE, view: lastView, lane: ml[1] };
+  const ms = /^session-([A-Za-z0-9_-]+(?:#\d+)?)$/.exec(hs);
+  if (ms) return { ...NONE, view: lastView, session: ms[1] };
   const mp = /^(full|sub)-([a-z0-9-]+)$/.exec(hs);
   if (mp) return mp[1] === 'full' ? { ...NONE, view: lastView, full: mp[2] } : { ...NONE, view: lastView, sub: mp[2] };
   const view: View = (TABS as readonly string[]).includes(hs) ? hs as Tab : X_VIEW.test(hs) ? hs as View : /^engine-/.test(hs) ? 'engine' : hs ? 'hub' : firstTab;
@@ -40,10 +42,11 @@ export function useRoute(): Route {
   return r;
 }
 
-export const sheetOpen = (r: Route) => r.item !== null || !!(r.lane || r.full || r.sub);
+export const sheetOpen = (r: Route) => r.item !== null || !!(r.lane || r.full || r.sub || r.session);
 export const go = (view: View) => { location.hash = view; };
 export const openItem = (id: number) => { pushed = true; location.hash = 'item-' + id; };
 export const openLane = (id: string) => { pushed = true; location.hash = 'lane-' + id; };
+export const openSession = (key: string) => { pushed = true; location.hash = 'session-' + key; };
 export const openFull = (id: string) => { pushed = true; location.hash = 'full-' + id; };
 export const openSub = (id: string) => { pushed = true; location.hash = 'sub-' + id; };
 export const closeItem = () => { if (pushed) { pushed = false; history.back(); } else location.hash = lastView; };

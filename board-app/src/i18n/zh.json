@@ -381,6 +381,21 @@
     "now": "进行中",
     "waitingN": "等待 {n}",
     "more": "+{n}",
-    "sessionN": "会话 {n}"
+    "sessionN": "会话 {n}",
+    "laneOpen": "打开通道 {lane}",
+    "kinds": {
+      "memo": "备忘 #{n}",
+      "decision": "决定 #{n}",
+      "task": "任务 #{n}"
+    },
+    "by": "{who} 的请求",
+    "requestN": "请求 #{n}",
+    "startedAt": "开始 {t}",
+    "endedAt": "结束 {t}",
+    "last": "最近",
+    "fullText": "全文",
+    "newestReport": "最新报告",
+    "noWork": "此会话还没有承担过工作。",
+    "hidden": "此会话最近的工作属于其他人。"
   }
 }
