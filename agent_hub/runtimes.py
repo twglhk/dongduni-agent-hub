@@ -121,11 +121,18 @@ def lane_cwd(cfg: Config, lane: Lane) -> Path:
     return path
 
 
+def _base_branch(cfg: Config) -> str:
+    p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
+    return p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
+
+
 def worktree_note(cfg: Config, lane: Lane) -> str:
     """What a lane in its own worktree is told before its first message."""
-    p = _git(cfg, "rev-parse", "--abbrev-ref", "HEAD")
-    base = p.stdout.strip() if p.returncode == 0 and p.stdout.strip() not in ("", "HEAD") else ""
-    sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
+    base = _base_branch(cfg)
+    if base and cfg.branch_sync:
+        sync = f"The tower merged `{base}` into it before this task. Commit"
+    else:
+        sync = (f"Bring it up to date with `{base}` first (`git merge {base}`), then commit" if base else "Commit")
     return (f"(You work in a git worktree of your own, `{cfg.lane_dir(lane.id)}`, on branch `{worktree_branch(lane)}`. "
             f"{sync} your work there and name the branch and commits in your report. It reaches the main checkout "
             f"only when the hub or a person merges it.)\n\n")
@@ -211,6 +218,9 @@ class Adapter:
 
     def context_k(self, sid: str | None) -> int:
         return 0
+
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        return None
 
     def usage(self, sid: str | None) -> dict[str, Any] | None:
         """Totals for one session: tokens_in (cache included), tokens_out, cost (USD or None), ctx_k."""
@@ -406,6 +416,10 @@ class Claude(Headless):
     def resume_argv(self, sid: str, text: str) -> list[str]:
         return [*self._base(), "--resume", sid, text]
 
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        self.send(sid, f"/compact {focus}")  # print mode runs the slash command as the whole run
+        return COMPACT_PENDING
+
     def _results(self) -> list[dict[str, Any]]:
         return [e for e in self._events() if e.get("type") == "result" or "result" in e]
 
@@ -587,6 +601,8 @@ class Tmux(Host):
 class Orca(Host):
     """Orca (an agent development environment) terminal tabs, through its `orca` CLI."""
 
+    GONE = ("stale", "not found", "no terminal", "unknown terminal")
+
     def _orca(self, *args: str) -> tuple[subprocess.CompletedProcess[str], Any]:
         p = _run([*procs.command(os.environ.get("TOWER_ORCA_BIN", "orca")), *args, "--json"], "orca")
         try:
@@ -642,9 +658,14 @@ class Orca(Host):
         p, data = self._orca("terminal", "show", "--terminal", handle)
         said = f"{p.stdout} {p.stderr}".lower()
         if p.returncode != 0:
-            if "stale" in said or "not found" in said or "no terminal" in said or "unknown terminal" in said:
+            if any(g in said for g in self.GONE):
                 return False
             raise RuntimeFailure(f"orca did not answer for {handle}: {said.strip()[:300]}")  # unknown, not closed
+        # Orca 1.4.257 keeps answering ok for an ended tab: `exitCause` set, `connected: false`, not writable.
+        term = self._find_obj(data, "terminal") or {}
+        if term.get("exitCause") or self._find(data, "exitCause") or (
+                term.get("connected") is False and term.get("writable") is False):
+            return False
         return not (self._find(data, "exited") is True or self._find(data, "state") == "exited"
                     or self._find(data, "status") == "exited")
 
@@ -828,6 +849,8 @@ def _epoch(stamp: str) -> float | None:
     return base + float(m.group(2) or 0)
 
 
+COMPACT_SENT, COMPACT_PENDING, COMPACT_TYPED = "sent", "pending", "typed"
+
 WHOLE_BYTES = 256 * 1024 * 1024  # the ledger reads a transcript whole
 
 
@@ -875,6 +898,16 @@ class ClaudeTerm(TerminalSession, Claude):
         settings.write_text(json.dumps({"hooks": {"UserPromptSubmit": hook, "PostToolUse": hook, "Stop": hook,
                                                   "Notification": hook, **hooks_mod.claude_hooks()}}), encoding="utf-8")
         return [*argv, "--settings", str(settings), *extra]
+
+    def compact(self, sid: str, focus: str, then: str) -> str | None:
+        if self.status() in ("busy", "asking"):
+            raise RuntimeFailure(f"{self.lane.id}: still busy")
+        handle = self._handle()
+        if not handle:
+            raise RuntimeFailure(f"{self.lane.id}: no window to type into")
+        write_signal(self.cfg.home, self.lane.id, state="busy")
+        self._host().send(handle, f"/compact {focus}")
+        return COMPACT_TYPED
 
     def open(self, prompt: str) -> str:
         sid = str(uuid.uuid4())
@@ -1143,6 +1176,10 @@ class Runtimes:
             prompt = worktree_note(self.cfg, ln) + prompt
         return self._a(lane).open(prompt)
 
+    def sync(self, lane: str) -> str:
+        from .branchsync import sync_worktree
+        return sync_worktree(self.cfg, self.cfg.all_lanes[lane])
+
     def send(self, lane: str, sid: str, text: str) -> None:
         self._a(lane).send(sid, text)
 
@@ -1151,6 +1188,9 @@ class Runtimes:
 
     def context_k(self, lane: str, sid: str | None) -> int:
         return self._a(lane).context_k(sid)
+
+    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
+        return self._a(lane).compact(sid, focus, then)
 
     def usage(self, lane: str, sid: str | None) -> dict[str, Any] | None:
         return self._a(lane).usage(sid)

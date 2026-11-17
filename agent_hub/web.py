@@ -45,7 +45,7 @@ from urllib.parse import parse_qs, unquote
 from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
-from . import rating
+from . import rating, sessinfo
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -82,7 +82,7 @@ def engine_rows(cfg: Config, lane: str) -> tuple[list[dict[str, Any]], Path]:
     """(library rows with their process cards, skills directory) of a lane's engine; no engine or library -> ([], default dir)."""
     ln = cfg.all_lanes.get(lane)
     eng = cfg.engines.get(ln.engine) if ln and ln.engine else None
-    skills = cfg.home / ((eng.skills if eng else "") or engines_mod.SKILLS_DEFAULT)
+    skills = engines_mod.skills_root(cfg.home, eng.skills if eng else "")
     return (engines_mod.build(cfg.home / eng.library, skills) if eng and eng.library else []), skills
 
 
@@ -143,7 +143,7 @@ def engines_view(cfg: Config) -> list[dict[str, Any]]:
 def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
     """Everything the AI Engine tab shows for one engine."""
     e = cfg.engines[eid]
-    skills_dir = cfg.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+    skills_dir = engines_mod.skills_root(cfg.home, e.skills)
     rows = engines_mod.build(cfg.home / e.library, skills_dir) if e.library else []
     rated = {r["row"]: r for r in rating.attach({eid: rows}, s, cfg.home, {eid: skills_dir})} if rows else {}
     by_lane: dict[str, list[dict[str, Any]]] = {}
@@ -226,7 +226,8 @@ def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[d
                     "fixing": bool(task and (task["line_mode"] == "fix" or task["id"] in blamed)),
                     "task_tokens": ({"new": task["tok_new"], "cache": task["tok_cache"], "out": task["tok_out"],
                                      "turns": task["turns"]} if task and task["tok_at"] else None),
-                    "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid)})
+                    "ctx_k": s.session_ctx(lid, row.get("session")) if live else None, "usage": used.get(lid),
+                    "run": sessinfo.for_lane(cfg, s, lid, ln.runtime, ln.model, row.get("session") if live else None)})
     return out
 
 

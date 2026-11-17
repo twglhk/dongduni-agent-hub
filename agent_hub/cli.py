@@ -18,8 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from . import config as config_mod
-from . import procs, stats
-from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, tower_pid
+from . import procs, stagemodel, stats
+from .config import HUB, INFRA, RUNTIMES, TERMINALS, Config, ConfigError, base_lane, tower_pid
 from .engine import VERDICT_WORD, Engine, clip, conflict_of
 from .memwatch import MemWatch
 from .install import SHIM_PREFIX, default_runtime, edit_config, init, install, lane_template, remove_shims, write_shims
@@ -43,7 +43,13 @@ def store(c: Config | None = None) -> Store:
 
 
 def who(args: argparse.Namespace, c: Config) -> str:
-    me = getattr(args, "as_", None) or os.environ.get("TOWER_LANE")
+    asked, env = getattr(args, "as_", None), os.environ.get("TOWER_LANE")
+    me = asked or env
+    if asked and env and asked != env:
+        if asked != base_lane(env):
+            raise TowerError(f"this session is {env}; --as {asked} would write as another lane. Run dah without --as.")
+        me = env
+        print(f"(this session is {env}: --as {asked} ignored, writing as {env})", file=sys.stderr)
     if not me:
         raise TowerError("Unknown caller. Sessions the tower opens have TOWER_LANE; by hand, add --as LANE.")
     if me not in c.all_lanes:
@@ -179,7 +185,12 @@ def cmd_report(args: argparse.Namespace) -> None:
     c = cfg()
     s, me = store(c), who(args, c)
     if me == HUB:
-        raise TowerError("the hub does not report; it decides, tells and wraps")
+        if args.kind != "handoff":
+            raise TowerError("the hub does not report; it decides, tells and wraps (only `report handoff` when the "
+                             "tower asks it to hand over to a fresh hub session)")
+        s.set_lane(me, handoff=args.text, handoff_session=s.lane(me).get("session") or "")
+        print("Handoff saved. End your turn; the tower opens a fresh hub session with this handoff.")
+        return
     if me == INFRA and args.kind != "wrapped":
         raise TowerError("infra only uses `report wrapped`; answer memos with `dah memo reply`")
     task = s.live_task(me)
@@ -242,7 +253,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         eng = c.engines.get(c.lanes[args.lane].engine)
         if eng and eng.library:
             try:
-                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, c.home / (eng.skills or engines_mod.SKILLS_DEFAULT)))
+                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, engines_mod.skills_root(c.home, eng.skills)))
             except ValueError as e:
                 raise TowerError(str(e))
     s = store(c)
@@ -380,10 +391,15 @@ def cmd_memo(args: argparse.Namespace) -> None:
         raise TowerError(str(e))
 
 
-def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None) -> None:
-    """Infra runs only on a hub request; the human's approval, when there is one, travels with it."""
+def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None, model: str | None = None,
+               effort: str | None = None) -> None:
     if me != HUB or INFRA not in c.lanes:
         raise TowerError("only the hub sends requests to infra; humans ask the hub")
+    if bad := stagemodel.problems(model, effort):
+        raise TowerError("; ".join(bad))
+    head = [f"{k}: {v.strip()}" for k, v in (("model", model), ("effort", effort and effort.lower())) if v and v.strip()]
+    if head:
+        text = "\n".join(head) + "\n\n" + text
     if approved and approved.strip():
         text = f"{text}\n\nApproved by the human: {approved.strip()}"
     print(f"memo #{s.push(INFRA, HUB, 'memo', text)} → infra")
@@ -392,7 +408,7 @@ def send_infra(c: Config, s: Store, me: str, text: str, approved: str | None) ->
 def cmd_infra(args: argparse.Namespace) -> None:
     c = cfg()
     try:
-        send_infra(c, store(c), need(args, c, HUB, INFRA), args.text, args.approved)
+        send_infra(c, store(c), need(args, c, HUB, INFRA), args.text, args.approved, args.model, args.effort)
     except StoreError as e:
         raise TowerError(str(e))
 
@@ -509,7 +525,7 @@ def cmd_ratings(args: argparse.Namespace) -> None:
     for eid, e in c.engines.items():
         if (args.engine and eid != args.engine) or not e.library:
             continue
-        skills[eid] = c.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+        skills[eid] = engines_mod.skills_root(c.home, e.skills)
         rows[eid] = engines_mod.build(c.home / e.library, skills[eid])
     if args.engine and args.engine not in c.engines:
         raise TowerError(f"no engine {args.engine} (`dah engine list`)")
@@ -760,6 +776,21 @@ def stop_loop(c: Config) -> int | None:
                 break
             time.sleep(0.25)
     return pid
+
+
+RESTART_WAIT_SECONDS = 15
+
+
+def cmd_restart(_args: argparse.Namespace) -> None:
+    c = cfg()
+    pid = stop_loop(c)
+    print(f"tower stopped (pid {pid}); lane sessions keep running" if pid else "the tower was not running")
+    for _ in range(RESTART_WAIT_SECONDS * 4 if pid else 0):
+        if tower_pid(c):
+            print(f"tower back (pid {tower_pid(c)}), started by its service")
+            return
+        time.sleep(0.25)
+    start_tower(c)
 
 
 def cmd_stop(args: argparse.Namespace) -> None:
@@ -1124,7 +1155,7 @@ def cmd_engine(args: argparse.Namespace) -> None:
         if e.library:
             from . import engines as engines_mod
             print("pipelines:")
-            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, c.home / (e.skills or engines_mod.SKILLS_DEFAULT))))
+            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, engines_mod.skills_root(c.home, e.skills))))
         return
     if not args.id.replace("-", "").replace("_", "").isalnum():
         raise TowerError("engine id: use letters, digits, - and _")
@@ -1285,6 +1316,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("infra", help="hub: ask infra to do something (infra runs only on a hub request)")
     p.add_argument("text")
     p.add_argument("--approved", metavar="CITE", help="the human's approval: a request number or their words")
+    p.add_argument("--model", help="the model its infra session opens with (fable, opus, sonnet, haiku or a full id); "
+                   "a `model:` line in the text does the same. Default: the infra lane's own")
+    p.add_argument("--effort", help="low|medium|high|xhigh|max for its infra session; an `effort:` line does the same")
 
     sub.add_parser("status", help="lanes, tasks and open items")
     p = sub.add_parser("stats", help="the task ledger: tokens, turns and rework per lane, engine, model, effort or week")
@@ -1313,6 +1347,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("run", help="run the tower in the foreground (loop + board)")
     p.add_argument("--no-hub", action="store_true", help="do not keep the hub running")
     sub.add_parser("start", help="run the tower in the background")
+    sub.add_parser("restart", help="restart the tower loop on the current code (lane sessions keep running)")
     p = sub.add_parser("stop", help="stop the background tower")
     p.add_argument("--close-lanes", action="store_true")
     sub.add_parser("pause", help="stop driving lanes (the board keeps working)")
@@ -1404,7 +1439,7 @@ HANDLERS = {
     "mine": cmd_mine, "report": cmd_report, "task": cmd_task, "doing": cmd_doing, "scratch": cmd_scratch, "stage": cmd_stage, "blame": cmd_blame, "deliverable": cmd_deliverable, "ratings": cmd_ratings, "tell": cmd_tell,
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
-    "run": cmd_run, "start": cmd_start, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
+    "run": cmd_run, "start": cmd_start, "restart": cmd_restart, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
     "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }

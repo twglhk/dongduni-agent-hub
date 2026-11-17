@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -28,6 +29,8 @@ LOAD_CUTS = (2.0, 4.0)     # per core
 CPU_CUTS = (60.0, 85.0)    # percent of all cores
 FREE_CUTS = (20.0, 10.0)   # percent of RAM free (low is bad)
 SWAP_CUTS = (10.0, 25.0)   # percent of RAM swapped out
+DISK_CUTS = (85.0, 95.0)
+DISK_FS = {"ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "reiserfs", "ntfs", "ntfs3", "exfat", "vfat"}
 PRESSURE = {"1": "g", "2": "a", "4": "r"}
 TTL = 5.0
 WAITS = "waits.json"
@@ -108,6 +111,41 @@ def cpu_from_ps(text: str, cores: int) -> float | None:
 
 # ---------------------------------------------------------------- readers per system
 
+def parse_mounts(text: str) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in text.splitlines():
+        f = line.split()
+        if len(f) < 3 or not f[0].startswith("/dev/") or f[2] not in DISK_FS or f[0] in seen:
+            continue
+        mnt = f[1].replace("\\040", " ")
+        if mnt == "/boot" or mnt.startswith(("/boot/", "/snap/", "/var/snap/")):
+            continue
+        seen.add(f[0])
+        if mnt == "/":
+            out.insert(0, mnt)
+        else:
+            out.append(mnt)
+    return out or ["/"]
+
+
+def read_disks(platform: str = sys.platform) -> list[dict[str, Any]]:
+    if platform.startswith("linux"):
+        mounts = parse_mounts(_read("/proc/mounts"))
+    elif platform.startswith("win"):
+        mounts = [os.environ.get("SystemDrive", "C:") + "\\"]
+    else:
+        mounts = ["/"]
+    out = []
+    for m in mounts:
+        try:
+            u = shutil.disk_usage(m)
+        except OSError:
+            continue
+        out.append({"mount": m, "total_gb": (u.used + u.free) / 1e9, "used_gb": u.used / 1e9, "free_gb": u.free / 1e9})
+    return out
+
+
 def _read(path: str) -> str:
     try:
         return Path(path).read_text(encoding="utf-8", errors="replace")
@@ -176,7 +214,7 @@ def read_raw(platform: str = sys.platform) -> dict[str, Any]:
         got = read_windows()
     else:
         got = {"ram_gb": None, "free_gb": None, "swap_gb": None, "cpu": None, "pressure": None}
-    return {"cores": cores, "load": load, **got}
+    return {"cores": cores, "load": load, **got, "disks": read_disks(platform)}
 
 
 # ---------------------------------------------------------------- grading
@@ -201,6 +239,10 @@ def grade(raw: dict[str, Any]) -> dict[str, Any]:
            "load_lv": level(per_core, *LOAD_CUTS), "cpu_lv": level(cpu, *CPU_CUTS), "mem_lv": mem_lv,
            "swap_lv": level(swap_pct, *SWAP_CUTS)}
     out["lv"] = worse(out["load_lv"], out["cpu_lv"], out["mem_lv"], out["swap_lv"])
+    out["disks"] = [{"mount": d["mount"], "total_gb": _r(d["total_gb"]), "used_gb": _r(d["used_gb"]), "free_gb": _r(d["free_gb"]),
+                     "used_pct": _r(100.0 * d["used_gb"] / d["total_gb"], 0) if d["total_gb"] else None,
+                     "lv": level(100.0 * d["used_gb"] / d["total_gb"], *DISK_CUTS) if d["total_gb"] else None}
+                    for d in raw.get("disks") or []]
     return out
 
 

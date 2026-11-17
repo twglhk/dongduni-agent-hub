@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -39,17 +40,41 @@ MODES = ("prepare", "make", "fix")
 GREEN = ("confirmed", "tuned")
 AMBER = ("collecting", "draft", "reviewed")
 FORMAT = ("Line: #<row> <type> · stage <n|n-m> · process <status> · pattern <status> · prepare|make|fix\n"
+          "   or, to build the process of a type with no row yet: Line: new <type> · prepare\n"
           "   or, for chores only: Line: none · chore: <reason>")
 
 _ID = r"[A-Za-z]?\d+"
 _HEAD = re.compile(rf"^line:\s*#?({_ID})\b", re.I)
 _NONE = re.compile(r"^line:\s*none\s*[·,:-]\s*chore:\s*\S", re.I)
+_NEW = re.compile(r"^line:\s*new\s+([^·]*?)\s*(?:·|$)", re.I)
 _STAGE = re.compile(r"(?:^|[·:])\s*stage\s+(\d+(?:\s*[-–]\s*\d+)?)(?![\d-])(?=\s|·|$)", re.I)
 _VERSION = re.compile(r"[—–-]\s*v(\d+)\s*$")
 _CARD = re.compile(r"process/([A-Za-z0-9_-]+)\.md")
 _PATTERN = re.compile(r"(patterns/[A-Za-z0-9_.-]+\.md)")
 _ROW_ID = re.compile(rf"^{_ID}$")
 SKILLS_DEFAULT = ".agents/skills"
+SKILLS_DIRS = (".claude/skills", SKILLS_DEFAULT)
+_MD_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./-]*\.md\b")
+
+
+def skills_root(home: Path, configured: str = "") -> Path:
+    if configured:
+        return home / configured
+    return next((home / d for d in SKILLS_DIRS if (home / d).is_dir()), home / SKILLS_DEFAULT)
+
+
+def repo_file(start: Path, text: str) -> Path | None:
+    for tok in _MD_PATH.findall(text or ""):
+        if ".." in tok.split("/"):
+            continue
+        for base in (start, *start.parents):
+            if (base / tok).is_file():
+                return base / tok
+    return None
+
+
+def _rel(root: Path, f: Path) -> str:
+    return os.path.relpath(f, root)
 
 
 def _read(path: Path) -> str:
@@ -64,7 +89,7 @@ def _cells(line: str) -> list[str]:
 
 
 def _first_word(text: str) -> str:
-    m = re.match(r"[A-Za-z]+", text.strip().strip("*`").lower())
+    m = re.match(r"[A-Za-z]+", re.sub(r"^v\d+[,:]?\s*", "", text.strip().strip("*`").lower()))
     return m.group(0) if m else ""
 
 
@@ -93,7 +118,7 @@ def library_rows(text: str) -> list[dict[str, str]]:
             continue
         g = lambda k: cs[cols[k]] if k in cols and cols[k] < len(cs) else ""  # noqa: E731
         lane, _, skill = g("lane").partition("·")
-        rows.append({"n": cs[0].upper(), "type": g("type"), "lane": lane.strip(), "skill": skill.strip(),
+        rows.append({"n": cs[0].upper(), "type": g("type"), "lane": lane.strip(), "skill": skill.strip().strip("`").strip(),
                      "process_text": g("process"), "pattern_text": g("pattern"), "model_text": g("model")})
     return rows
 
@@ -140,7 +165,9 @@ def parse_process(root: Path, skill: str, rel: str) -> dict[str, Any] | None:
             continue
         col = lambda *keys: next((cs[i] for i, h in enumerate(head) if i < len(cs) and h.startswith(keys)), "")  # noqa: E731
         m = _PATTERN.search(col("pattern"))
-        card = pattern_card(root, f"{skill}/references/{m.group(1)}") if m and skill else None
+        found = repo_file((root / rel).parent, col("pattern"))
+        card = pattern_card(root, _rel(root, found)) if found else \
+            pattern_card(root, f"{skill}/references/{m.group(1)}") if m and skill else None
         stages.append({"n": col("#"), "name": col("stage").replace("`", ""), "input": col("input").replace("`", ""),
                        "output": col("output").replace("`", ""), "gate": col("gate"), "by": col("passed"), "card": card})
     return {"path": rel, "type": re.sub(r"^Process:\s*", "", _VERSION.sub("", title)).strip(), "version": _version(title),
@@ -154,6 +181,8 @@ def build(library_path: Path, skills: Path) -> list[dict[str, Any]]:
     for r in library(library_path):
         m = _CARD.search(r["process_text"])
         proc = parse_process(skills, r["skill"], f"{r['skill']}/references/process/{m.group(1)}.md") if m and r["skill"] else None
+        if proc is None and (f := repo_file(library_path.parent, r["process_text"])):
+            proc = parse_process(skills, r["skill"], _rel(skills, f))
         out.append({**r, "process": proc,
                     "process_status": (proc["status"] if proc else "") or _first_word(r["process_text"]),
                     "pattern_status": _pattern_status(r, proc)})
@@ -180,14 +209,15 @@ def confirmed(row: dict[str, Any]) -> bool:
 _SKILL_CALL = re.compile(r"""skill\(\s*["']([A-Za-z0-9_-]+)["']\s*\)""")
 
 
-def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None = None, lane: str = "") -> list[dict[str, Any]]:
+def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None = None, lane: str = "",
+                home: Path | None = None) -> list[dict[str, Any]]:
     """Skills a lane runs: `skill("name")` mentions in its role file, plus the skill column of the library rows it owns.
     `found` says whether a folder of that name exists in the skills directory."""
     names = list(dict.fromkeys(_SKILL_CALL.findall(role_text)))
     for r in rows or []:
         if r["lane"] == lane and r["skill"] and r["skill"] not in names:
             names.append(r["skill"])
-    return [{"name": n, "found": (skills / n).is_dir()} for n in names]
+    return [{"name": n, "found": (home / n).is_file() if home and n.endswith(".md") else (skills / n).is_dir()} for n in names]
 
 
 def row_view(rows: list[dict[str, Any]], row: str | None, stage: str | None) -> dict[str, Any] | None:
@@ -214,10 +244,15 @@ def stage_of(brief: str) -> str | None:
 
 
 def parse_line(brief: str) -> tuple[str | None, str | None, str | None]:
-    """(row, mode, error). A chore header gives (None, None, None); an error is a sentence for the human."""
     head = first_line(brief)
     if _NONE.match(head):
         return None, None, None
+    if n := _NEW.match(head):
+        if not n.group(1):
+            return None, None, "the Line header says `new` without the type: write `Line: new <type> · prepare`"
+        if re.findall("|".join(MODES), head.lower())[-1:] != ["prepare"]:
+            return None, None, "a new row has no process yet, so it can only be prepared: end the header with `prepare`"
+        return None, "prepare", None
     m = _HEAD.match(head)
     if not m:
         return None, None, "the first line of the brief does not start with `Line:`"
@@ -241,7 +276,9 @@ def gate(brief: str, rows: list[dict[str, Any]]) -> tuple[str | None, str | None
     if err:
         raise ValueError(f"{err}\nStart the brief with:\n{FORMAT}")
     if row is None:
-        return None, None
+        if mode and (same := next((r for r in rows if r["type"].lower() == _NEW.match(first_line(brief)).group(1).lower()), None)):
+            raise ValueError(f"the library already has #{same['n']} {same['type']}: write `Line: #{same['n']} {same['type']} · prepare`")
+        return None, mode
     hit = next((r for r in rows if r["n"] == row), None)
     if hit is None:
         raise ValueError(f"row #{row} is not in the library (rows: {', '.join(r['n'] for r in rows) or 'none'})")
@@ -331,7 +368,7 @@ def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
     """Skills engine `eid` names: per lane the `skill("x")` mentions of its role file and the library rows it owns, plus the
     engine's own `skill_names` (under the key ""). {lane id or "": [{name, found}]}."""
     e = cfg.engines[eid]
-    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    skills_dir = skills_root(cfg.home, e.skills)
     rows = library(cfg.home / e.library) if e.library else []
     out: dict[str, list[dict[str, Any]]] = {}
     for lid in e.lanes:
@@ -339,7 +376,7 @@ def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
             role = cfg.instructions(lid).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             role = ""
-        out[lid] = lane_skills(role, skills_dir, rows, lid)  # type: ignore[arg-type]
+        out[lid] = lane_skills(role, skills_dir, rows, lid, cfg.home)
     out[""] = [{"name": n, "found": (skills_dir / n).is_dir()} for n in e.skill_names]
     return out
 
@@ -349,7 +386,7 @@ def engine_skills(cfg: Config, eid: str, by_lane: dict[str, list[dict[str, Any]]
     folder of it. Engines that share one directory list only what its lanes name (or its `skill_names`), and a folder
     that lanes of two engines name is `shared: true` (the tab shows it once under a shared label)."""
     e = cfg.engines[eid]
-    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    skills_dir = skills_root(cfg.home, e.skills)
     mine = by_lane if by_lane is not None else named_skills(cfg, eid)
     out = skill_list(skills_dir, {k: v for k, v in mine.items() if k})
     for s in out:
@@ -450,7 +487,7 @@ def baseline(cfg: Config, eid: str, now: float) -> dict[str, Any] | None:
 
 def live_snapshot(cfg: Config, eid: str, now: float) -> dict[str, Any]:
     e = cfg.engines[eid]
-    skills_dir = cfg.home / (e.skills or SKILLS_DEFAULT)
+    skills_dir = skills_root(cfg.home, e.skills)
     rows = build(cfg.home / e.library, skills_dir) if e.library else []
     return snapshot(list(e.lanes), engine_skills(cfg, eid), rows, now)
 

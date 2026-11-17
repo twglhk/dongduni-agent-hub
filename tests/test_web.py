@@ -54,6 +54,8 @@ class LocalModeTest(unittest.TestCase):
             self.assertIn(key, st)
         self.assertEqual([ln["lane"] for ln in st["lanes"]], ["hub", "infra", "docs"])
         self.assertEqual(st["items"][0]["options"][1]["label"], "8080")
+        for ln in st["lanes"]:
+            self.assertEqual(set(ln["run"]), {"model", "effort", "text", "state", "why"}, ln["lane"])
         self.assertEqual(st["me"]["role"], "owner")
         self.assertTrue(st["local_only"])  # the board tells people it cannot be reached from a phone yet
 

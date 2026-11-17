@@ -45,6 +45,10 @@ class FakeRuntime:
         self.use: dict[str, dict[str, Any]] = {}
         self.ledger_use: dict[str, dict[str, Any]] = {}  # lane -> {"new", "cache", "out", "turns"}
         self.not_owned: set[str] = set()
+        self.compacts: list[tuple[str, str, str]] = []
+        self.compact_how: str | None = "sent"
+        self.synced: list[str] = []
+        self.sync_conflict: dict[str, str] = {}
 
     def status(self, lane: str) -> str:
         if self.qs.get(lane):
@@ -61,6 +65,13 @@ class FakeRuntime:
         self.replies.append((lane, qid, answers))
         self.qs[lane] = [q for q in self.qs.get(lane, []) if q["id"] != qid]
 
+    def sync(self, lane: str) -> str:
+        from agent_hub.branchsync import WorktreeConflict
+        self.synced.append(lane)
+        if self.sync_conflict.get(lane):
+            raise WorktreeConflict(self.sync_conflict[lane])
+        return ""
+
     def open(self, lane: str, prompt: str, model: str | None = None, effort: str | None = None) -> str:
         self.opened.append((lane, prompt))
         self.opts.append((model, effort))
@@ -72,6 +83,12 @@ class FakeRuntime:
     def send(self, lane: str, sid: str, text: str) -> None:
         self.sent.append((lane, sid, text))
         self.st[lane] = "busy"
+
+    def compact(self, lane: str, sid: str, focus: str, then: str) -> str | None:
+        if self.compact_how:
+            self.compacts.append((lane, sid, then))
+            self.st[lane] = "busy"
+        return self.compact_how
 
     def close(self, lane: str) -> None:
         self.closed.append(lane)

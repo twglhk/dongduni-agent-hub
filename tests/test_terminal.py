@@ -80,6 +80,12 @@ if sub == "create":
     print(json.dumps({"result": {"terminal": {"handle": wid}}}))
 elif sub == "show":
     w = wins.get(opt(args, "--terminal"))
+    mode = os.environ.get("FAKE_ORCA_ENDED")
+    if w and not alive(w) and mode:
+        term = {"exitCause": "exited", "connected": False, "writable": False} if mode == "cause" else \
+               {"connected": False, "writable": False}
+        print(json.dumps({"ok": True, "result": {"terminal": {"handle": opt(args, "--terminal"), **term}}}))
+        sys.exit(0)
     if not w or not alive(w):
         print(json.dumps({"error": "terminal_handle_stale"}))
         sys.exit(1)
@@ -193,6 +199,14 @@ HTTPServer(("127.0.0.1", port), H).serve_forever()
 '''
 
 
+def subprocess_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -281,6 +295,17 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual([k for k in self.windows() if self._alive(k)], [])
         self.assertEqual(sorted(p.name for p in (self.cfg.state_dir / "term").glob("hub*")),
                          ["hub.settings.json", "hub.sh"])  # notes, handle and signal are gone
+
+    def test_claude_in_a_window_types_only_compact_and_returns_at_once(self) -> None:
+        sid = self.rt.open("hub", "first")
+        wait_for(lambda: self.rt.last_text("hub") == ["did: first"])
+        self.settle()
+        started = time.monotonic()
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on now"), "typed")
+        self.assertLess(time.monotonic() - started, 1.0)
+        wait_for(lambda: self.rt.last_text("hub", 2) == ["did: first", "did: /compact keep the plan"])
+        self.rt.send("hub", sid, "go on now")
+        wait_for(lambda: self.rt.last_text("hub", 2) == ["did: /compact keep the plan", "did: go on now"])
 
     def _alive(self, wid: str) -> bool:
         out = subprocess.run([self.env["TOWER_TMUX_BIN"], "list-windows", "-a", "-F", "#{window_id} #{pane_dead}"],
@@ -390,6 +415,22 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(self.rt.status("docs"), "idle")
         nested = {"result": {"worktree": {"handle": "wt-9"}, "terminal": {"handle": "term-7"}}}
         self.assertEqual(Orca._find(Orca._find_obj(nested, "terminal"), "handle"), "term-7")
+
+    def test_orca_tab_that_ended_but_still_answers_is_not_alive(self) -> None:
+        host = Orca(self.cfg)
+        launcher = script(self.tmp, "sleeper", "#!PY\nimport time\ntime.sleep(60)\n")
+        for mode in ("cause", "disconnected"):
+            with self.subTest(mode=mode):
+                handle = host.open("t", launcher, self.tmp)
+                self.assertTrue(host.alive(handle))
+                host.close(handle)
+                wait_for(lambda: not subprocess_alive(self.windows()[handle]["pid"]))
+                os.environ["FAKE_ORCA_ENDED"] = mode
+                try:
+                    self.assertFalse(host.alive(handle))
+                finally:
+                    del os.environ["FAKE_ORCA_ENDED"]
+                self.assertFalse(host.alive(handle))
 
     def test_codex_in_an_orca_tab(self) -> None:
         sid = self.rt.open("docs", "write the docs")

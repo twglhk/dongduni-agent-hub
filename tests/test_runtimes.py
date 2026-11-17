@@ -112,6 +112,16 @@ class HeadlessTest(unittest.TestCase):
         self.rt.close("hub")
         self.assertEqual(self.rt.status("hub"), "closed")
 
+    def test_claude_compacts_with_a_resume_run_and_codex_cannot(self) -> None:
+        sid = self.rt.open("hub", "hello")
+        wait_for(lambda: self.rt.status("hub") == "idle")
+        self.assertEqual(self.rt.compact("hub", sid, "keep the plan", "go on"), "pending")
+        wait_for(lambda: self.rt.status("hub") == "idle")
+        argv = self.calls()[1]["argv"]
+        self.assertEqual(argv[argv.index("--resume") + 1], sid)
+        self.assertEqual(argv[-1], "/compact keep the plan")
+        self.assertIsNone(self.rt.compact("docs", "thread-123", "x", "y"))
+
     def test_close_kills_a_running_turn(self) -> None:
         os.environ["FAKE_SLEEP"] = "30"
         try:

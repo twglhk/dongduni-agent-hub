@@ -228,13 +228,15 @@ def main(argv: list[str] | None = None) -> int:
 # ---------------------------------------------------------------- wiring
 
 HOOK_FILE = Path(__file__).resolve()
+_WINDOWS = os.name == "nt"
 
 
 def hook_command() -> str:
-    """The shell command Claude Code runs for each hook: this interpreter on this file."""
-    if os.name == "nt":
-        return f'"{sys.executable}" "{HOOK_FILE}"'
-    return shlex.join([sys.executable, str(HOOK_FILE)])
+    # a missing hook script exits 2, which Claude Code reads as "block the tool call"; a missing module exits 1
+    installed = HOOK_FILE.is_relative_to(Path(sys.prefix).resolve())
+    if _WINDOWS:
+        return f'"{sys.executable}" -m agent_hub.hooks' if installed else f'"{sys.executable}" "{HOOK_FILE}"'
+    return shlex.join([sys.executable, "-m", "agent_hub.hooks"] if installed else [sys.executable, str(HOOK_FILE)])
 
 
 def claude_hooks() -> dict[str, Any]:

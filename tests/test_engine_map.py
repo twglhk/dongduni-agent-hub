@@ -238,3 +238,66 @@ class TwoEnginesSkillsTest(unittest.TestCase):
         from agent_hub import config as config_mod
         cfg = config_mod.load(self.home)
         self.assertEqual([s["name"] for s in engines.engine_skills(cfg, "audio")], ["x"])
+
+
+class RepoPathLayoutTest(unittest.TestCase):
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from agent_hub import config
+        self.tmp = tempfile.TemporaryDirectory()
+        home = self.home = Path(self.tmp.name)
+        (home / ".tower/lanes").mkdir(parents=True)
+        (home / ".tower/lanes/demo.md").write_text("Demo lane.")
+        (home / ".tower/tower.json").write_text(json.dumps({
+            "lanes": {"hub": {"runtime": "claude"}, "infra": {"runtime": "claude"}, "demo": {"runtime": "claude", "engine": "demo"}},
+            "engines": {"demo": {"label": "Demo", "dir": "demo", "library": "demo/pattern-library.md"}}}))
+        (home / ".claude/skills/review/").mkdir(parents=True)
+        (home / ".claude/skills/review/SKILL.md").write_text("# Review")
+        (home / "docs/demo").mkdir(parents=True)
+        (home / "docs/demo/skill.md").write_text("# Skill")
+        (home / "demo/processes").mkdir(parents=True)
+        (home / "demo/patterns/planning").mkdir(parents=True)
+        (home / "demo/pattern-library.md").write_text(
+            "| # | Type | Lane · skill | Process | Pattern | Model · effort |\n|---|---|---|---|---|---|\n"
+            "| 1 | Planning: idea → plan.md | demo · `docs/demo/skill.md` | v1 draft, not run (`demo/processes/planning.md`) "
+            "| v1 draft, not run | 1 sonnet/medium |\n")
+        (home / "demo/processes/planning.md").write_text(
+            "# Process: Planning — v1\n\nStatus: draft (not run yet)\n\n"
+            "| # | Stage | Input | Output | Gate | Passed by | Pattern card |\n|---|---|---|---|---|---|---|\n"
+            "| 1 | Input check | idea | lines | all O | lane | `demo/patterns/planning/1-input-check.md` |\n"
+            "| 2 | Missing | x | y | z | lane | `demo/patterns/planning/9-none.md` |\n")
+        (home / "demo/patterns/planning/1-input-check.md").write_text("# Pattern: Input check — v1\n\n## Status\ndraft (not run yet)\n")
+        self.cfg = config.load(home)
+
+    def tearDown(self) -> None:
+        self.tmp.cleanup()
+
+    def test_cards_and_documents_are_found(self) -> None:
+        skills = engines.skills_root(self.home)
+        self.assertEqual(skills, self.home / ".claude/skills")
+        row = engines.build(self.home / "demo/pattern-library.md", skills)[0]
+        self.assertEqual((row["process_status"], row["pattern_status"], row["process"]["version"]), ("draft", "draft", 1))
+        self.assertEqual(row["process"]["path"], "../../demo/processes/planning.md")
+        self.assertEqual(row["process"]["stages"][0]["card"]["path"], "../../demo/patterns/planning/1-input-check.md")
+        self.assertIsNone(row["process"]["stages"][1]["card"])
+        self.assertEqual(engines.named_skills(self.cfg, "demo")["demo"], [{"name": "docs/demo/skill.md", "found": True}])
+
+    def test_skills_root_prefers_the_configured_folder_then_claude_then_agents(self) -> None:
+        self.assertEqual(engines.skills_root(self.home, "custom"), self.home / "custom")
+        (self.home / ".agents/skills").mkdir(parents=True)
+        self.assertEqual(engines.skills_root(self.home), self.home / ".claude/skills")
+        (self.home / ".claude/skills/review/SKILL.md").unlink()
+        (self.home / ".claude/skills/review").rmdir()
+        (self.home / ".claude/skills").rmdir()
+        self.assertEqual(engines.skills_root(self.home), self.home / ".agents/skills")
+
+    def test_repo_file_stays_inside_the_repo(self) -> None:
+        start = self.home / "demo"
+        self.assertEqual(engines.repo_file(start, "see `docs/demo/skill.md`"), self.home / "docs/demo/skill.md")
+        self.assertIsNone(engines.repo_file(start, "`../outside.md`"))
+
+    def test_version_word_is_not_a_status(self) -> None:
+        self.assertEqual(engines._first_word("v1 draft, not run"), "draft")
+        self.assertEqual(engines._first_word("confirmed v2"), "confirmed")

@@ -24,6 +24,7 @@ RUNTIMES = ("opencode", "claude", "codex")
 TERMINALS = ("none", "tmux", "orca")  # where a lane's session runs: in the background, or in a window people watch
 TOWER_DIR = ".tower"
 CONFIG_NAME = "tower.json"
+DEFAULT_CONTEXT_LIMIT_K = 0
 INSTANCE_SEP = "#"          # a parallel session of a team lane: `docs#2`
 DEFAULT_ENGINE = "default"  # the implicit engine of an install that declares none: every team lane without one
 FIRST_OPENCODE_PORT = 4301
@@ -72,6 +73,7 @@ class Lane:
     worktree: bool = False       # team lanes: work in a git worktree of their own on branch dah/<lane>
     engine: str = ""             # team lanes: the engine it belongs to (resolved in load); hub and infra have none
     base: str = ""               # instance lanes (`docs#2`): the team lane they are parallel sessions of
+    context_limit_k: int | None = None
 
 
 @dataclass
@@ -114,10 +116,16 @@ class Config:
     max_instances: int = 1       # sessions one team lane may run at once: the lane itself plus `lane#2` ... (1 = no parallel sessions)
     heavy_paths: list[str] = field(default_factory=list)  # a task whose `paths:` fall under one of these takes a max_lanes slot
     memory_limit_mb: int = 0     # a lane session whose process passes this is renewed when idle (memwatch.py); 0 = off
+    context_limit_k: int = DEFAULT_CONTEXT_LIMIT_K
+    model_limits_k: dict[str, int] = field(default_factory=dict)
     instances: dict[str, Lane] = field(default_factory=dict)  # `lane#N` copies of each team lane, up to max_instances
     done_gate: dict[str, Any] = field(default_factory=dict)  # donegate.parse: paths, command, setup, verify, timeout, memory_mb
     scratch_root: str = ""       # dah-owned folder outside the project for the gate worktree and task scratch (scratch.py)
     scratch_grace: int = 600     # seconds after a task closes before its scratch is swept
+    branch_sync: bool = False
+    branch_sync_seconds: int = 0
+    branch_sync_push: bool = False
+    leftover_sweep: bool = False
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -147,6 +155,22 @@ class Config:
         """Where a lane's agent works: the workspace, or the lane's own git worktree."""
         base = base_lane(lane)  # instances share their lane's working tree: that is why their `paths:` may not overlap
         return self.state_dir / "worktrees" / base if self.lanes[base].worktree else self.workdir
+
+    def context_limit(self, lane: str, model: str = "") -> int:
+        ln = self.lanes.get(base_lane(lane))
+        if not ln or ln.kind != "team":
+            return 0
+        if ln.context_limit_k is not None:
+            return ln.context_limit_k
+        name = (model or ln.model).lower()
+        for key in sorted(self.model_limits_k, key=len, reverse=True):
+            if key in name:
+                return self.model_limits_k[key]
+        return self.context_limit_k
+
+    def hub_context_limit(self, lane: str) -> int:
+        ln = self.lanes.get(lane)
+        return (ln.context_limit_k or 0) if ln and ln.kind == HUB else 0
 
     def team(self) -> list[str]:
         return [lid for lid, ln in self.lanes.items() if ln.kind == "team"]
@@ -195,6 +219,11 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
     kind = HUB if lid == HUB else INFRA if lid == INFRA else "team"
     if raw.get("worktree") and kind != "team":
         raise ConfigError(f"lane {lid}: \"worktree\" is for team lanes; {lid} works in the workspace itself")
+    limit = raw.get("context_limit_k")
+    if limit is not None and kind == INFRA:
+        raise ConfigError(f"lane {lid}: \"context_limit_k\" is for team lanes and the hub (infra runs one memo per session)")
+    if limit is not None and (not isinstance(limit, int) or isinstance(limit, bool) or limit < 0):
+        raise ConfigError(f"lane {lid}: \"context_limit_k\" must be a whole number of k tokens (0 = no limit)")
     engine = str(raw.get("engine") or "")
     if engine and kind != "team":
         raise ConfigError(f"lane {lid}: \"engine\" is for team lanes; {lid} runs the whole install")
@@ -208,6 +237,7 @@ def _lane(lid: str, raw: dict[str, Any], port: int | None, terminal: str = "none
         env={str(k): str(v) for k, v in (raw.get("env") or {}).items()},
         terminal=_terminal(f"lane {lid}", raw["terminal"], home) if raw.get("terminal") else terminal,
         worktree=bool(raw["worktree"]) if "worktree" in raw else (worktree and kind == "team"),
+        context_limit_k=limit,
     )
 
 
@@ -320,13 +350,41 @@ def load(home: Path | None = None) -> Config:
         max_instances=max_instances,
         heavy_paths=[str(p).strip().strip("/") for p in raw.get("heavy_paths") or [] if str(p).strip().strip("/")],
         memory_limit_mb=max(0, int(raw.get("memory_limit_mb") or 0)),
+        context_limit_k=_limit_k(raw),
+        model_limits_k=_model_limits_k(raw),
         instances=instances,
         **_extras(raw, home, project),
     )
 
 
+LIMIT_K_ERROR = ("context_limit_k must be a whole number of k tokens (0 = no limit), or a table of them by model: "
+                 "{\"default\": 400, \"sonnet\": 300, \"opus\": 400}")
+
+
+def _whole_k(v: Any) -> int:
+    if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+        raise ConfigError(LIMIT_K_ERROR)
+    return v
+
+
+def _limit_k(raw: dict[str, Any]) -> int:
+    v = raw.get("context_limit_k", DEFAULT_CONTEXT_LIMIT_K)
+    if isinstance(v, dict):
+        return _whole_k(v.get("default", DEFAULT_CONTEXT_LIMIT_K))
+    return _whole_k(v)
+
+
+def _model_limits_k(raw: dict[str, Any]) -> dict[str, int]:
+    v = raw.get("context_limit_k")
+    if not isinstance(v, dict):
+        return {}
+    out = {str(k).strip().lower(): _whole_k(n) for k, n in v.items() if str(k).strip().lower() != "default"}
+    if "" in out:
+        raise ConfigError(LIMIT_K_ERROR)
+    return out
+
+
 def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
-    """done_gate, scratch_root, scratch_grace, usage_percent (donegate.py, scratch.py, claudeusage.py)."""
     from .claudeusage import PROVIDERS
     from .donegate import parse
     from .scratch import check_root
@@ -345,7 +403,11 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
     if usage and usage not in PROVIDERS:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
     return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
-            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600}
+            "scratch_grace": max(0, int(raw["scratch_grace"])) if raw.get("scratch_grace") is not None else 600,
+            "leftover_sweep": bool(raw.get("leftover_sweep", False)),
+            "branch_sync": bool(raw.get("branch_sync", False)),
+            "branch_sync_seconds": max(0, int(raw.get("branch_sync_seconds") or 0)),
+            "branch_sync_push": bool(raw.get("branch_sync_push", False))}
 
 
 def template(name: str, lang: str, hub: str, infra: str, safe: bool = False, web_port: int = 8787,
