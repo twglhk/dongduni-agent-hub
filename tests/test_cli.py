@@ -440,3 +440,15 @@ class TemplateCommandsTest(unittest.TestCase):
                     else:
                         choices = {}
         self.assertEqual(problems, [])
+
+
+class GuideHelpTest(unittest.TestCase):
+    def test_help_lists_every_guide_that_ships(self) -> None:
+        from agent_hub.cli import guide_names
+        p = subprocess.run([sys.executable, "-m", "agent_hub", "guide", "-h"], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONPATH": str(ROOT)})
+        flat = " ".join(p.stdout.split())
+        shipped = [f.stem for f in (ROOT / "agent_hub" / "guide" / "deploy").glob("*.md")]
+        for name in (*shipped, "setup", "extend", "engines", "models"):
+            self.assertIn(name, flat)
+        self.assertIn("oauth2-proxy", guide_names())

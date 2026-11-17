@@ -1085,14 +1085,21 @@ def cmd_uninstall(args: argparse.Namespace) -> None:
           "command itself: `uv tool uninstall dongduni-agent-hub` or `pipx uninstall dongduni-agent-hub`.")
 
 
+GUIDES_TOP = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md", "models": "MODELS.md"}
+
+
+def guide_names() -> list[str]:
+    from .install import GUIDE
+    return [*GUIDES_TOP, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
+
+
 def cmd_guide(args: argparse.Namespace) -> None:
     from .install import GUIDE
     name = args.name or "setup"
-    top = {"setup": "SETUP.md", "extend": "EXTEND.md", "engines": "ENGINES.md", "models": "MODELS.md"}
+    top = GUIDES_TOP
     path = GUIDE / (top[name] if name in top else f"deploy/{name.removeprefix('deploy/')}.md")
     if not path.is_file():
-        names = [*top, *sorted(p.stem for p in (GUIDE / "deploy").glob("*.md"))]
-        raise TowerError(f"no guide {name!r} (guides: {', '.join(names)})")
+        raise TowerError(f"no guide {name!r} (guides: {', '.join(guide_names())})")
     print(f"<!-- {path} -->")
     print(path.read_text(encoding="utf-8"))
 
@@ -1404,7 +1411,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--purge", action="store_true", help="also delete .tower/ (config, lane files, extensions, history)")
     p.add_argument("--keep-lanes", action="store_true", help="leave running lane sessions open")
     p = sub.add_parser("guide", help="print the setup playbook, the extension guide, or a guide for reaching the board")
-    p.add_argument("name", nargs="?", help="setup (default), extend, engines, models, lan, tailscale, cloudflare, aws")
+    p.add_argument("name", nargs="?", help="one of: " + ", ".join(guide_names()) + " (default: setup)")
     p = sub.add_parser("workspaces", help="workspaces with a tower on this machine (the board switches between them)")
     wsub = p.add_subparsers(dest="sub")
     wsub.add_parser("list")
