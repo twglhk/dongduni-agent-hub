@@ -42,6 +42,37 @@ class ProcsTest(unittest.TestCase):
             if child.poll() is None:
                 child.kill()
 
+    @unittest.skipIf(procs.WINDOWS, "POSIX signals")
+    def test_stop_forces_a_process_that_ignores_the_polite_request(self) -> None:
+        code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('up', flush=True); time.sleep(60)"
+        child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True, **procs.detached())
+        try:
+            self.assertEqual(child.stdout.readline().strip(), "up")
+            self.assertTrue(procs.stop(child.pid, grace=0.5))
+            self.assertFalse(procs.alive(child.pid))
+        finally:
+            if child.poll() is None:
+                child.kill()
+
+    def test_start_time_tells_a_reused_pid_from_the_original(self) -> None:
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            stamp = procs.start_time(child.pid)
+            self.assertTrue(stamp)
+            self.assertTrue(procs.same_process(child.pid, stamp))
+            self.assertFalse(procs.same_process(child.pid, "another start"))
+            self.assertTrue(procs.same_process(child.pid, None))
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_taskkill_has_a_timeout_and_a_hang_does_not_raise(self) -> None:
+        with mock.patch.object(procs, "WINDOWS", True), mock.patch("agent_hub.procs.subprocess.run") as run:
+            run.side_effect = subprocess.TimeoutExpired("taskkill", 1)
+            procs.terminate(1234)
+            procs.kill(1234)
+            self.assertEqual(run.call_args.kwargs["timeout"], procs.TASKKILL_TIMEOUT)
+
     def test_alive_without_a_pid(self) -> None:
         self.assertFalse(procs.alive(None))
         self.assertFalse(procs.alive(0))

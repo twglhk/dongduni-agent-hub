@@ -132,6 +132,17 @@ class HeadlessTest(unittest.TestCase):
         finally:
             os.environ.pop("FAKE_SLEEP")
 
+    def test_a_pid_that_now_belongs_to_another_process_is_not_our_run_and_is_never_signalled(self) -> None:
+        stranger = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        try:
+            self.s.set_lane("hub", session="s1", pid=stranger.pid, pid_start="not-its-start-time")
+            self.assertNotEqual(self.rt.status("hub"), "busy")
+            self.rt.close("hub")
+            self.assertIsNone(stranger.poll())
+        finally:
+            stranger.kill()
+            stranger.wait()
+
     def test_claude_lane_runs_its_agent_on_every_prompt(self) -> None:
         sid = self.rt.open("review", "look")
         wait_for(lambda: self.rt.status("review") == "idle")

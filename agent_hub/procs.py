@@ -13,10 +13,15 @@ import re
 import shutil
 import signal
 import subprocess
+import time
 from pathlib import Path
-from typing import Any
+from ctypes import wintypes
+from typing import Any, Callable
 
 WINDOWS = os.name == "nt"
+PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+STILL_ACTIVE = 259
+TASKKILL_TIMEOUT = 15
 
 
 def detached() -> dict[str, Any]:
@@ -27,18 +32,28 @@ def detached() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
+def _kernel() -> Any:
+    kernel = getattr(ctypes, "WinDLL")("kernel32", use_last_error=True)
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+    return kernel
+
+
 def alive(pid: int | None) -> bool:
     if not pid:
         return False
     if WINDOWS:
-        kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        kernel = _kernel()
+        handle = kernel.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
             return False
         try:
-            code = ctypes.c_ulong()
+            code = wintypes.DWORD()
             ok = kernel.GetExitCodeProcess(handle, ctypes.byref(code))
-            return bool(ok) and code.value == 259  # STILL_ACTIVE
+            return bool(ok) and code.value == STILL_ACTIVE
         finally:
             kernel.CloseHandle(handle)
     try:
@@ -50,25 +65,100 @@ def alive(pid: int | None) -> bool:
     return True
 
 
+def _taskkill(pid: int, group: bool) -> None:
+    argv = ["taskkill", "/PID", str(pid), "/F"] + (["/T"] if group else [])
+    try:
+        subprocess.run(argv, capture_output=True, timeout=TASKKILL_TIMEOUT)
+    except (subprocess.TimeoutExpired, OSError):
+        return
+
+
+def _signal(pid: int, sig: int, group: bool) -> None:
+    try:
+        if group:
+            os.killpg(pid, sig)
+        else:
+            os.kill(pid, sig)
+    except (ProcessLookupError, PermissionError):
+        if group:  # not a group leader (started by hand): signal the process itself
+            try:
+                os.kill(pid, sig)
+            except (ProcessLookupError, PermissionError):
+                return
+
+
 def terminate(pid: int | None, group: bool = True) -> None:
     """Ask a process (and, with group, everything it started) to stop. Missing processes are fine."""
     if not pid:
         return
     if WINDOWS:
-        argv = ["taskkill", "/PID", str(pid), "/F"] + (["/T"] if group else [])
-        subprocess.run(argv, capture_output=True)
+        _taskkill(pid, group)
         return
+    _signal(pid, signal.SIGTERM, group)
+
+
+def kill(pid: int | None, group: bool = True) -> None:
+    if not pid:
+        return
+    if WINDOWS:
+        _taskkill(pid, group)
+        return
+    _signal(pid, getattr(signal, "SIGKILL"), group)
+
+
+def stop(pid: int | None, group: bool = True, grace: float = 10.0, now: Callable[[], float] = time.time,
+         sleep: Callable[[float], None] = time.sleep) -> bool:
+    """Terminate, wait up to `grace` seconds, then force-kill. True once the process is gone."""
+    if not pid:
+        return True
+    terminate(pid, group)
+    deadline = now() + grace
+    while now() < deadline:
+        if reap(pid) or not alive(pid):
+            return True
+        sleep(0.2)
+    kill(pid, group)
+    sleep(0.2)
+    return reap(pid) or not alive(pid)
+
+
+def start_time(pid: int | None) -> str | None:
+    """An opaque stamp of when the process started, to tell it from a later process that reuses the pid."""
+    if not pid:
+        return None
+    if WINDOWS:
+        return _windows_start(pid)
     try:
-        if group:
-            os.killpg(pid, signal.SIGTERM)
-        else:
-            os.kill(pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError):
-        if group:  # not a group leader (started by hand): stop the process itself
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        return stat.rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        pass
+    try:
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return " ".join(out.split()) or None
+
+
+def _windows_start(pid: int) -> str | None:
+    kernel = _kernel()
+    handle = kernel.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        times = [wintypes.FILETIME() for _ in range(4)]
+        if not kernel.GetProcessTimes(handle, *[ctypes.byref(t) for t in times]):
+            return None
+        return str((times[0].dwHighDateTime << 32) | times[0].dwLowDateTime)
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def same_process(pid: int | None, started: str | None) -> bool:
+    """False when the pid now belongs to a process that started at another time than `started` (None: unknown, trust it)."""
+    if not started:
+        return True
+    return start_time(pid) == started
 
 
 def reap(pid: int) -> bool:
