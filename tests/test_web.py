@@ -297,11 +297,38 @@ class HostAndOriginTest(unittest.TestCase):
         self.b.srv.shutdown()
 
     def test_unknown_host_is_refused(self) -> None:
-        for host in ("evil.example", f"evil.example:{self.port}", "127.0.0.1:1", "localhost.evil.example"):
+        for host in ("evil.example", f"evil.example:{self.port}", "localhost.evil.example"):
             self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 421, host)
             self.assertEqual(self.b.req("POST", "/api/memo", {"text": "x"}, {**POST, "Host": host})[0], 421, host)
         for host in (f"127.0.0.1:{self.port}", f"localhost:{self.port}", f"[::1]:{self.port}"):
             self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+
+    def test_loopback_and_ip_hosts_pass_on_any_port(self) -> None:
+        for host in ("localhost:9000", "127.0.0.1:9000", "[::1]:9000", "192.168.1.5:9000", "localhost"):
+            self.assertEqual(self.b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+
+    def test_allowed_hosts_names_are_accepted_and_others_not(self) -> None:
+        b = Board(web={"allowed_hosts": ["Box.local", "box.tail1234.ts.net"]})
+        try:
+            for host in ("box.local", "box.tail1234.ts.net:8787"):
+                self.assertEqual(b.req("GET", "/api/state", headers={"Host": host})[0], 200, host)
+            self.assertEqual(b.req("GET", "/api/state", headers={"Host": "evil.example"})[0], 421)
+            self.assertEqual(b.req("POST", "/api/memo", {"text": "x"},
+                                   {**POST, "Host": "box.local", "Origin": "http://box.local"})[0], 200)
+            self.assertEqual(b.req("POST", "/api/memo", {"text": "x"},
+                                   {**POST, "Host": "box.local", "Origin": "http://evil.example"})[0], 403)
+        finally:
+            b.srv.shutdown()
+
+    def test_origin_of_public_url_is_accepted_behind_a_proxy_that_rewrites_host(self) -> None:
+        b = Board(web={"public_url": "https://board.example.com"}, auth={"mode": "token", "allow_exposed": True})
+        try:
+            auth = {"authorization": "Bearer " + str(b.s.add_member("ana", "owner", with_token=True))}
+            for origin, want in (("https://board.example.com", 200), ("https://evil.example", 403)):
+                got = b.req("POST", "/api/memo", {"text": "x"}, {**POST, **auth, "Origin": origin})[0]
+                self.assertEqual(got, want, origin)
+        finally:
+            b.srv.shutdown()
 
     def test_public_url_host_and_exposed_bind_are_allowed(self) -> None:
         b = Board(web={"host": "0.0.0.0", "public_url": "https://board.example.com"}, auth={"mode": "token", "allow_exposed": True})

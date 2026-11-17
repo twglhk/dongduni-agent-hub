@@ -25,4 +25,6 @@ Never use `"auth": {"mode": "local"}` with host `0.0.0.0`: local mode makes ever
 
 One board shows every workspace on the machine (`dah workspaces`): switch from its title. Workspaces in `local` mode stay hidden behind a token-mode board, and a header-mode workspace is only served by a board in header mode with the same header name.
 
-The board answers only requests whose `Host` it knows (loopback with its port, the host of `web.public_url`, the `web.host` address, any IP address when the bind is `0.0.0.0`); anything else gets `421`. Set `web.public_url` whenever the board is reached through a name (a proxy or tunnel), and use the IP address or that name in the browser.
+The board answers only requests whose `Host` it knows: `localhost` and any IP address on any port (so `ssh -L 9000:127.0.0.1:8787` and `docker -p 9000:8787` work), the host of `web.public_url`, the `web.host` name, and every name in `web.allowed_hosts`; anything else gets `421`. To reach the board by a LAN name such as `box.local` or a MagicDNS name, list it: `"web": {"allowed_hosts": ["box.local", "box.tail1234.ts.net"]}` (bare host names, no scheme or port). A POST must also come from the board's own origin: the `Origin` is the `Host`, the origin of `web.public_url`, or an allowed host.
+
+Behind a reverse proxy the proxy must pass the original `Host` (nginx: `proxy_set_header Host $host;`; the default `$proxy_host` sends the upstream address and the board then refuses the name). Set `web.public_url` to the address people type.

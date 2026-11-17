@@ -35,6 +35,16 @@ class TypedValuesTest(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ConfigError):
                 load_with(**{key: "false"})
 
+    def test_allowed_hosts_are_bare_lower_case_names(self) -> None:
+        self.assertEqual(make_home(web={"allowed_hosts": ["Box.Local", "box.local", "a-b.ts.net"]}).allowed_hosts,
+                         ("box.local", "a-b.ts.net"))
+        self.assertEqual(make_home().allowed_hosts, ())
+        for bad in ("box.local:8787", "http://box.local", "box/local", "", 5, "-x"):
+            with self.subTest(bad=bad), self.assertRaises(ConfigError):
+                make_home(web={"allowed_hosts": [bad]})
+        with self.assertRaises(ConfigError):
+            make_home(web={"allowed_hosts": "box.local"})
+
     def test_a_lane_worktree_string_is_refused(self) -> None:
         with self.assertRaises(ConfigError):
             make_home(lanes={"hub": {"runtime": "claude"}, "docs": {"runtime": "codex", "worktree": "no"}})

@@ -563,25 +563,25 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
         return cfg.auth_mode == "header" and cfg.auth_header.lower() == site.cfg.auth_header.lower()
 
     public_host = host_name(cfg.public_url.split("://", 1)[-1])[0] if cfg.public_url else ""
+    public_origin = "{0.scheme}://{0.netloc}".format(urlsplit(cfg.public_url)).lower() if cfg.public_url else ""
     bind_host = cfg.web_host.strip("[]").lower()
-    wildcard = bind_host in ("", "0.0.0.0", "::")
     exposed = bind_host not in ("127.0.0.1", "localhost", "::1")
 
-    def host_ok(value: str, port: int) -> bool:
-        name, got = host_name(value)
+    def host_ok(value: str) -> bool:
+        name, _ = host_name(value)
         if not name:
             return False
-        if public_host and name == public_host:
+        if name == "localhost" or is_ip(name) or name == public_host:
             return True
-        if got is None:
-            got = 80
-        if got != port:
-            return False
-        if name in ("127.0.0.1", "localhost", "::1"):
+        return name in own.cfg.allowed_hosts or (exposed and name == bind_host)
+
+    def origin_ok(origin: str, host: str) -> bool:
+        parts = urlsplit(origin)
+        if parts.netloc.lower() == host.lower():
             return True
-        if exposed:
-            return name == bind_host or (wildcard and is_ip(name))
-        return False
+        if cfg.public_url and origin.lower().rstrip("/") == public_origin:
+            return True
+        return host_name(parts.netloc)[0] in own.cfg.allowed_hosts
 
     def same_origin(headers: Any) -> bool:
         site = (headers.get("sec-fetch-site") or "").lower()
@@ -589,7 +589,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             return False
         origin = headers.get("origin")
         if origin and origin != "null":
-            return urlsplit(origin).netloc.lower() == (headers.get("host") or "").lower()
+            return origin_ok(origin, headers.get("host") or "")
         return origin is None
 
     def workspaces_view(current: Site) -> list[dict[str, Any]]:
@@ -621,7 +621,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             pass
 
         def _guard(self) -> bool:
-            if not host_ok(self.headers.get("host") or "", self.server.server_address[1]):
+            if not host_ok(self.headers.get("host") or ""):
                 self._json(421, {"error": "unknown Host: open the board by its own address (public_url in tower.json)"})
                 return False
             return True

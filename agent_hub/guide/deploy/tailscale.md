@@ -16,6 +16,6 @@ Tailscale Serve proxies to `127.0.0.1:8787` and adds `Tailscale-User-Login` (the
 
 Pin people if you want names and roles: `dah member add ana --ident ana@example.com --role owner`.
 
-Restart the tower after changing `web` or `auth`. Use your tailnet ACLs to decide which devices may reach the machine.
+If people also reach the board by the machine's short MagicDNS name or another name, add it to `"web": {"allowed_hosts": ["<machine>"]}`; the board answers `421` to a `Host` it does not know (see [LAN](lan.md)). Restart the tower after changing `web` or `auth`. Use your tailnet ACLs to decide which devices may reach the machine.
 
 Do not use `tailscale funnel` for the board: Funnel is public and sends no identity header.

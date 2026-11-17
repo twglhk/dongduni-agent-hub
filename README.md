@@ -118,6 +118,8 @@ The board listens on `127.0.0.1` by default. `dah guide <name>` prints each path
 | a domain on Cloudflare | `dah guide cloudflare`: Tunnel + Access (email code, Google, GitHub, Okta …) |
 | agents on a server | `dah guide aws`: EC2 with one of the above, or an ALB with OIDC |
 
+The board answers only a `Host` it knows: `localhost` and IP addresses on any port, the host of `web.public_url`, and the host names in `web.allowed_hosts` (a list such as `["box.local", "box.tail1234.ts.net"]`, bare names; empty by default). Anything else gets `421`. A reverse proxy must pass the original `Host` (nginx: `proxy_set_header Host $host;`).
+
 Push notifications (ntfy, Slack, desktop) tell you when something needs you.
 
 ## Concepts
