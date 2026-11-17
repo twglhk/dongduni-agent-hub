@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 
 TARGET = "hub"
 KIND = "backup_fail"
@@ -46,5 +47,7 @@ def on_tick(ctx):
         return
     for text in texts:
         ctx["store"].push(TARGET, "infra", KIND, text)
-    (sd / _STATE).write_text(json.dumps(state), encoding="utf-8")
+    tmp = sd / (_STATE + ".tmp")
+    tmp.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(tmp, sd / _STATE)
     ctx["log"](f"tower_db_backup_notify: {len(texts)} notice(s) to {TARGET}")

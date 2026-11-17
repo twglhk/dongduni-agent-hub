@@ -26,6 +26,11 @@ class BackupError(RuntimeError):
     pass
 
 
+def _private(path: Path, mode: int) -> None:
+    if os.name != "nt":
+        os.chmod(path, mode)
+
+
 def snapshot(src: Path, dest: Path) -> int:
     if not src.is_file():
         raise BackupError(f"database not found: {src}")
@@ -36,6 +41,7 @@ def snapshot(src: Path, dest: Path) -> int:
         out = sqlite3.connect(str(dest))
         try:
             conn.backup(out)
+            _private(dest, 0o600)
             out.execute("PRAGMA journal_mode=DELETE")
             verdict = out.execute("PRAGMA integrity_check").fetchone()[0]
             if verdict != "ok":
@@ -133,7 +139,9 @@ class DirUploader:
     def put(self, local: Path, day: str, name: str) -> str:
         target = self.root / day / name
         target.parent.mkdir(parents=True, exist_ok=True)
+        _private(target.parent, 0o700)
         shutil.copyfile(local, target)
+        _private(target, 0o600)
         return str(target)
 
     def size(self, day: str, name: str) -> "int | None":
@@ -219,8 +227,8 @@ def run_backup(db: Path, uploader, status: Path, keep_days: int = 30, why: str =
         pruned = old_days(uploader.days(), now.date(), keep_days)
         for d in pruned:
             uploader.delete_day(d)
-    except BackupError as e:
-        prune_error = str(e)[:400]
+    except Exception as e:
+        prune_error = f"{type(e).__name__}: {e}"[:400]
         print(f"tower-db-backup: backup ok, pruning failed: {e}", file=err)
     write_status(status, {"last_ok": started, "ok_key": where, "ok_why": why, "ok_size": size,
                           "ok_tables": tables, "pruned": pruned, "prune_error": prune_error})
