@@ -31,6 +31,12 @@ class ScaffoldTest(unittest.TestCase):
             self.fail(f"dah {' '.join(args)} should have failed")
         return p.stdout + p.stderr
 
+    def test_update_right_after_engine_add_has_nothing_to_merge(self) -> None:
+        self.tower("engine", "add", "x", "--from", "animation")
+        out = self.tower("update", "--no-upgrade", "--no-restart")
+        self.assertNotIn("edited here", out)
+        self.assertEqual(sorted(p.name for p in (self.home / ".tower").rglob("*.new")), [])
+
     def test_the_three_kinds_exist(self) -> None:
         self.assertEqual(engine_kinds(), ["animation", "blank", "marketing"])
 
