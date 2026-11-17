@@ -488,7 +488,6 @@ def _registry_data(strict: bool) -> Any:
 
 
 def workspaces(strict: bool = False) -> dict[str, Path]:
-    """slug -> workspace home, in the order they were registered."""
     data = _registry_data(strict)
     raw = data.get("workspaces") if isinstance(data, dict) else None
     return {str(k): Path(v["home"]) for k, v in (raw or {}).items() if isinstance(v, dict) and v.get("home")}

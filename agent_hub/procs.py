@@ -88,7 +88,6 @@ def _signal(pid: int, sig: int, group: bool) -> None:
 
 
 def terminate(pid: int | None, group: bool = True) -> None:
-    """Ask a process (and, with group, everything it started) to stop. Missing processes are fine."""
     if not pid:
         return
     if WINDOWS:
@@ -106,9 +105,8 @@ def kill(pid: int | None, group: bool = True) -> None:
     _signal(pid, getattr(signal, "SIGKILL"), group)
 
 
-def stop(pid: int | None, group: bool = True, grace: float = 10.0, now: Callable[[], float] = time.time,
+def terminate_then_kill(pid: int | None, group: bool = True, grace: float = 10.0, now: Callable[[], float] = time.time,
          sleep: Callable[[float], None] = time.sleep) -> bool:
-    """Terminate, wait up to `grace` seconds, then force-kill. True once the process is gone."""
     if not pid:
         return True
     terminate(pid, group)
@@ -123,16 +121,22 @@ def stop(pid: int | None, group: bool = True, grace: float = 10.0, now: Callable
 
 
 def start_time(pid: int | None) -> str | None:
-    """An opaque stamp of when the process started, to tell it from a later process that reuses the pid."""
     if not pid:
         return None
     if WINDOWS:
         return _windows_start(pid)
+    return _proc_stat_start(pid) or _ps_start(pid)
+
+
+def _proc_stat_start(pid: int) -> str | None:
     try:
         stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
         return stat.rsplit(")", 1)[1].split()[19]
     except (OSError, IndexError):
-        pass
+        return None
+
+
+def _ps_start(pid: int) -> str | None:
     try:
         out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=5).stdout
     except (OSError, subprocess.TimeoutExpired):
@@ -155,7 +159,6 @@ def _windows_start(pid: int) -> str | None:
 
 
 def same_process(pid: int | None, started: str | None) -> bool:
-    """False when the pid now belongs to a process that started at another time than `started` (None: unknown, trust it)."""
     if not started:
         return True
     return start_time(pid) == started

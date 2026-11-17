@@ -180,7 +180,6 @@ def tail(log: Path, n: int = TAIL) -> list[str]:
 
 def poll(cfg: "Config", alive: Callable[[int | None], bool] | None = None,
          now: Callable[[], float] = time.time) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Finished gates as (pending info, result); the files stay until `settle`. A runner that died without a result is a fail."""
     alive = alive or procs.alive
     out: list[tuple[dict[str, Any], dict[str, Any]]] = []
     d = gate_dir(cfg)

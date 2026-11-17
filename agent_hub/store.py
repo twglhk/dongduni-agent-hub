@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Collection, Iterable, Iterator
@@ -242,22 +243,16 @@ def _columns(con: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
 
 
-def _assign(con: sqlite3.Connection, table: str, where: str, key: Any, fields: dict[str, Any]) -> None:
-    unknown = set(fields) - _columns(con, table)
-    if unknown:
-        raise StoreError(f"{table} has no column {', '.join(sorted(unknown))}")
-    con.execute(f"UPDATE {table} SET {', '.join(f'{k}=?' for k in fields)} WHERE {where}=?", (*fields.values(), key))
-
-
-def _private(path: Path, mode: int, directory: bool = False) -> None:
+def _private(path: Path, mode: int, directory: bool = False) -> bool:
     if os.name == "nt":
-        return
+        return True
+    if not directory and not path.exists():
+        os.close(os.open(path, os.O_CREAT | os.O_WRONLY, mode))
     try:
-        if not directory and not path.exists():
-            os.close(os.open(path, os.O_CREAT | os.O_WRONLY, mode))
         os.chmod(path, mode)
     except OSError:
-        pass
+        return False
+    return True
 
 
 class Store:
@@ -265,8 +260,12 @@ class Store:
         self.path = Path(path)
         self.clock = clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        _private(self.path.parent, 0o700, directory=True)
-        _private(self.path, 0o600)
+        self.columns: dict[str, set[str]] = {}
+        self.unprotected = [str(p) for p, mode, is_dir in ((self.path.parent, 0o700, True), (self.path, 0o600, False))
+                            if not _private(p, mode, is_dir)]
+        if self.unprotected:
+            print(f"agent-hub: could not restrict access to {', '.join(self.unprotected)}; "
+                  "check who can read it", file=sys.stderr)
         with self.conn() as con:
             con.execute("PRAGMA journal_mode=WAL")
             con.executescript(SCHEMA)
@@ -284,6 +283,18 @@ class Store:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
+
+    def _columns_of(self, con: sqlite3.Connection, table: str) -> set[str]:
+        if table not in self.columns:
+            self.columns[table] = _columns(con, table)
+        return self.columns[table]
+
+    def _assign(self, con: sqlite3.Connection, table: str, where: str, key: Any, fields: dict[str, Any]) -> None:
+        unknown = set(fields) - self._columns_of(con, table)
+        if unknown:
+            raise StoreError(f"{table} has no column {', '.join(sorted(unknown))}")
+        con.execute(f"UPDATE {table} SET {', '.join(f'{k}=?' for k in fields)} WHERE {where}=?",
+                    (*fields.values(), key))
 
     def conn(self) -> sqlite3.Connection:
         con = sqlite3.connect(self.path, timeout=15, isolation_level=None, factory=_Connection)
@@ -484,7 +495,7 @@ class Store:
     def update_task(self, task_id: int, **fields: Any) -> None:
         if fields:
             with self.conn() as con:
-                _assign(con, "tasks", "id", task_id, fields)
+                self._assign(con, "tasks", "id", task_id, fields)
 
     def signal(self, task_id: int | None) -> None:
         if task_id is not None:
@@ -639,7 +650,7 @@ class Store:
     def update_item(self, item_id: int, **fields: Any) -> None:
         if fields:
             with self.conn() as con:
-                _assign(con, "items", "id", item_id, fields)
+                self._assign(con, "items", "id", item_id, fields)
 
     def open_items_for_task(self, task_id: int) -> int:
         with self.conn() as con:
@@ -797,7 +808,7 @@ class Store:
         with self.conn() as con:
             con.execute("INSERT OR IGNORE INTO lanes(lane) VALUES(?)", (lane,))
             if fields:
-                _assign(con, "lanes", "lane", lane, fields)
+                self._assign(con, "lanes", "lane", lane, fields)
 
     # ---------- task ledger and retros ----------
 

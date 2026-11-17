@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Iterator
@@ -58,19 +58,14 @@ def _root_path(cfg: "Config") -> Path:
 
 
 def dah_root(cfg: "Config") -> Path:
-    """The folder the tower owns for gate worktrees and task scratch. Outside the project, one per workspace."""
     return _root_path(cfg).resolve()
 
 
 def secure_root(cfg: "Config") -> Path:
-    """dah_root, created private (0700) and refused when it is a symlink or belongs to someone else."""
     raw = _root_path(cfg)
     check_root(raw, cfg.workdir)
     raw.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        raw.mkdir(mode=0o700)
-    except FileExistsError:
-        pass
+    raw.mkdir(mode=0o700, exist_ok=True)
     st = raw.lstat()
     if raw.is_symlink():
         raise ValueError(f"{raw} is a symlink; the scratch root must be a folder of your own")
@@ -154,10 +149,8 @@ def manifest_lock(root: Path) -> Iterator[None]:
     try:
         yield
     finally:
-        try:
+        with suppress(FileNotFoundError):
             path.rmdir()
-        except OSError:
-            pass
 
 
 def make(cfg: "Config", task_id: int, repo: Path, worktree: bool = False, clock: Callable[[], float] = time.time) -> Path:

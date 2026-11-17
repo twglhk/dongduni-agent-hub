@@ -205,7 +205,7 @@ class Adapter:
     def _kill(self) -> None:
         pid = self.store.lane(self.lane.id).get("pid")
         if pid and self._running():
-            procs.stop(pid)
+            procs.terminate_then_kill(pid)
             proc = self.procs.get(pid)
             if proc is not None:
                 proc.poll()

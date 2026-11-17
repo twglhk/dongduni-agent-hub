@@ -110,11 +110,11 @@ class ScratchTest(unittest.TestCase):
 
     def test_poll_runs_every_interval(self) -> None:
         calls: list[float] = []
-        self.sweep.sweep = lambda now: calls.append(now) or []  # type: ignore[method-assign]
-        self.sweep.poll()
-        self.sweep.poll()
-        self.clock.tick(scratch.SWEEP_SECONDS)
-        self.sweep.poll()
+        with mock.patch.object(self.sweep, "sweep", lambda now: calls.append(now) or []):
+            self.sweep.poll()
+            self.sweep.poll()
+            self.clock.tick(scratch.SWEEP_SECONDS)
+            self.sweep.poll()
         self.assertEqual(len(calls), 2)
 
 

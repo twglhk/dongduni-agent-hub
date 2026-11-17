@@ -48,7 +48,7 @@ class ProcsTest(unittest.TestCase):
         child = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True, **procs.detached())
         try:
             self.assertEqual(child.stdout.readline().strip(), "up")
-            self.assertTrue(procs.stop(child.pid, grace=0.5))
+            self.assertTrue(procs.terminate_then_kill(child.pid, grace=0.5))
             self.assertFalse(procs.alive(child.pid))
         finally:
             if child.poll() is None:

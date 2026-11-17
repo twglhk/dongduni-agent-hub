@@ -3,6 +3,7 @@ import sqlite3
 import stat
 import threading
 import unittest
+from unittest import mock
 
 from agent_hub.store import HUB, HUMAN, INFRA, Store, StoreError
 from tests.helpers import make_home
@@ -248,6 +249,22 @@ class StoreSafetyTest(unittest.TestCase):
     def test_state_dir_and_database_are_private(self) -> None:
         self.assertEqual(stat.S_IMODE(self.s.path.parent.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(self.s.path.stat().st_mode), 0o600)
+
+    def test_columns_are_read_once_per_table(self) -> None:
+        tid = self.s.add_task("docs", "t", "b")
+        self.s.update_task(tid, title="a")
+        with mock.patch.object(Store, "conn", side_effect=AssertionError):
+            self.assertEqual(self.s._columns_of(None, "tasks"), self.s.columns["tasks"])
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions")
+    def test_a_failed_chmod_is_said_on_stderr_not_swallowed(self) -> None:
+        import contextlib
+        import io
+        err = io.StringIO()
+        with mock.patch("agent_hub.store.os.chmod", side_effect=PermissionError), contextlib.redirect_stderr(err):
+            s = Store(make_home().db)
+        self.assertEqual(len(s.unprotected), 2)
+        self.assertIn("could not restrict access", err.getvalue())
 
     def test_route_decision_delivers_once(self) -> None:
         iid = self.s.add_item("docs", None, "review", "t", "b", [], [])
