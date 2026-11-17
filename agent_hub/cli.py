@@ -251,7 +251,7 @@ def cmd_task(args: argparse.Namespace) -> None:
         eng = c.engines.get(c.lanes[args.lane].engine)
         if eng and eng.library:
             try:
-                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, c.home / (eng.skills or engines_mod.SKILLS_DEFAULT)))
+                engines_mod.gate(args.brief, engines_mod.build(c.home / eng.library, engines_mod.skills_root(c.home, eng.skills)))
             except ValueError as e:
                 raise TowerError(str(e))
     s = store(c)
@@ -518,7 +518,7 @@ def cmd_ratings(args: argparse.Namespace) -> None:
     for eid, e in c.engines.items():
         if (args.engine and eid != args.engine) or not e.library:
             continue
-        skills[eid] = c.home / (e.skills or engines_mod.SKILLS_DEFAULT)
+        skills[eid] = engines_mod.skills_root(c.home, e.skills)
         rows[eid] = engines_mod.build(c.home / e.library, skills[eid])
     if args.engine and args.engine not in c.engines:
         raise TowerError(f"no engine {args.engine} (`dah engine list`)")
@@ -1133,7 +1133,7 @@ def cmd_engine(args: argparse.Namespace) -> None:
         if e.library:
             from . import engines as engines_mod
             print("pipelines:")
-            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, c.home / (e.skills or engines_mod.SKILLS_DEFAULT))))
+            print(engines_mod.pipelines(engines_mod.build(c.home / e.library, engines_mod.skills_root(c.home, e.skills))))
         return
     if not args.id.replace("-", "").replace("_", "").isalnum():
         raise TowerError("engine id: use letters, digits, - and _")

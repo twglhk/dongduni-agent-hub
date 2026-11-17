@@ -111,6 +111,8 @@ class GateTest(unittest.TestCase):
         self.assertEqual(engines.gate("Line: D5 Title card · stage 1-2 · process confirmed · pattern tuned · make\nmodel: opus", self.rows), ("D5", "make"))
         self.assertEqual(engines.gate("Line: #2 Sound cue · prepare", self.rows), ("2", "prepare"))  # no stage needed to prepare
         self.assertEqual(engines.gate("Line: none · chore: move the exports", self.rows), (None, None))
+        self.assertEqual(engines.gate("Line: new Cover art · prepare", self.rows), (None, "prepare"))
+        self.assertEqual(engines.gate("Line: new Cover art · stage 1 · process draft · prepare", []), (None, "prepare"))
 
     def test_refuses(self) -> None:
         for brief, word in [("do the thing", "does not start with `Line:`"),
@@ -118,7 +120,11 @@ class GateTest(unittest.TestCase):
                             ("Line: #9 X · stage 1 · make", "row #9 is not in the library"),
                             ("Line: #1 Storyboard · make", "no stage"),
                             ("Line: #2 Sound cue · stage 1 · make", "not confirmed: process draft, pattern draft"),
-                            ("Line: none", "does not start")]:
+                            ("Line: none", "does not start"),
+                            ("Line: new Cover art · make", "can only be prepared"),
+                            ("Line: new Cover art", "can only be prepared"),
+                            ("Line: new · prepare", "without the type"),
+                            ("Line: new storyboard · prepare", "already has #1 Storyboard")]:
             with self.assertRaises(ValueError, msg=brief) as cm:
                 engines.gate(brief, self.rows)
             self.assertIn(word, str(cm.exception), brief)
@@ -126,6 +132,7 @@ class GateTest(unittest.TestCase):
     def test_line_fields(self) -> None:
         self.assertEqual(engines.line_fields("Line: #1 Storyboard · stage 2-3 · make"), {"line_row": "1", "line_stage": "2-3", "line_mode": "make"})
         self.assertEqual(engines.line_fields("nothing")["line_row"], None)
+        self.assertEqual(engines.line_fields("Line: new Cover art · prepare"), {"line_row": None, "line_stage": None, "line_mode": None})
 
 
 class ModelFromLibraryTest(unittest.TestCase):
@@ -169,6 +176,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("Line:", bad)
         self.dah("task", "story", "--title", "t2", "Line: #2 Sound cue · stage 1 · make\nx", ok=False, lane="hub")
         self.dah("task", "story", "--title", "t3", brief, lane="hub")
+        self.dah("task", "story", "--title", "t4", "Line: new Cover art · prepare\nwrite the process card", lane="hub")
         s = Store(self.cfg.db)
         t = s.next_queued("story")
         self.assertEqual((t["line_row"], t["line_stage"], t["line_mode"]), ("1", "2", "make"))
