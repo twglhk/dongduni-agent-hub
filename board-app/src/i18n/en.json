@@ -377,6 +377,10 @@
   "ln": {
     "sessions": "Sessions",
     "sessionsOf": "Sessions of {lane}:",
-    "memo": "Memo #{n}"
+    "memo": "Memo #{n}",
+    "now": "Now",
+    "waitingN": "Waiting {n}",
+    "more": "+{n}",
+    "sessionN": "session {n}"
   }
 }

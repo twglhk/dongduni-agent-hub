@@ -5,6 +5,7 @@ import type { Lane } from '../../lib/types';
 import { useBoard } from '../../state/board';
 import { useSessions } from '../../state/useSettings';
 import { LaneCard } from './LaneCard';
+import { QueueStrip } from './QueueStrip';
 import { Stepper } from './Stepper';
 
 export function LaneGroup({ rows }: { rows: Lane[] }) {
@@ -21,6 +22,7 @@ export function LaneGroup({ rows }: { rows: Lane[] }) {
             prefix={fmt(L.ln.sessionsOf, { lane: head.label || head.lane })} onSet={n => setSessions(head.lane, n)} />
         </div>
       )}
+      <QueueStrip q={data?.queues?.[head.lane]} showWhy={!head.wait} />
       <LaneCard key={head.lane} l={head} />
       {rest.length > 0 && (
         <div className="grid gap-2 border-l-[3px] border-line-2 pl-3" aria-label={baseOf(head)}>

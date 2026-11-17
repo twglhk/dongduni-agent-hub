@@ -377,6 +377,10 @@
   "ln": {
     "sessions": "セッション数",
     "sessionsOf": "{lane} のセッション数:",
-    "memo": "メモ #{n}"
+    "memo": "メモ #{n}",
+    "now": "実行中",
+    "waitingN": "待機 {n}",
+    "more": "+{n}",
+    "sessionN": "セッション {n}"
   }
 }

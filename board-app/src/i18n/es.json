@@ -377,6 +377,10 @@
   "ln": {
     "sessions": "Sesiones",
     "sessionsOf": "Sesiones de {lane}:",
-    "memo": "Nota #{n}"
+    "memo": "Nota #{n}",
+    "now": "Ahora",
+    "waitingN": "En espera {n}",
+    "more": "+{n}",
+    "sessionN": "sesión {n}"
   }
 }

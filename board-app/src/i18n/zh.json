@@ -377,6 +377,10 @@
   "ln": {
     "sessions": "会话数",
     "sessionsOf": "{lane} 的会话数:",
-    "memo": "备忘 #{n}"
+    "memo": "备忘 #{n}",
+    "now": "进行中",
+    "waitingN": "等待 {n}",
+    "more": "+{n}",
+    "sessionN": "会话 {n}"
   }
 }

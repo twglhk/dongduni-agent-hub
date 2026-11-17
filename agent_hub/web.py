@@ -62,6 +62,8 @@ from . import processes as processes_mod
 from . import prefs as prefs_mod
 from . import rating, sessinfo
 from . import visibility as vis
+from .machine import read_waits
+from .queues import queues_view
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -483,6 +485,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
         "lanes": lanes_view(cfg, s, used),
+        "queues": queues_view(cfg, s, tasks, g, read_waits(cfg.state_dir)),
         "items": with_hubs(s, vis.mine(g, s.items(state="open", limit=500)) + vis.decided(g, 0, PREVIEW)),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
@@ -514,7 +517,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                own_cfg_path.stat().st_mtime if own_cfg_path.exists() else 0.0)
     siblings: dict[str, Site] = {}
     from .claudeusage import ClaudeUsage
-    from .machine import Machine, read_waits
+    from .machine import Machine
     mach, cusage = Machine(), ClaudeUsage()  # one machine and one Claude login for every workspace served here
 
     def fresh_own() -> Site:

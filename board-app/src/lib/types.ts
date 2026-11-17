@@ -67,12 +67,16 @@ export interface MyHubState {
 
 export interface Me { name: string; role?: string }
 
+export interface QueueItem { id: number; title: string; kind: string; session?: number | null; who?: string | null; why?: string | null; hidden?: boolean }
+export interface LaneQueue { now: QueueItem[]; wait: QueueItem[]; waiting: number; by_person: { who: string | null; n: number }[] }
+
 export interface BoardState {
   title: string;
   lang: string;
   auth_mode: string;
   me: Me | null;
   my_hub?: string;
+  queues?: Record<string, LaneQueue>;
   my_hub_state?: MyHubState;
   requester?: boolean;
   running: boolean;

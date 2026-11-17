@@ -181,6 +181,8 @@ Optional keys in `tower.json` (top level):
 
 The Lanes tab has a machine card (load per core, CPU, free memory, swap, each green, amber or red against this machine's own cores and RAM; "unknown" where the system does not say, never 0) and each queued task shows why it waits (slot full, lane busy, `paths:` conflict, usage cap). `GET /api/machine` serves the same.
 
+Each lane on the Lanes tab also has a queue strip: what its sessions hold now (blue) and what waits, in the order the tower starts it (`#12` chips, the first eight, then `+N`), with the reason the first blocked one waits. Infra shows its memos and decisions the same way, in `dah memo bump` order. It comes from `state.queues[lane]` (`now`, `wait`, `waiting`, `by_person`). Where `requester` or `person_hubs` is on, a member sees titles only for their own work and for work nobody is scoped to; other people's entries are chips without a title, and the per-person counts leave them out.
+
 ### Lanes in terminal windows
 
 By default lane sessions run in the background and you follow them on the board. To watch them work, set `"terminal"` in `tower.json` (for every lane, or per lane) or pass `dah init --terminal`:
