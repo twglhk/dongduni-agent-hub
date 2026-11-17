@@ -87,3 +87,14 @@ class DiscoverTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PluginNameTest(unittest.TestCase):
+    def test_names_keep_scopes_and_drop_versions_credentials_and_queries(self) -> None:
+        from agent_hub.discover import plugin_name
+        for spec, want in (("oh-my-opencode@1.2", "oh-my-opencode"), ("@scope/pkg@1.2", "@scope/pkg"), ("@scope/pkg", "@scope/pkg"),
+                           ("git+https://ghp_SECRET@github.com/org/repo.git", "github.com/org/repo"),
+                           ("https://user:pw@example.com/p/plugin.js?token=SECRET", "example.com/p/plugin.js"),
+                           (["@a/b@2", {"opt": 1}], "@a/b")):
+            self.assertEqual(plugin_name(spec), want, spec)
+            self.assertNotIn("SECRET", plugin_name(spec))
