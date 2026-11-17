@@ -57,9 +57,9 @@ class HubIdTest(unittest.TestCase):
 
     def test_auto_names_stay_unique_by_name_and_by_hub_id(self) -> None:
         name = config_mod.auto_member_name
-        self.assertEqual(name("John.Shin@rollingseeds.com", []), "john.shin")
-        self.assertEqual(name("john.shin@other.com", ["john.shin"]), "john.shin-2")
-        self.assertEqual(name("john-shin@x.com", ["john.shin"]), "john-shin-2")
+        self.assertEqual(name("Ana.Lee@example.com", []), "ana.lee")
+        self.assertEqual(name("ana.lee@example.org", ["ana.lee"]), "ana.lee-2")
+        self.assertEqual(name("ana-lee@example.net", ["ana.lee"]), "ana-lee-2")
         self.assertEqual(name("hub@x.com", []), "hub-2")
 
 
