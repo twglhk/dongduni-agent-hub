@@ -1,3 +1,7 @@
+import os
+import sqlite3
+import stat
+import threading
 import unittest
 
 from agent_hub.store import HUB, HUMAN, INFRA, Store, StoreError
@@ -166,6 +170,100 @@ class StoreTest(unittest.TestCase):
     def test_a_new_database_has_no_goals_table(self) -> None:
         with Store(make_home().db).conn() as c:
             self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='goals'").fetchone())
+
+
+class StoreSafetyTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.s = Store(make_home().db)
+
+    def test_a_connection_is_closed_after_its_with_block(self) -> None:
+        with self.s.conn() as con:
+            con.execute("SELECT 1")
+        with self.assertRaises(sqlite3.ProgrammingError):
+            con.execute("SELECT 1")
+
+    def test_wal_is_set_once_on_the_database_file(self) -> None:
+        with self.s.conn() as con:
+            self.assertEqual(con.execute("PRAGMA journal_mode").fetchone()[0], "wal")
+
+    def test_update_item_with_nothing_to_set_does_nothing(self) -> None:
+        iid = self.s.add_item("docs", None, "review", "t", "b", [], [])
+        self.s.update_item(iid)
+        self.assertEqual(self.s.item(iid)["title"], "t")
+
+    def test_update_refuses_a_column_that_does_not_exist(self) -> None:
+        iid = self.s.add_item("docs", None, "review", "t", "b", [], [])
+        tid = self.s.add_task("docs", "t", "b")
+        with self.assertRaises(StoreError):
+            self.s.update_item(iid, **{"title=1, state='decided' WHERE 1=1 --": "x"})
+        with self.assertRaises(StoreError):
+            self.s.update_task(tid, nope=1)
+        with self.assertRaises(StoreError):
+            self.s.set_lane("docs", nope=1)
+
+    def test_two_replies_to_one_request_both_land_in_the_card(self) -> None:
+        mid = self.s.push(HUB, "ana", "memo", "req")
+        errors: list[BaseException] = []
+
+        def reply(text: str) -> None:
+            try:
+                Store(self.s.path).reply_memo(mid, text, HUB)
+            except BaseException as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reply, args=(f"reply-{i}",)) for i in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        cards = [i for i in self.s.items() if i["memo_id"] == mid]
+        self.assertEqual(len(cards), 1)
+        for i in range(6):
+            self.assertIn(f"reply-{i}", cards[0]["body"])
+
+    def test_opening_an_old_database_twice_at_once_adds_each_column_once(self) -> None:
+        from agent_hub.store import SCHEMA
+        path = make_home().db
+        path.parent.mkdir(parents=True, exist_ok=True)
+        con = sqlite3.connect(path)
+        con.executescript(SCHEMA)
+        con.close()
+        errors: list[BaseException] = []
+
+        def open_it() -> None:
+            try:
+                Store(path)
+            except BaseException as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=open_it) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+
+    @unittest.skipIf(os.name == "nt", "POSIX permissions")
+    def test_state_dir_and_database_are_private(self) -> None:
+        self.assertEqual(stat.S_IMODE(self.s.path.parent.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(self.s.path.stat().st_mode), 0o600)
+
+    def test_route_decision_delivers_once(self) -> None:
+        iid = self.s.add_item("docs", None, "review", "t", "b", [], [])
+        self.s.decide(iid, "ok", "ana")
+        self.assertTrue(self.s.route_decision(iid, (HUB, "line")))
+        self.assertFalse(self.s.route_decision(iid, (HUB, "line")))
+        self.assertEqual(len(self.s.pending(HUB)), 1)
+
+    def test_route_decision_follow_up_makes_the_task_and_the_message_together(self) -> None:
+        iid = self.s.add_item("docs", None, "review", "t", "b", [], [])
+        self.s.decide(iid, "ok", "ana")
+        follow = {"lane": "docs", "title": "T", "brief": "B", "engine": None, "text": lambda tid: f"task #{tid}"}
+        self.assertTrue(self.s.route_decision(iid, follow=follow))
+        task = self.s.next_queued("docs")
+        self.assertEqual(self.s.pending(HUB)[0]["text"], f"task #{task['id']}")
+
 
 if __name__ == "__main__":
     unittest.main()
