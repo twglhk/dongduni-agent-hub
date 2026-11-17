@@ -54,3 +54,6 @@ jobs:
           "$BIN/dah" init --name CI --lang ko --hub claude --infra claude
           "$BIN/dah" engine list
           "$BIN/dah" status
+          "$BIN/dah" engine add a --from animation
+          "$BIN/dah" engine show a
+          "$BIN/dah" update --no-upgrade
