@@ -176,6 +176,13 @@ class HoldIsKeptTest(Base):
         self.assertNotIn(self.b, self.held())
         self.assertEqual(self.s.message(self.b)["delivered"], None)
 
+    def test_cards_closed_by_merging_them_elsewhere_release_the_hold(self) -> None:
+        other = self.s.add_item("hub", None, "decision", "Unrelated", "x", OPTIONS, [], audience=HUMAN)
+        for c in self.cards():
+            self.s.merge_item(c["id"], other, "alice")
+        self.e.tick()
+        self.assertEqual(self.s.overlap(f"memo:{self.b}")["state"], "go")
+
     def test_a_merge_answer_does_not_start_it(self) -> None:
         self.s.decide(self.card["id"], "ok", "bob", choice="Merge")
         self.e.tick()

@@ -159,6 +159,9 @@ class Overlaps:
         for r in self.store.overlaps(HOLDS):
             if r["work"] not in open_keys:
                 self.retire(r)
+            elif r["state"] == WAIT and self.dismissed(r):
+                self.store.put_overlap(r["work"], GO)
+                self.log(f"overlap: {r['work']} goes, its cards were merged away without an answer")
         for w in sorted(works, key=lambda w: w["created"]):
             if w["key"].startswith("item:") or w["live"] or self.store.overlap(w["key"]):
                 continue
@@ -181,6 +184,15 @@ class Overlaps:
             ids = self.post(w, hits)
             self.store.put_overlap(w["key"], WAIT, ids, [o["key"] for o, _, _ in hits])
             self.log(f"overlap: {w['key']} waits on card #{ids[0]}")
+
+    def dismissed(self, r: dict[str, Any]) -> bool:
+        cards = []
+        for iid in r["items"]:
+            try:
+                cards.append(self.store.item(iid))
+            except StoreError:
+                continue
+        return bool(cards) and all(c["state"] == "merged" and c.get("decided_by") != TOWER for c in cards)
 
     def retire(self, r: dict[str, Any]) -> None:
         self.store.put_overlap(r["work"], CLEAR)
