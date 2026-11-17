@@ -87,6 +87,14 @@ class PushTest(unittest.TestCase):
             self.assertNotEqual(seen[0], caller)
             release.set()
 
+    def test_desktop_is_on_for_json_true_and_for_the_string_one(self) -> None:
+        for value, shown in ((True, 1), ("1", 1), ("true", 1), (False, 0), ("0", 0), ("", 0)):
+            with self.subTest(value=value):
+                cfg = make_home(notify={"desktop": value})
+                with mock.patch("agent_hub.notify._desktop") as desktop:
+                    notify.notifier(cfg, background=False)(ITEM)
+                self.assertEqual(desktop.call_count, shown)
+
     def test_the_macos_text_keeps_non_ascii_characters(self) -> None:
         with mock.patch("agent_hub.notify.sys.platform", "darwin"), mock.patch("agent_hub.notify.subprocess.run") as run:
             notify._desktop("제목", "한글 \"인용\"")

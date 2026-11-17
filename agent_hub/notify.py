@@ -42,6 +42,9 @@ def _post(url: str, body: dict[str, Any], log: Callable[[str], None]) -> None:
         log(f"notify failed: {p.stderr.strip()}")
 
 
+DESKTOP_ON = ("1", "true")
+
+
 def _desktop(title: str, text: str) -> None:
     if sys.platform == "darwin":
         script = f"display notification {json.dumps(text, ensure_ascii=False)} with title {json.dumps(title, ensure_ascii=False)}"
@@ -74,7 +77,7 @@ def notifier(cfg: Config, log: Callable[[str], None] = print,
             _post(n.get("ntfy_server") or "https://ntfy.sh/", body, log)
         if n.get("slack_webhook"):
             _post(n["slack_webhook"], {"text": f"*{title}*\n{text}" + (f"\n<{link}|Open the board>" if link else "")}, log)
-        if n.get("desktop") == "1":
+        if n.get("desktop", "").strip().lower() in DESKTOP_ON:
             _desktop(title, text)
 
     return push
