@@ -24,6 +24,15 @@ LABELS = {
     "ko": {GO: ("그대로 진행", "겹쳐도 지금 시작해요. 두 일이 같은 파일을 따로 고칠 수 있어요."),
            AFTER: ("먼저 것 뒤에", "먼저 들어온 일이 끝난 뒤에 시작해요. 그 결과를 보고 고쳐요."),
            MERGE: ("합치기", "이 일은 시작하지 않아요. 허브가 먼저 일에 합치고 이 일을 취소해요.")},
+    "ja": {GO: ("そのまま進める", "重なっていても今始めます。二つの作業が同じファイルを別々に変えることがあります。"),
+           AFTER: ("先の作業のあとで", "先に入った作業が終わってから、その結果の上で始めます。"),
+           MERGE: ("まとめる", "この作業は始めません。ハブが先の作業にまとめ、この作業を取り消します。")},
+    "zh": {GO: ("照常进行", "尽管有重叠也现在开始；两项工作可能分别修改同一个文件。"),
+           AFTER: ("排在先前那项之后", "等先前的工作完成后，在其结果之上开始。"),
+           MERGE: ("合并", "这项工作不会开始；hub 会把它并入先前的工作并取消它。")},
+    "es": {GO: ("Seguir adelante", "Empieza ahora pese al solapamiento; ambos pueden cambiar el mismo archivo por separado."),
+           AFTER: ("Después de la anterior", "Empieza cuando termine el trabajo anterior, sobre su resultado."),
+           MERGE: ("Fusionar", "No empieza; los hubs lo funden con el trabajo anterior y lo cancelan.")},
 }
 TEXT = {
     "en": {"title": "These two overlap · {new} ↔ {old}", "what": "## What to decide",
@@ -45,6 +54,33 @@ TEXT = {
            "opts": "## 선택지",
            "rec": "## 추천\n먼저 것 뒤에: 먼저 일의 결과 위에서 고치면 같은 문장을 두 번 다르게 바꾸는 일이 없어요.",
            "for": "{a} 님과 {b} 님 두 분께 보내는 카드예요. 먼저 오는 답이 정해요.", "unknown": "누군가"},
+    "ja": {"title": "この二つが重なっています · {new} ↔ {old}", "what": "## 決めること",
+           "ask": "{who} さんの {new} は共有ルールを変えます。{others} さんのまだ開いている作業と重なっています。どうしますか？",
+           "new": "## 新しい作業 (待機中)", "old": "## 先にあった作業", "why": "重なっている点: {why}",
+           "files": "同じファイル {files}", "words": "同じ話題の語 {words}",
+           "change": ("## 何が変わるか\nこの質問に答えが来るまで、新しい作業は始まりません。同じ人の作業どうしは、"
+                      "これまでどおりパスのロックだけです。"),
+           "opts": "## 選択肢",
+           "rec": "## おすすめ\n先の作業のあとで: 先の結果の上で直せば、同じ行を二通りに変えてしまうことがありません。",
+           "for": "{a} さんと {b} さんの両方へのカードです。先に来た答えで決まります。", "unknown": "だれか"},
+    "zh": {"title": "这两项工作重叠了 · {new} ↔ {old}", "what": "## 需要决定什么",
+           "ask": "{who} 的 {new} 会修改共享规则，并与 {others} 尚未结束的工作重叠。该怎么办？",
+           "new": "## 新的工作（等待中）", "old": "## 先前的工作", "why": "重叠之处：{why}",
+           "files": "同一个文件 {files}", "words": "相同的主题词 {words}",
+           "change": ("## 会发生什么\n在得到答复之前，新的工作不会开始。同一个人的工作之间，仍然只受路径锁限制。"),
+           "opts": "## 选项",
+           "rec": "## 建议\n排在先前那项之后：在先前的结果之上修改，就不会对同样的行做两种不同的改动。",
+           "for": "这是发给 {a} 和 {b} 两位的卡片：先到的答复为准。", "unknown": "某人"},
+    "es": {"title": "Estos dos se solapan · {new} ↔ {old}", "what": "## Qué decidir",
+           "ask": "{new} de {who} cambia reglas compartidas y se solapa con trabajo aún abierto de {others}. ¿Qué hacemos?",
+           "new": "## El trabajo nuevo (en espera)", "old": "## El trabajo anterior", "why": "Solapamiento: {why}",
+           "files": "el mismo archivo {files}", "words": "las mismas palabras de tema {words}",
+           "change": ("## Qué cambia\nEl trabajo nuevo no empieza hasta que se responda. El trabajo de una sola persona "
+                      "sigue sujeto solo al bloqueo de rutas, como antes."),
+           "opts": "## Opciones",
+           "rec": "## Recomendación\nDespués de la anterior: cambiar sobre su resultado evita dos ediciones distintas "
+                  "de las mismas líneas.",
+           "for": "Una tarjeta para {a} y {b}: decide la primera respuesta.", "unknown": "alguien"},
 }
 
 

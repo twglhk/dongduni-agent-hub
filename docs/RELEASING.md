@@ -56,19 +56,75 @@ Newest first. Paste the section of the version being tagged into the GitHub rele
 
 ### Unreleased
 
-A patch: every answer to a request reaches a person as a review card.
+A larger release: board server hardening, a process library, a React board, and a set of opt-in team features. Everything new is off by default except where the Upgrade section says otherwise. The version number is set when the release is tagged.
 
-**New**
+**Upgrade** (read before updating a running install)
 
-- **Hub answers are review cards.** `dah memo reply N "..."` from the hub, to a request a person wrote in the board's box, now also posts a review card for humans (title: their request, body: the answer and the request quoted; push notification as for other human items). A second reply to the same request revises the open card; after it is decided, a new reply posts a new card. Infra replies and replies to non-human senders are unchanged. Confirming a card (`ok`, no note) wakes nobody; any other verdict, or a note, reaches the hub as a decision.
-- The blue "last reply" strip above the request box is gone from the board (and the thread sheet it opened); the box stays.
-- The request box is a floating island over the page instead of a full-width band.
-- **Process library.** Processes live in one library, `processes/`: sub-processes (a process card and its pattern cards) and full processes (sub-processes in order, with model and effort); a lane file lists the full processes it uses under `## Processes used`. A brief says `Line: <full> / <sub> · stage 2 · make`. `dah engine add` writes the library layout. The Engine tab is the library (`GET /api/processes`, `GET /api/processes/doc?path=P`); `/api/engines*` and `/old/` are unchanged. `dah guide engines` explains it.
-- The Engine tab no longer lists lanes: an engine shows its method (pipelines, changes, skills, tools, experiments); lanes, the workers, stay on the Lanes tab. `/api/engines/<id>` still returns `lanes`.
+- **`auth.mode` `local` on an exposed board is refused.** If `auth.mode` is `local` (the default) and `web.host` is not loopback, or `web.public_url` or `tunnel` is set, the tower no longer starts: the config load fails with an error that names the keys. Either switch to `header` or `token` (`dah guide`), or accept the risk with `"auth": {"mode": "local", "allow_exposed": true}`. Before this release such a setup started silently; a board with `public_url` only for notification links is the usual case.
+- **The board answers 421 to an unknown Host.** The board server checks the `Host` header against its own address (loopback names, `web.host`, the host of `web.public_url`). A request through a reverse proxy or tunnel under another name gets `421 unknown Host`. Set `web.public_url` to the address people open (and `web.allowed_hosts` for further names). Cross-site POSTs are refused too.
+- **`dah update` converts pattern libraries into the process library.** An engine whose `library` is a pattern-library table gets a `processes/` folder: a full process (`processes/full/<id>.md`, one step per table row) and one sub-process per row (`processes/sub/<id>/process.md` with its `patterns/`). The old table is kept as `pattern-library.md.bak`; `Line: #3 ...` headers still work through the old `#` column; a second run changes nothing. `lanes/hub.md` and `PROTOCOL.md` are refreshed when untouched; an edited file gets a `.new` beside it. `dah guide engines` has the steps. Database: columns and tables are only added (`items.memo_id`, `member_prefs`, `overlaps`, upload tables ...), so a downgrade to 0.9.x still opens the database.
+- **Attachments are on by default.** The hub chat has a paperclip with the `local` provider: files go to `uploads/<date>/<request>/` in the workspace, at most 25 MB per file, 10 files per request and 2 GB in all. Set `"uploads": {"provider": "off"}` to remove the paperclip and the upload routes.
+- Typed `tower.json` readers: a number written as text that is not a number, or a string where a boolean is expected, is now a config error instead of being guessed. A broken `workspaces.json` is kept as `.bak` rather than overwritten.
 
-**Upgrade**
+**Security fixes**
 
-`dah update` converts an engine whose `library` is a pattern-library table into the process library (a full process with one step per row, a sub-process per row, `pattern-library.md.bak` keeps the table; old `Line: #3 …` headers still work through the `Old #` column; run twice it changes nothing; `dah guide engines` has the steps). It refreshes `lanes/hub.md` and `PROTOCOL.md` when untouched; an edited `hub.md` gets a `.new` next to it to merge by hand. Database: `items.memo_id` is added (nullable); columns are only added, so a downgrade to 0.9.x still opens it.
+- Board server: unknown `Host` refused (421), cross-site POST refused, served files sandboxed with frame and CSP headers, request bodies bounded, owner-only settings.
+- Server-side visibility: cards, decided history, memos, chat, card files, sessions and attachments are filtered by who is asking (`visibility.py`), not only in the browser; another member's person hub is hidden.
+- `auth.mode` `local` on an exposed board needs `auth.allow_exposed`.
+- Store: every connection is closed, read-then-write methods run in transactions, state files are private, column names are whitelisted.
+- Secrets: the Claude usage token goes to `curl` on standard input, not on the command line; notify sends through `curl` only after a TLS error and with the url and body on standard input; lane environment stays out of launcher scripts; Claude sign-in codes and tokens never reach a command line, log, database or answer.
+- Done gate and scratch: a private, user-owned root; the gate worktree is checked to belong to this repo; verdict files kept until handled; race-safe lock takeover.
+- Kill gate sees through prefix options, `xargs` and regex patterns; hooks run as `python -m agent_hub.hooks` so a reinstall cannot block open sessions.
+- Stop escalates to a forced kill, and a lane pid is signalled only while it is still the process the tower started; the tower claims its pid file with `O_EXCL` under a lock and no longer inherits `TOWER_LANE`.
+- Uploads: stdlib SigV4 signer, per-file and per-request caps, files shown only to members who may see the request.
+
+**New, opt-in (keys in `tower.json`)**
+
+- `requester` (false): tasks record who asked; cards default to that person.
+- `fair_turns` (false): waiting tasks go round by requester.
+- `person_hubs` (false, or `{"max": 3, "auto": false, "domains": []}`): one always-on hub per board member.
+- `claude_accounts` (false): each member signs in to their own Claude account from the board; needs `auth.mode` `header` or `token`.
+- `rule_watch` (off): `{"files": [...], "delay_minutes": 10, "cards_per_day": 3}`, one card to everyone when a shared rule file changes in a commit.
+- `overlap_check` (false): queued work on a shared rule file that meets another person's open work asks both people first; needs `rule_watch.files`.
+- `uploads` (`local`): chat attachments with `local`, `drive` (rclone) or `s3` storage; see Upgrade.
+- `schedules` (none): a task or hub request per day or week.
+- `max_instances` (1, also per lane and on `infra`): parallel sessions per lane, each in its own worktree and branch when `worktree` is on; paths are a file lock.
+- `branch_sync`, `branch_sync_seconds`, `branch_sync_push` (false/0/false): worktree lanes follow the current branch.
+- `leftover_sweep` (false, Linux): stops processes of closed lane sessions.
+- `context_limit_k` (off; a number or a table by model): a long session is asked to hand off.
+- `scratch_root`, `scratch_grace` (user cache dir, 600 s), `done_gate`, `usage_percent` (off): as in 0.9.3, now documented in the README table.
+- `auth.allow_exposed` (false): see Upgrade.
+
+**Process library and engines**
+
+- Processes live in one library, `processes/`: sub-processes (a process card and its pattern cards) and full processes (sub-processes in order, with model and effort). A lane lists the full processes it uses under `## Processes used`. A brief says `Line: <full> / <sub> · stage 2 · make`. `dah engine add` writes this layout; rows that name the same process card share one sub-process.
+- Automatic conversion of pattern libraries by `dah update` (see Upgrade). `Line: new <type> · prepare` for a row the library lacks; repo-path cards; `.claude/skills` is the default skills folder.
+- The Engine tab is the library (`GET /api/processes`, `GET /api/processes/doc?path=P`); it no longer lists lanes. `/api/engines*` and `/old/` are unchanged.
+- Hub answers to a request a person wrote reach that person as a review card (a second reply revises the open card).
+
+**Board**
+
+- A React board at `/` (the old board stays at `/old/`); strings in English, Korean, Japanese, Chinese and Spanish.
+- Hub chat shows requests and answers in full and has attachments with previews and progress; the "last reply" strip is gone and the request box floats over the page.
+- Lanes tab: queue strip (now and waiting work with the reason, per-person counts), session sheet (`GET /api/sessions/<key>`), sessions and branches per lane, machine disks, a settings sheet per member (`member_prefs`), my Claude account sheet, "Add a lane" asks the sender's hub.
+- History tab: a Work feed of what each lane and session did, filtered per viewer.
+- Board items can recommend one option (`--recommend`, shown first with a badge); chat full text search; server-side card filtering.
+
+**CLI**
+
+- New: `dah restart`, `dah prefs show|set|reset`, `dah paths`, `dah overlap CARD go|after|merge`, `dah memo cancel`, `dah memo bump`, `dah memo paths`, `dah memo reply --covers N`, `dah task bump`, `dah infra --model`, `dah infra --effort`, `dah infra --paths`, `dah infra --alone`, `dah task --request`, `dah task --for`, `dah item add --to`, `dah item add --recommend`, `dah item add --request`; `dah member list` shows each member's hub and `dah guide -h` lists every guide.
+- `dah init` / `dah update`: `--force` keeps an edited file as `.bak`; `dah restart` waits only for a service manager.
+- Real model and effort per lane session; `dah task` and the shipped `ENGINE-audit` skill are checked against the parser by a test that now covers the README, guides and docs.
+
+**Internals**
+
+- `cli.py` is the package `cli/` and `runtimes.py` the package `runtimes/` (the `Adapter`, `Headless`, `Host` contract in `agent_hub/guide/EXTEND.md` is unchanged); `engines.py`, `processes.py`, `line.py`, `libmigrate.py`, `visibility.py`, `storage/`, `rulewatch.py`, `overlap.py`, `accounthold.py`, `claudelogin.py`, `leftovers.py`, `tower_db_backup.py`, `shot.py` and others are new modules. Decision routing moved into Store; edits to `tower.json` validate before writing and replace the file atomically. Comments and docstrings that restate the code were removed.
+- CI rebuilds the board app and requires the committed `agent_hub/board_next/` to match; `skill_lint` has its own frontmatter parser (no PyYAML).
+- Messages of the overlap check and the rule watch exist in all five languages; `notify.desktop` accepts JSON `true` as well as `"1"`.
+
+**Docs**
+
+- `docs/internals.md` (engine, store, config, CLI and the other modules), `docs/attachments.md`, `docs/board-api.md`, a README table of every `tower.json` key, a README paragraph on `auth.allow_exposed` and the Host check, guides for a Linux server (systemd), Caddy + oauth2-proxy, Orca, the tower.db backup tool with a systemd timer, and a safe update and reinstall checklist.
 
 ### 0.9.3
 

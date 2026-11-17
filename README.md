@@ -257,6 +257,8 @@ A bad value is a config error that names the entry. The tower checks on every ti
 
 Every decision records who made it, and the hub can route an item to one person (`dah escalate ID --to ana`).
 
+`local` trusts everyone who can reach the board, so the tower refuses to start with `auth.mode` `local` when `web.host` is not a loopback address, or `web.public_url` or `tunnel` is set, unless you accept that with `"auth": {"mode": "local", "allow_exposed": true}` (default `false`). The better answer is `header` or `token`. Whatever the mode, the board server answers `421` to a request whose `Host` header is not one of its own names (loopback, `web.host`, the host of `web.public_url`), and refuses cross-site POSTs; behind a reverse proxy or tunnel set `web.public_url` to the address people open (and `web.allowed_hosts` for any further names).
+
 The Lanes tab's "Add a lane" row opens a text box: what the new lane should do. It goes to the sender's own hub (the one hub of a single-user install) as a request whose first line is `[New lane request]`; the hub answers with a card proposing the lane, and only after someone decides does it ask infra to create it.
 
 Each person has screen settings of their own (the sliders icon in the board's top bar): the tab that opens first, text size, accent colour, and the order, folding and hiding of the Hub and Lanes tab sections. They are stored in the tower database per member (`member_prefs`), apply at once and only to that person's board, and a person can only read and write their own. `?default` in the board address ignores them. The hub changes them on a chat request with `dah prefs show|set|reset MEMBER` (for example `dah prefs set ana first_tab=history font=l accent=green hub.order=yours,asks lanes.hidden=reports`; an empty value is the default); with person hubs on, only the hub that serves that member can. Nothing to switch on.
@@ -316,6 +318,50 @@ The hub chat has a paperclip: people attach images, video, audio, PDF, text, CSV
 - `s3`: `{"provider": "s3", "bucket": "example-bucket", "region": "eu-west-1", "prefix": "hub/"}`: the browser uploads straight to the bucket with presigned PUT or multipart. Credentials come from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (`AWS_SESSION_TOKEN`), `~/.aws/credentials` (`AWS_PROFILE`) or an instance role, never from `tower.json`. The bucket needs a CORS rule for the board's address (see [docs/attachments.md](docs/attachments.md)).
 
 Why `local` by default: it needs no account, no tool and no credential, and the caps bound what a member can put on the disk. Set `"provider": "off"` to remove the paperclip and the upload routes. Design, security decisions and the storage interface are in [docs/attachments.md](docs/attachments.md).
+
+## All `tower.json` keys
+
+Top level unless a dotted name says otherwise. Every key is optional except the `hub` lane. A value written as `"env:NAME"` in `notify` is read from the environment.
+
+| key | default | what it does | details |
+| --- | --- | --- | --- |
+| `name`, `lang` | `Agent Hub`, `en` | board title; the language agents write in | [Language](#language) |
+| `project` | the workspace folder | folder inside the workspace where agents run | [Lanes in their own git worktree](#lanes-in-their-own-git-worktree) |
+| `web.host`, `web.port` | `127.0.0.1`, `8787` | where the board listens | [Reach the board from your phone](#reach-the-board-from-your-phone) |
+| `web.public_url` | empty | the address people open; used in notification links and the Host check | [Teams](#teams) |
+| `auth.mode` | `local` | `local`, `header` or `token` | [Teams](#teams) |
+| `auth.header` | empty | identity header a proxy sets; required for `header` | [Teams](#teams) |
+| `auth.allow_exposed` | `false` | allow `local` mode on an exposed board | [Teams](#teams) |
+| `tunnel` | empty | a command the tower keeps running (restarted when it exits), for example a tunnel to the board | [Reach the board from your phone](#reach-the-board-from-your-phone) |
+| `notify.ntfy_topic`, `notify.ntfy_server` | none, `https://ntfy.sh/` | push through ntfy | [Other modules](docs/internals.md#other-modules) |
+| `notify.slack_webhook` | none | push to a Slack webhook | [Other modules](docs/internals.md#other-modules) |
+| `notify.desktop` | off | desktop notification; `true` or `"1"` turns it on | [Other modules](docs/internals.md#other-modules) |
+| `max_lanes` | `2` | team lanes that work at once (heavy ones when `light_lanes` is set) | [Which queued task starts](docs/internals.md#which-queued-task-starts) |
+| `light_lanes` | none | extra slots for light tasks; needs `heavy_paths` | [Which queued task starts](docs/internals.md#which-queued-task-starts) |
+| `heavy_paths` | `[]` | path roots: a task whose `paths:` fall under one is heavy | [Which queued task starts](docs/internals.md#which-queued-task-starts) |
+| `memory_limit_mb` | `0` (off) | a lane session whose process passes it is asked to hand off | [Memory guard](docs/internals.md#memory-guard-memwatchpy) |
+| `max_instances` | `1` | parallel sessions per team lane (a lane and `infra` may set their own) | [Lanes in their own git worktree](#lanes-in-their-own-git-worktree) |
+| `opencode_port` | `4301` | first port handed to OpenCode lanes | [Runtimes](#runtimes) |
+| `terminal` | `none` | `none`, `tmux`, `orca` or an extension's terminal; a lane may set its own | [Lanes in terminal windows](#lanes-in-terminal-windows) |
+| `worktree` | `false` | every team lane in its own git worktree | [Lanes in their own git worktree](#lanes-in-their-own-git-worktree) |
+| `branch_sync`, `branch_sync_seconds`, `branch_sync_push` | `false`, `0`, `false` | keep worktree lane branches up to date with yours | [Lanes in their own git worktree](#lanes-in-their-own-git-worktree) |
+| `require_model_lines` | `false` | `dah task` refuses a brief without `model:` and `effort:` | [Model and effort per task](#model-and-effort-per-task) |
+| `stage_table` | empty | a markdown table that gives a `Line:` row its model and effort | [Model and effort per task](#model-and-effort-per-task) |
+| `require_line` | `false` | `dah task` refuses a brief whose `Line:` header does not name a row of the engine's library | [Process cards and the Line header](docs/internals.md#process-cards-and-the-line-header-enginespy-stagemodelpy) |
+| `context_limit_k` | `0` (off) | hand off past this many k tokens; a number or a table by model | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `done_gate` | off | `paths`, `command`, `setup`, `verify`, `timeout` (1800), `memory_mb` (8192), `sparse` | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `scratch_root`, `scratch_grace` | user cache dir, `600` | where gate worktrees and scratch live; seconds before sweeping | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `leftover_sweep` | `false` | stop processes of closed lane sessions (Linux) | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `usage_percent` | empty | `claude` shows the subscription percent in the footer | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `rule_watch` | off | `files`, `delay_minutes` (10), `cards_per_day` (3) | [Done gate, scratch and the machine card](#done-gate-scratch-and-the-machine-card) |
+| `overlap_check` | `false` | ask both people when queued work meets another person's open work on a shared file | [Overlap check](#overlap-check) |
+| `schedules` | none | a task or request per day or week | [Scheduled runs](#scheduled-runs) |
+| `requester`, `fair_turns` | `false`, `false` | who asked; turns by requester | [Team options in `tower.json`](#team-options-in-towerjson) |
+| `person_hubs` | `false` | one hub per member: `max` (3), `auto` (false), `domains` | [Team options in `tower.json`](#team-options-in-towerjson) |
+| `claude_accounts` | `false` | each member's own Claude account | [Each person's own Claude account](#each-persons-own-claude-account) |
+| `uploads` | `local` | chat attachments: `provider`, `max_mb`, `max_files`, `max_total_mb` | [Chat attachments](#chat-attachments) |
+| `lanes.<id>` | `hub` required | `runtime` (`opencode`), `label`, `port`, `model`, `agent`, `args`, `instructions`, `env`, `terminal`, `worktree`, `max_instances`, `context_limit_k`, `engine` | [Config](docs/internals.md#config-configpy) |
+| `engines.<id>` | implicit `default` | `label`, `dir`, `lanes`, `library`, `skills`, `map` (paths inside the workspace), `skill_names`, `cap` (`tokens-day:N` or an extension's cap) | [Config](docs/internals.md#config-configpy), [Which queued task starts](docs/internals.md#which-queued-task-starts) |
 
 ## Development
 

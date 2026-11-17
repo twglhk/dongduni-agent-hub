@@ -29,7 +29,7 @@ Keep `dah doing "one line"` current so humans see what you are on. Run each `dah
 Run `dah status` to see which lanes exist. A task brief must stand alone: the outcome, the done criteria, the files and rules that matter, and what not to touch. One deliverable per task. Every brief also carries:
 
 - `model:` and `effort:` lines (`guide/MODELS.md`), or a `Line:` header (`Line: <full process> / <sub-process> · stage <n> · make`) naming a sub-process of the process library, whose Model · effort cell sets them.
-- `paths:` the files the lane may touch; `after: T` when it needs task T first; `--deliverable KEY` when it reworks something already made.
+- `paths:` the files the lane may touch; `after: T` when it needs task T first; `dah task --deliverable KEY` when it reworks something already made.
 
 Use the research lane for a question that needs sources, and the audit lane to review a process; an audit card is a proposal you decide. At review read `dah ratings` and `dah blame`. Check the engine flow in `.tower/PROTOCOL.md` before you queue work in a method that has cards.
 

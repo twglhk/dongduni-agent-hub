@@ -23,6 +23,10 @@ WORDS = {
     "en": {"memo": "memo", "request": "request", "card": "card", "decision": "decision", "task": "task",
            "commit": "commit"},
     "ko": {"memo": "메모", "request": "요청", "card": "카드", "decision": "결정", "task": "작업", "commit": "커밋"},
+    "ja": {"memo": "メモ", "request": "リクエスト", "card": "カード", "decision": "決定", "task": "タスク", "commit": "コミット"},
+    "zh": {"memo": "备忘", "request": "请求", "card": "卡片", "decision": "决定", "task": "任务", "commit": "提交"},
+    "es": {"memo": "memo", "request": "solicitud", "card": "tarjeta", "decision": "decisión", "task": "tarea",
+           "commit": "commit"},
 }
 TEXT = {
     "en": {"title": "Shared rules changed · {files}{ref}", "files": "## What changed", "who": "## Whose work",
@@ -39,6 +43,27 @@ TEXT = {
            "todo": "## 할 일\n읽었으면 '확인했어요'를 눌러 주세요. 이상한 점은 허브 채팅에 남겨 주세요.",
            "nobody": "커밋 메시지에 메모·요청·카드 번호가 없어요.", "and": " 외 {n}개", "sent": "보낸 허브 {hub}",
            "add": "추가", "del": "뺌"},
+    "ja": {"title": "共有ルールが変わりました · {files}{ref}", "files": "## 変わったもの",
+           "who": "## だれの作業か", "lines": "## 変わった行", "more": "… ほか {n} 行",
+           "why": ("## なぜ全員に届くか\n結果のカードではなく、すべてのレーンと人が従う共有ルールが変わったという"
+                   "お知らせです。だれが依頼した作業でも全員に届きます。"),
+           "todo": "## すること\n読んだら「確認しました」を押してください。おかしな点はハブのチャットに書いてください。",
+           "nobody": "コミットメッセージにメモ・リクエスト・カードの番号がありません。", "and": " ほか {n} 件",
+           "sent": "送信元のハブ {hub}", "add": "追加", "del": "削除"},
+    "zh": {"title": "共享规则已更改 · {files}{ref}", "files": "## 改了什么",
+           "who": "## 是谁的工作", "lines": "## 改动的行", "more": "… 另有 {n} 行",
+           "why": ("## 为什么所有人都会收到\n这不是结果卡片，而是通知：每个 lane 和每个人都要遵守的共享规则变了，"
+                   "所以无论是谁提出的工作，都会发给所有人。"),
+           "todo": "## 要做什么\n读完后标记为已看。有异常请在 hub 聊天里说明。",
+           "nobody": "提交信息里没有写明备忘、请求或卡片编号。", "and": " 等 {n} 项",
+           "sent": "由 {hub} 发送", "add": "新增", "del": "删除"},
+    "es": {"title": "Reglas compartidas modificadas · {files}{ref}", "files": "## Qué cambió",
+           "who": "## De quién es el trabajo", "lines": "## Líneas modificadas", "more": "… {n} línea(s) más",
+           "why": ("## Por qué lo recibe todo el mundo\nEs un aviso, no una tarjeta de resultado: cambió una regla que "
+                   "siguen todos los lanes y todas las personas, así que llega a todos, sea quien sea quien pidió el trabajo."),
+           "todo": "## Qué hacer\nMárcala como vista cuando la leas. Si algo no cuadra, dilo en el chat del hub.",
+           "nobody": "Los mensajes del commit no nombran ningún memo, solicitud ni tarjeta.", "and": " y {n} más",
+           "sent": "enviado por {hub}", "add": "añadido", "del": "eliminado"},
 }
 
 
