@@ -1,32 +1,3 @@
-"""Stage ratings: the first-pass rate of every stage of an engine's process, read from the task ledger. No LLM, standard library only.
-
-A rated task is one that came with a `Line: #<row> ... stage <n | n-m>` header (or `prepare`, rated apart as stage "prepare") and
-either closed or was cancelled after it started. Cancelled before starting, and still-running tasks, are not counted (n).
-A task is a *first pass* when all of these hold:
-  - it closed (a task cancelled while running is not one);
-  - the hub never sent it a fix: a `dah tell` whose text contains `fix:` (the word the hub writes to send work back);
-  - no task for the same deliverable key, row and stage started and was cancelled (a redo is not a first pass), and no later
-    `Line: ... fix` task for the same key, row and stage exists (that later task is the proof the first one was sent back);
-  - when the stage's card says `Passed by: human`: the human adopted the deliverable in the first round, meaning the first recorded
-    outcome (`dah deliverable KEY adopted|redirected|dropped`) is `adopted` and no board item for that key was rejected before it.
-    A task whose human result has not been recorded yet is left out of n (pending) until it is.
-The score is first passes / n as a whole percent (rounded down); a stage's state comes from BARS, one place:
-new n<5 · best >=85 % · good 65-84 % · needs fixing <65 % · needs rework: n>=10, <50 % and the last two fixes of the stage's card
-(a commit that raised the `— vN` in its title, read from git) did not raise the score. "Did not raise" = the attempts split by those two
-fix times into three parts (before, between, after), all non-empty, with after <= between <= before. A fix of a stage = that stage's
-pattern card; a fix of the process = the process card plus every stage card. A process score is the sum of its numeric stages.
-
-Tokens: one task's cost = the ledger's new reads (tok_new) + writes (tok_out); cache reads are left out, tasks not yet measured too.
-A task over a stage range splits its tokens evenly across the stages. Per attempt = median of the measured attempts; per adopted
-deliverable = the stage's attempts' token sum (failed ones included) / the number of distinct deliverables whose last outcome is
-adopted (None when there is none).
-
-Blame: a failure counts against the stage that should have caught it. A lane writes `dah blame <stage>`; the hub confirms or changes it
-(`dah blame --confirm --task N [stage]`), and the confirmed stage wins. A task with a blame fails only that stage and passes the others it
-went through (a blame outside its stages adds one failed attempt to the blamed stage). A failed task without a blame is counted the
-plain way and marked `blame?`.
-"""
-
 from __future__ import annotations
 
 import re
@@ -38,15 +9,14 @@ from typing import Any
 
 from .store import HUB, INFRA, Store
 
-# The bars. One block; tuning changes only this.
 BARS: dict[str, Any] = {
-    "new_below": 5,        # n below this is new (grey)
-    "best_at": 85,         # % at or above is best (green)
-    "fix_below": 65,       # % below needs fixing (amber), at or above is good (blue)
-    "rework_below": 50,    # % below this, with n >= rework_min_n and rework_fixes fixes that did not help, needs rework (red)
+    "new_below": 5,
+    "best_at": 85,
+    "fix_below": 65,
+    "rework_below": 50,
     "rework_min_n": 10,
     "rework_fixes": 2,
-    "candidate_at": 90,    # % at or above, n >= candidate_min_n and a human adoption rate >= human_at % over human_min_n results: lighter review
+    "candidate_at": 90,
     "candidate_min_n": 10,
     "human_at": 90,
     "human_min_n": 10,
@@ -83,7 +53,7 @@ WORDS: dict[str, dict[str, str]] = {
                   "zh": "没有需要改进或重构的流程。", "es": "Ningún proceso necesita corrección ni rehacerse."},
 }
 HUMAN_BY = "human"
-SENDBACK = "fix:"  # a hub tell containing this sends the task back
+SENDBACK = "fix:"
 
 
 def word(key: str, lang: str = "en") -> str:
@@ -99,7 +69,6 @@ def pct_of(n: int, passed: int) -> int | None:
 
 
 def tier(n: int, passed: int, human: dict[str, Any] | None = None, stuck: bool = False, bars: dict[str, Any] = BARS) -> tuple[str, bool]:
-    """(state key, lighter-review candidate?). `stuck` = fixes happened and the score did not rise (`stuck_after_fixes`)."""
     pct = pct_of(n, passed)
     if n < bars["new_below"] or pct is None:
         return "new", False
@@ -118,7 +87,6 @@ def tier(n: int, passed: int, human: dict[str, Any] | None = None, stuck: bool =
 
 
 def stuck_after_fixes(attempts: list[tuple[float, bool]], fixes: list[float], bars: dict[str, Any] = BARS) -> bool:
-    """Split the attempts (time, passed) at the last two fix times; True when the three parts all have attempts and the rate never rose."""
     k = int(bars["rework_fixes"])
     if k != 2 or len(fixes) < k:
         return False
@@ -139,7 +107,6 @@ _BUMPS: dict[tuple[str, str, int], list[float]] = {}
 
 
 def version_bumps(repo: Path, rel: str) -> list[float]:
-    """Cached by the file's modification time, so the board can ask on every poll without a git log per card each time."""
     try:
         key = (str(repo), rel, (repo / rel).stat().st_mtime_ns)
     except OSError:
@@ -152,8 +119,6 @@ def version_bumps(repo: Path, rel: str) -> list[float]:
 
 
 def _version_bumps(repo: Path, rel: str) -> list[float]:
-    """Commit times (ascending) at which the card's title `— vN` went up. The commit that created the file and commits that did
-    not change the version do not count. No git or no history gives []."""
     try:
         out = subprocess.run(["git", "-C", str(repo), "log", "--follow", "-p", "-U0", "--format=@%ct", "--", rel],
                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30).stdout
@@ -187,7 +152,6 @@ def short_model(model: str | None, effort: str | None) -> str:
 
 
 def stage_numbers(stage: str | None) -> list[str]:
-    """"2-4" -> ["2","3","4"]; "3" -> ["3"]; "prepare" -> ["prepare"]; None -> []."""
     if not stage:
         return []
     m = re.fullmatch(r"(\d+)-(\d+)", stage)
@@ -198,7 +162,6 @@ def stage_numbers(stage: str | None) -> list[str]:
 
 
 def blame_stage(text: str | None) -> str | None:
-    """`stage 3` · `3` · `prepare` -> the stage name (digits only when there are digits)."""
     t = " ".join(str(text or "").split())
     if not t:
         return None
@@ -207,7 +170,6 @@ def blame_stage(text: str | None) -> str | None:
 
 
 def collect(store: Store, default_engine: str = "default") -> dict[str, Any]:
-    """The raw ledger for rating: rated tasks, fix counts, deliverable events, human rejections, blames."""
     with store.conn() as con:
         tasks = []
         for r in con.execute("SELECT * FROM tasks WHERE line_row IS NOT NULL AND started IS NOT NULL "
@@ -227,7 +189,7 @@ def collect(store: Store, default_engine: str = "default") -> dict[str, Any]:
         rejects: dict[str, list[float]] = defaultdict(list)
         lanes = {r[0] for r in con.execute("SELECT lane FROM lanes")} | {HUB, INFRA}
         for r in con.execute("SELECT * FROM items WHERE state='decided' AND verdict='no' AND question IS NULL"):
-            if r["decided_by"] in lanes:  # only a human's no is a rejection
+            if r["decided_by"] in lanes:
                 continue
             key = task_key.get(r["task_id"])
             if key:
@@ -236,7 +198,6 @@ def collect(store: Store, default_engine: str = "default") -> dict[str, Any]:
 
 
 def first_round_adopted(key: str | None, events: dict[str, list[dict[str, Any]]], rejects: dict[str, list[float]]) -> bool | None:
-    """Did the human adopt the deliverable in the first round? None while no outcome is recorded."""
     ev = events.get(key or "")
     if not key or not ev:
         return None
@@ -248,14 +209,12 @@ def first_round_adopted(key: str | None, events: dict[str, list[dict[str, Any]]]
 
 def compute(raw: dict[str, Any], gated: set[tuple[str, str, str]], bars: dict[str, Any] = BARS,
             fixes_at: dict[tuple[str, str, str], list[float]] | None = None) -> dict[tuple[str, str, str], dict[str, Any]]:
-    """(engine, row, stage) -> {n, pass, rate, pct, state, color, candidate, models, human, pending, attempts, tokens...}.
-    `gated` = the (engine, row, stage) whose card says `Passed by: human`; `fixes_at` = that stage's card fix times."""
     tasks, fixes, events, rejects, blames = raw["tasks"], raw["fixes"], raw["events"], raw["rejects"], raw.get("blames", {})
     redo: set[tuple[Any, str, str, str]] = set()
     for t in tasks:
         if t["state"] == "cancelled" and t.get("deliverable"):
             redo.add((t["deliverable"], t["engine"], str(t["line_row"]), t["line_stage"]))
-    sent_back: dict[tuple[Any, str, str, str], int] = {}  # a later fix task for the same key, row and stage sends the earlier ones back
+    sent_back: dict[tuple[Any, str, str, str], int] = {}
     for t in tasks:
         if t["line_mode"] == "fix" and t.get("deliverable"):
             for st in stage_numbers(t["line_stage"]):
@@ -281,7 +240,7 @@ def compute(raw: dict[str, Any], gated: set[tuple[str, str, str]], bars: dict[st
                 continue
             ok = base_ok and not sb and (adopted is True if is_gated else True)
             bl = blames.get(t["id"])
-            if bl:  # a failure counts only against the stage that should have caught it
+            if bl:
                 ok = blame_stage(bl["effective"]) != st
                 slot["blamed"] += int(not ok)
             elif not ok:
@@ -301,7 +260,7 @@ def compute(raw: dict[str, Any], gated: set[tuple[str, str, str]], bars: dict[st
                 slot["human"]["adopted"] += int(last == "adopted")
                 if last == "adopted":
                     slot["adopted_keys"].add(t["deliverable"])
-    for t in tasks:  # a blame outside the task's own stages adds one failed attempt to the blamed stage
+    for t in tasks:
         bl = blames.get(t["id"])
         bs = blame_stage(bl["effective"]) if bl else None
         if bs and bs not in stage_numbers(t["line_stage"]):
@@ -327,9 +286,6 @@ def compute(raw: dict[str, Any], gated: set[tuple[str, str, str]], bars: dict[st
 
 def attach(engines_rows: dict[str, list[dict[str, Any]]], store: Store, repo: Path | None = None, skills: dict[str, Path] | None = None,
            bars: dict[str, Any] = BARS) -> list[dict[str, Any]]:
-    """Rate every library row. `engines_rows` = engine id -> `engines.build` rows; `skills` = engine id -> its skills directory (to
-    find the cards in git; without `repo` no fixes are counted). Returns one dict per row with `process` (the row's score, summed
-    over the numeric stages), `stages` (each with `rating`), `prepare` and `weakest`."""
     raw = collect(store)
     gated = {(eng, r["n"], str(s["n"])) for eng, rows in engines_rows.items() for r in rows if r["process"]
              for s in r["process"]["stages"] if HUMAN_BY in s["by"].lower()}
@@ -399,7 +355,6 @@ def k_text(v: int) -> str:
 
 
 def tok_text(g: dict[str, Any], lang: str = "en") -> str:
-    """`median tokens 12.3K/attempt (measured 4) · per adopted deliverable 45K (2)`; empty without a measured attempt."""
     if not g.get("tok_n"):
         return ""
     out = f"{word('median', lang)} {k_text(g['tok_median'])}/{word('attempt', lang)} ({word('measured', lang)} {g['tok_n']})"
@@ -408,7 +363,6 @@ def tok_text(g: dict[str, Any], lang: str = "en") -> str:
 
 
 def score_text(g: dict[str, Any]) -> str:
-    """`pass/n · pct%`; `0/0` with no attempt."""
     return f"{g['pass']}/{g['n']}" + (f" · {g['pct']}%" if g["n"] else "")
 
 
@@ -419,14 +373,12 @@ def bars_text(bars: dict[str, Any] = BARS, lang: str = "en") -> str:
 
 
 def weak_processes(rated: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Rows that need fixing or rework: rework first, then by score."""
     weak = [r for r in rated if r["process"]["state"] in ("fix", "rework")]
     weak.sort(key=lambda r: (r["process"]["state"] != "rework", r["process"]["pct"] if r["process"]["pct"] is not None else 0))
     return weak
 
 
 def render(rated: list[dict[str, Any]], bars: dict[str, Any] = BARS, lang: str = "en", weak: bool = False) -> str:
-    """What `dah ratings` prints: per row its score and state, under it each stage's score, state, models, tokens."""
     rows = weak_processes(rated) if weak else rated
     out = [f"{word('head', lang)} · {bars_text(bars, lang)}"]
     shown = False

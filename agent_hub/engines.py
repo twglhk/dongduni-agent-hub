@@ -1,31 +1,3 @@
-"""Process cards, pattern cards and an engine's rows; the old `Line:` header of a brief. No LLM, standard library only.
-
-An engine's `library` is a full process of the process library (`processes/full/<id>.md`, read by processes.py: each of
-its sub-processes is one row, `n` = `<full>/<sub>`), or an older pattern library (a workspace `dah update` has not
-converted yet): one markdown table, a row per kind of deliverable:
-
-    | # | Type | Lane · skill | Process | Pattern | Model · effort |
-    | 1 | Storyboard | story · layout | confirmed v2 (process/storyboard.md) | confirmed | 1 sonnet/medium; 2-3 opus/high |
-
-The columns are found by header name. A process card is `<skills>/<skill>/references/process/<name>.md`: a first line
-`# Process: <type> — v2`, a `Status: confirmed` line and a table of stages (columns `#`, `Stage`, `Input`, `Output`,
-`Gate`, `Passed by`, `Pattern card`). A pattern card is the file the `Pattern card` cell names (`patterns/<name>.md`,
-below the skill's `references/`): a title ending `— v2` and a `## Status` heading followed by the status line.
-Statuses: confirmed and tuned are green, collecting, draft and reviewed amber, anything else (or no file) grey.
-
-A brief starts with a `Line:` header that says which row and stage the task works on:
-
-    Line: #3 Storyboard · stage 2 · process confirmed · pattern confirmed · make
-    Line: #3 Storyboard · stage 1-2 · process draft · pattern draft · prepare
-    Line: none · chore: move the exports folder
-
-Modes: `prepare` (build or fix the method itself), `make` (run it), `fix` (send-back of earlier work). `make` is refused
-while the row's process is not confirmed or its pattern is neither confirmed nor tuned. `config.require_line` turns the
-gate on for `dah task`; without it the header is read when it is there and nothing is refused. Headers that name the
-process library (`Line: <full> / <sub> · …`) are line.py's; `line_fields` reads both shapes, and an old `#<row>` header
-of a converted library maps through the full process's `Old #` column.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -115,7 +87,6 @@ def _full_home(path: Path) -> Path | None:
 
 
 def library(path: Path) -> list[dict[str, str]]:
-    """Rows of the library table: {n, type, lane, skill, process_text, pattern_text, model_text}. Missing file -> []."""
     if home := _full_home(path):
         from . import processes
         keep = ("n", "old", "type", "lane", "lanes", "skill", "process_text", "pattern_text", "model_text")
@@ -144,7 +115,6 @@ def library_rows(text: str) -> list[dict[str, str]]:
 
 
 def pattern_card(root: Path, rel: str) -> dict[str, Any]:
-    """{path, exists, version, status, color}. A missing file is `exists: False`."""
     text = _read(root / rel)
     if not text:
         return {"path": rel, "exists": False, "version": None, "status": "", "color": "grey"}
@@ -161,8 +131,6 @@ def pattern_card(root: Path, rel: str) -> dict[str, Any]:
 
 
 def parse_process(root: Path, skill: str, rel: str) -> dict[str, Any] | None:
-    """A process card: {path, type, version, status, stages: [{n, name, input, output, gate, by, card}]}; None if no file.
-    `root` is the skills directory; pattern card paths are resolved below `<root>/<skill>/references/`."""
     text = _read(root / rel)
     if not text:
         return None
@@ -195,8 +163,6 @@ def parse_process(root: Path, skill: str, rel: str) -> dict[str, Any] | None:
 
 
 def build(library_path: Path, skills: Path) -> list[dict[str, Any]]:
-    """Every library row with its process card read in. `status` fields are the card's word when a card is found, else the
-    table cell's first word; `process` is the parsed card or None."""
     if home := _full_home(library_path):
         from . import processes
         return processes.engine_rows(home, library_path.stem, skills)
@@ -223,19 +189,14 @@ def _pattern_status(row: dict[str, str], proc: dict[str, Any] | None) -> str:
 
 
 def confirmed(row: dict[str, Any]) -> bool:
-    """Process confirmed, and pattern confirmed or tuned."""
     return row["process_status"] == "confirmed" and row["pattern_status"] in GREEN
 
-
-# ---------------------------------------------------------------- what a lane runs
 
 _SKILL_CALL = re.compile(r"""skill\(\s*["']([A-Za-z0-9_-]+)["']\s*\)""")
 
 
 def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None = None, lane: str = "",
                 home: Path | None = None) -> list[dict[str, Any]]:
-    """Skills a lane runs: `skill("name")` mentions in its role file, plus the skill column of the library rows it owns.
-    `found` says whether a folder of that name exists in the skills directory."""
     names = list(dict.fromkeys(_SKILL_CALL.findall(role_text)))
     for r in rows or []:
         if lane in (r.get("lanes") or [r["lane"]]) and r["skill"] and r["skill"] not in names:
@@ -244,8 +205,6 @@ def lane_skills(role_text: str, skills: Path, rows: list[dict[str, Any]] | None 
 
 
 def row_view(rows: list[dict[str, Any]], row: str | None, stage: str | None) -> dict[str, Any] | None:
-    """The process a task runs: {row, type, version, status, stages: [{n, name}], now} for library row `row`; None when unknown.
-    `now` is the stage the lane named with `dah stage`, else the one the Line header names."""
     hit = next((r for r in rows if row and r["n"].upper() == str(row).upper()), None)
     if hit is None:
         return None
@@ -254,14 +213,11 @@ def row_view(rows: list[dict[str, Any]], row: str | None, stage: str | None) -> 
             "stages": [{"n": s["n"], "name": s["name"]} for s in p["stages"]] if p else [], "now": stage or None}
 
 
-# ---------------------------------------------------------------- the Line: header
-
 def first_line(brief: str) -> str:
     return next((ln.strip() for ln in brief.splitlines() if ln.strip()), "")
 
 
 def stage_of(brief: str) -> str | None:
-    """`stage 3` or `stage 2-4` on the header -> "3" / "2-4"; None when it names none."""
     m = _STAGE.search(first_line(brief))
     return re.sub(r"\s+", "", m.group(1)).replace("–", "-") if m else None
 
@@ -286,8 +242,6 @@ def parse_line(brief: str) -> tuple[str | None, str | None, str | None]:
 
 
 def line_fields(brief: str, legacy: tuple[str, list[dict[str, Any]]] | None = None) -> dict[str, str | None]:
-    """What the task row keeps of the header: line_row, line_stage, line_mode. All None when the brief has no valid header.
-    `legacy` is the converted full process of the lane's engine (processes.full_file), to read an old `#<row>` header."""
     from . import line
     try:
         brief = line.translate_legacy(brief, legacy)
@@ -302,7 +256,6 @@ def line_fields(brief: str, legacy: tuple[str, list[dict[str, Any]]] | None = No
 
 
 def gate(brief: str, rows: list[dict[str, Any]]) -> tuple[str | None, str | None]:
-    """Pass -> (row, mode); a chore -> (None, None). Refuse -> ValueError with the reason and the expected shape."""
     row, mode, err = parse_line(brief)
     if err:
         raise ValueError(f"{err}\nStart the brief with:\n{FORMAT}")
@@ -321,10 +274,7 @@ def gate(brief: str, rows: list[dict[str, Any]]) -> tuple[str | None, str | None
     return row, mode
 
 
-# ---------------------------------------------------------------- text view
-
 def pipelines(rows: list[dict[str, Any]]) -> str:
-    """`dah engine show` body: each row as a pipeline of stages with the status of its cards."""
     if not rows:
         return "  (no library rows)"
     out = []
@@ -345,16 +295,12 @@ def pipelines(rows: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
-# ---------------------------------------------------------------- the engine map: skills, hand-written part, snapshots
-
-SNAP_KEEP = 60           # weekly snapshots kept per engine
-HASH_FILES = 200         # files read per skill when fingerprinting
+SNAP_KEEP = 60
+HASH_FILES = 200
 HASH_BYTES = 1 << 18
 
 
 def read_map(path: Path) -> dict[str, Any]:
-    """The hand-written part of an engine map (`engine.json`): {notes, tools: [{name, note}], experiments: [{name, status, note}]}.
-    Anything else in the file is ignored; a missing or broken file gives empty lists."""
     try:
         raw = json.loads(_read(path) or "{}")
     except ValueError:
@@ -402,7 +348,6 @@ def _skill_hash(skills: Path, name: str, files: list[Path]) -> str:
 
 
 def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Every folder of the skills directory: {name, files, hash, lanes: [lane ids whose role file or library rows name it]}."""
     try:
         names = sorted(p.name for p in skills.iterdir() if p.is_dir() and not p.name.startswith("."))
     except OSError:
@@ -416,8 +361,6 @@ def skill_list(skills: Path, lane_skills_by_lane: dict[str, list[dict[str, Any]]
 
 
 def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
-    """Skills engine `eid` names: per lane the `skill("x")` mentions of its role file and the library rows it owns, plus the
-    engine's own `skill_names` (under the key ""). {lane id or "": [{name, found}]}."""
     e = cfg.engines[eid]
     skills_dir = skills_root(cfg.home, e.skills)
     rows = library(cfg.home / e.library) if e.library else []
@@ -433,9 +376,6 @@ def named_skills(cfg: Config, eid: str) -> dict[str, list[dict[str, Any]]]:
 
 
 def engine_skills(cfg: Config, eid: str, by_lane: dict[str, list[dict[str, Any]]] | None = None) -> list[dict[str, Any]]:
-    """The skills one engine's tab lists: {name, files, hash, lanes, shared}. An engine with a skills directory of its own lists every
-    folder of it. Engines that share one directory list only what its lanes name (or its `skill_names`), and a folder
-    that lanes of two engines name is `shared: true` (the tab shows it once under a shared label)."""
     e = cfg.engines[eid]
     skills_dir = skills_root(cfg.home, e.skills)
     mine = by_lane if by_lane is not None else named_skills(cfg, eid)
@@ -443,7 +383,7 @@ def engine_skills(cfg: Config, eid: str, by_lane: dict[str, list[dict[str, Any]]
     for s in out:
         s["shared"] = False
     sharers = [oid for oid, o in cfg.engines.items() if oid != eid and (o.skills or SKILLS_DEFAULT) == (e.skills or SKILLS_DEFAULT)]
-    if not sharers:  # its folder is its own: everything in it belongs to it
+    if not sharers:
         return out
     own = {s["name"] for ss in mine.values() for s in ss}
     others: set[str] = set()
@@ -460,7 +400,6 @@ def _card_text(c: dict[str, Any] | None) -> str:
 
 
 def snapshot(lanes: list[str], skills: list[dict[str, Any]], rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
-    """What a week-to-week comparison reads: lanes, skill fingerprints, and per library row the card versions and statuses."""
     return {"at": now, "lanes": sorted(lanes), "skills": {s["name"]: s["hash"] for s in skills},
             "rows": {r["n"]: {"type": r["type"], "process": " ".join(x for x in (f"v{r['process']['version']}" if r["process"] and r["process"]["version"] else "",
                                                                                 r["process_status"]) if x),
@@ -469,8 +408,6 @@ def snapshot(lanes: list[str], skills: list[dict[str, Any]], rows: list[dict[str
 
 
 def diff(old: dict[str, Any], new: dict[str, Any]) -> list[dict[str, str]]:
-    """Changes from snapshot `old` to `new`, as {kind, name, from, to} (the board words them in the reader's language).
-    Kinds: lane_added/removed, skill_added/changed/removed, row_added/removed, process (version or status), card (a stage's pattern card)."""
     out: list[dict[str, str]] = []
 
     def add(kind: str, name: str, a: str = "", b: str = "") -> None:
@@ -526,7 +463,6 @@ def load_snapshot(path: Path) -> dict[str, Any] | None:
 
 
 def baseline(cfg: Config, eid: str, now: float) -> dict[str, Any] | None:
-    """The snapshot "what changed" compares with: the newest one from an earlier week, else the oldest there is."""
     files = [(p, load_snapshot(p)) for p in snap_files(cfg, eid)]
     files = [(p, d) for p, d in files if d]
     if not files:
@@ -544,8 +480,6 @@ def live_snapshot(cfg: Config, eid: str, now: float) -> dict[str, Any]:
 
 
 def weekly(cfg: Config, now: float | None = None, log: Any = None) -> list[str]:
-    """Write this ISO week's snapshot of every engine that has none yet (the tower calls this from its tick; cheap when done).
-    Returns the files written. Old snapshots beyond SNAP_KEEP are removed."""
     now = time.time() if now is None else now
     wrote: list[str] = []
     for eid in cfg.engines:

@@ -1,28 +1,3 @@
-"""Done gate: a task whose commits touch a configured path must pass the project's command before its `done` reaches the hub.
-
-tower.json:
-  "done_gate": {"paths": ["src", "tests"],          # commits since the task started under these -> gate (empty = any commit)
-                "command": "python -m pytest -q",   # string (shell) or argv list; exit 0 = pass
-                "setup": "...", "verify": "...",    # optional: prepare the tree, then check it is ready (up to 3 tries)
-                "timeout": 1800, "memory_mb": 8192, # seconds per step; ceiling on the command's process tree (0 = off)
-                "sparse": ["src", "tests"]}         # optional sparse checkout of the gate worktree
-
-`dah report done` with such commits does not report: it records the report as pending, starts the gate in the
-background and returns at once. The tower's tick delivers the verdict: pass -> the done goes to the hub as usual; fail ->
-a tell to the lane with the last lines and the log path, and the lane fixes, commits and sends `report done` again.
-While a gate is pending the nudger treats the lane as busy.
-
-How the gate runs (it never makes a fresh full checkout per report):
-- ONE persistent worktree, `<dah root>/done-gate` (scratch.dah_root: outside the project), reused for every gate and
-  never swept. Each gate does `checkout --detach -f <sha>` and `clean -ffd` (ignored build caches stay). Objects are the
-  repository's own (a git worktree shares the object store; Git LFS objects come from the shared `.git/lfs`).
-- ONE gate at a time: a lock folder holding the runner's pid; a dead holder's lock is taken over.
-- `setup` then `verify` before the command; the command does not run until verify passes (setup is retried up to
-  SETUP_TRIES times). Without `verify`, setup's exit code is the check.
-- Every step has the timeout; the command's process tree is stopped when its memory passes `memory_mb` (POSIX `ps`; on
-  Windows the ceiling is not enforced and the log says so).
-"""
-
 from __future__ import annotations
 
 import json
@@ -45,12 +20,11 @@ DEFAULT_MEMORY_MB = 8192
 SETUP_TRIES = 3
 TAIL = 6
 POLL = 1.0
-LOCK_STALE = 60          # a lock folder with no pid file this old is taken over
-NO_PID_GRACE = 120       # a pending gate whose runner pid was never written is failed after this
+LOCK_STALE = 60
+NO_PID_GRACE = 120
 
 
 def parse(raw: Any) -> dict[str, Any]:
-    """tower.json `done_gate` -> normalised dict ({} = no gate). Raises ValueError on a bad shape."""
     if not raw:
         return {}
     if not isinstance(raw, dict):
@@ -85,8 +59,6 @@ def parse(raw: Any) -> dict[str, Any]:
             "timeout": timeout, "memory_mb": memory, "sparse": clean(sparse)}
 
 
-# ---------------------------------------------------------------- report side (`dah report done`)
-
 def gate_dir(cfg: "Config") -> Path:
     return cfg.state_dir / "donegate"
 
@@ -97,7 +69,6 @@ def head(repo: Path) -> str:
 
 
 def changed(repo: Path, started: float | None, paths: list[str]) -> list[str]:
-    """Files under `paths` that commits since `started` touched ([] when none, no start time or no git)."""
     if not started:
         return []
     p = git(repo, "log", f"--since=@{int(started)}", "--name-only", "--format=", "--", *(paths or ["."]))
@@ -121,7 +92,6 @@ def running(cfg: "Config", task_id: int) -> bool:
 
 def start(cfg: "Config", task: dict[str, Any], lane: str, text: str, atts: list[str],
           spawn: Callable[[list[str], Path], int] | None = None) -> str:
-    """Remember the report, start the gate in the background, and return what to tell the lane."""
     repo = cfg.lane_dir(lane)
     sha = head(repo)
     if not sha:
@@ -168,8 +138,6 @@ def _spawn(argv: list[str], cwd: Path) -> int:
     return p.pid
 
 
-# ---------------------------------------------------------------- tower side (tick)
-
 def tail(log: Path, n: int = TAIL) -> list[str]:
     try:
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -193,7 +161,7 @@ def poll(cfg: "Config", alive: Callable[[int | None], bool] | None = None,
             try:
                 r = json.loads(res.read_text(encoding="utf-8"))
             except (OSError, ValueError):
-                continue  # still being written
+                continue
         else:
             pid = info.get("pid")
             gone = (not alive(pid)) if pid else now() - float(info.get("at") or 0) > NO_PID_GRACE
@@ -219,10 +187,7 @@ def refusal(info: dict[str, Any], r: dict[str, Any]) -> str:
             f"Last lines:\n{lines}\nLog: {r.get('log')}\nFix it, commit, and send `dah report done` again.")
 
 
-# ---------------------------------------------------------------- runner (a background process)
-
 def tree_mb(pid: int) -> int | None:
-    """RSS of pid and its descendants in MB; None where `ps` cannot tell (Windows)."""
     if procs.WINDOWS:
         return None
     try:
@@ -252,7 +217,6 @@ def tree_mb(pid: int) -> int | None:
 
 def run_step(cmd: str | list[str], cwd: Path, log: Any, timeout: float, memory_mb: int = 0,
              measure: Callable[[int], int | None] = tree_mb, env: dict[str, str] | None = None) -> tuple[int, str]:
-    """Run one step with its output in log. (exit code, why it was stopped or '')."""
     log.flush()
     try:
         p = subprocess.Popen(cmd, shell=isinstance(cmd, str), cwd=str(cwd), stdin=subprocess.DEVNULL, stdout=log,
@@ -291,8 +255,6 @@ def run_step(cmd: str | list[str], cwd: Path, log: Any, timeout: float, memory_m
 
 
 class Lock:
-    """One gate at a time: a folder holding the runner's pid. A dead holder's lock is taken over."""
-
     def __init__(self, path: Path, alive: Callable[[int | None], bool] = procs.alive, sleep: Callable[[float], None] = time.sleep):
         self.path, self.alive, self.sleep = path, alive, sleep
 
@@ -357,7 +319,6 @@ def same_repo(repo: Path, wt: Path) -> bool:
 
 
 def prepare(repo: Path, wt: Path, sha: str, sparse: list[str], log: Any) -> str:
-    """Bring the persistent gate worktree to sha. '' = ready, else what went wrong."""
     def g(*args: str, at: Path = wt) -> bool:
         p = git(at, *args, timeout=1800)
         log.write((p.stdout or "") + (p.stderr or ""))
@@ -371,7 +332,7 @@ def prepare(repo: Path, wt: Path, sha: str, sparse: list[str], log: Any) -> str:
     if not (wt / ".git").exists():
         g("worktree", "prune", at=repo)
         if wt.exists():
-            shutil.rmtree(wt, ignore_errors=True)  # a half-made gate tree under the dah root
+            shutil.rmtree(wt, ignore_errors=True)
         wt.parent.mkdir(parents=True, exist_ok=True)
         if not g("worktree", "add", "--detach", "--no-checkout", str(wt), sha, at=repo):
             return "git worktree add failed"
@@ -385,7 +346,7 @@ def prepare(repo: Path, wt: Path, sha: str, sparse: list[str], log: Any) -> str:
             return "git sparse-checkout set failed"
     if not g("checkout", "--detach", "-f", sha):
         return f"git checkout {sha[:8]} failed"
-    g("clean", "-ffdq")  # leftovers of the last gate; ignored caches stay
+    g("clean", "-ffdq")
     return ""
 
 
@@ -430,7 +391,7 @@ def run_gate(cfg: "Config", sha: str, result: Path, log_path: Path, lock: Lock |
                         state = "pass"
                     elif not why:
                         why = f"exit code {rc}"
-            except Exception as e:  # the verdict is always written
+            except Exception as e:
                 why = f"{type(e).__name__}: {e}"
             finally:
                 lock.release()

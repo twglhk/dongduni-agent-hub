@@ -152,7 +152,7 @@ def _drop(member: str, lg: _Login | None = None) -> None:
             procs.kill(cur.proc.pid)
     for pipe in (cur.proc.stdin, cur.proc.stdout):
         if pipe is not None:
-            with contextlib.suppress(OSError):  # the child may already have dropped its end
+            with contextlib.suppress(OSError):
                 pipe.close()
 
 

@@ -1,10 +1,3 @@
-"""Process handling that works on Linux, macOS and Windows.
-
-POSIX: children start in their own session so a stop reaches the whole group (an agent CLI and the tools it
-spawned). Windows: children start in a new process group without a console window, a stop is `taskkill /T`
-(the tree), and liveness is asked of the OS instead of `os.kill(pid, 0)`, which on Windows terminates the process.
-"""
-
 from __future__ import annotations
 
 import ctypes
@@ -25,7 +18,6 @@ TASKKILL_TIMEOUT = 15
 
 
 def detached() -> dict[str, Any]:
-    """Popen keyword arguments for a child that outlives a console and can be stopped as a group."""
     if WINDOWS:
         flags = subprocess.CREATE_NEW_PROCESS_GROUP | getattr(subprocess, "CREATE_NO_WINDOW", 0)
         return {"creationflags": flags}
@@ -89,7 +81,7 @@ def _signal(pid: int, sig: int, group: bool) -> None:
         else:
             os.kill(pid, sig)
     except (ProcessLookupError, PermissionError):
-        if group:  # not a group leader (started by hand): signal the process itself
+        if group:
             try:
                 os.kill(pid, sig)
             except (ProcessLookupError, PermissionError):
@@ -174,7 +166,6 @@ def same_process(pid: int | None, started: str | None) -> bool:
 
 
 def reap(pid: int) -> bool:
-    """POSIX: True if pid was our finished child (now reaped). Windows has no zombies to reap."""
     if WINDOWS:
         return False
     try:
@@ -187,9 +178,6 @@ NPM_SHIM_JS = re.compile(r'"%(?:~?dp0%?)\\?([^"%]+?\.(?:c|m)?js)"', re.I)
 
 
 def command(binary: str) -> list[str]:
-    """argv prefix that runs an agent CLI. On Windows an npm-installed CLI is a `.cmd` shim; running it goes
-    through cmd.exe, which cuts arguments at newlines and mangles quotes, and prompts are multi-line. So a
-    shim that wraps a Node script runs as `node <script>` instead."""
     path = shutil.which(binary) or binary
     if not path.lower().endswith((".cmd", ".bat")):
         return [path]

@@ -70,3 +70,7 @@ Only with `claude_accounts` on (default off: one shared account, none of the cod
 - It runs on Linux, macOS and Windows. Start, check and stop processes only through `procs.py`; never `os.kill(pid, 0)` (it kills on Windows), `os.killpg` or `start_new_session` directly. Read and write text files with `encoding="utf-8"`.
 - Releases: follow [docs/RELEASING.md](docs/RELEASING.md) (bump `__version__`, push tag `vX.Y.Z`; CI tests on all three systems and publishes `dongduni-agent-hub` to PyPI).
 - Run `python3 -m unittest discover -s tests -t .` before you finish; it must print `OK`.
+
+## Module notes
+
+The code carries no comments or docstrings. Design notes for gates, hooks, ratings, process cards, the machine card and other modules are in [docs/internals.md](docs/internals.md).

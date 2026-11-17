@@ -1,24 +1,3 @@
-"""The hook every tower-opened Claude Code lane runs (`--settings`), and the state it keeps per lane.
-
-  PreToolUse    runs the gates (`gates.py`). Deny = exit 2 with the reason on stderr (Claude Code hands stderr to
-                the model and blocks the call). Allow = exit 0. A gate that crashes never blocks work: the call
-                goes through and the traceback goes to `.tower/state/hooks/gate-errors.log`. Every deny is
-                appended to the lane's `events.jsonl` as `GateDeny`, so an audit can count which rules fire.
-                It also hands the main agent any urgent tell waiting for the lane (`dah tell --urgent`) as hook
-                context, so a stop order lands at the lane's next tool call, mid-turn. Tells older than 2 h are
-                dropped.
-  other events  (StopFailure) one line each in the lane's `events.jsonl`; `apierrors.py` reads them and pushes
-                "your login expired" and the like to people. Nothing is printed: hook stdout can steer the model.
-
-State: `<workspace>/.tower/state/hooks/<lane>/` (events.jsonl, urgent/). The lane comes from TOWER_HOME and
-TOWER_LANE, which the tower sets; a session started without the tower has neither, so it still gets the gates but
-no log and no urgent tells. `DAH_GATES=off` in a lane's env turns the gates off for that lane.
-
-Run as `python <path>/hooks.py`: no package install and no PYTHONPATH needed, only the standard library.
-`python hooks.py opencode-plugin` prints an OpenCode plugin that sends OpenCode's tool calls through the same gates
-(that is where `apply_patch`, and so the binary guard, exists); save it as `.opencode/plugin/dah-gates.ts`.
-"""
-
 from __future__ import annotations
 
 import json
@@ -32,15 +11,15 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-if __package__ in (None, ""):  # run as a script by its path
+if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agent_hub import gates  # noqa: E402
 
 TOWER_DIR = ".tower"  # = config.TOWER_DIR; not imported so the hook loads nothing it does not need
-URGENT_MAX_AGE_S = 7200  # a stop order that old is history: drop it instead of replaying it
-MAX_LINES = 4000  # events.jsonl keeps its newest half past this
+URGENT_MAX_AGE_S = 7200
+MAX_LINES = 4000
 HOOK_TIMEOUT_S = 20
-EVENTS = ("StopFailure",)  # recorded besides PreToolUse; add here to record more
+EVENTS = ("StopFailure",)
 GATE_ERRORS = "gate-errors.log"
 GATE_ERRORS_MAX_BYTES = 512 * 1024
 _ERROR_HEADER = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d ", re.M)
@@ -89,8 +68,6 @@ def gate_errors(home: Path) -> int:
         return 0
 
 
-# ---------------------------------------------------------------- urgent tells
-
 def post_urgent(home: Path, lane: str, text: str, now: float | None = None, source: str = "") -> Path:
     d = lane_dir(home, lane) / "urgent"
     d.mkdir(parents=True, exist_ok=True)
@@ -110,8 +87,6 @@ def _stamp(f: Path) -> float | None:
 
 
 def take_urgent(home: Path, lane: str, now: float | None = None) -> list[str]:
-    """Oldest first. Each file is removed as it is read; one that cannot be removed (another hook took it) is
-    skipped, so a message arrives once."""
     d = lane_dir(home, lane) / "urgent"
     t = time.time() if now is None else now
     out: list[str] = []
@@ -148,8 +123,6 @@ def drop_urgent(home: Path, lane: str, source: str) -> int:
 
 
 def urgent_tell(cfg: Any, lane: str, text: str) -> str:
-    """`dah tell --urgent LANE TEXT`: drop the message for the lane and its parallel instances; returns the line to
-    print. Raises ValueError for a lane that is not a team lane."""
     from .config import base_lane
     if base_lane(lane) not in cfg.team():
         raise ValueError(f"{lane} is not a team lane (team: {', '.join(cfg.team()) or 'none yet'})")
@@ -167,8 +140,6 @@ def pending_urgent(home: Path, lane: str) -> int:
     except OSError:
         return 0
 
-
-# ---------------------------------------------------------------- event log
 
 def _clip(v: Any, n: int) -> Any:
     return v[:n] if isinstance(v, str) else v
@@ -199,14 +170,11 @@ def append_event(home: Path, lane: str, rec: dict[str, Any]) -> None:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-# ---------------------------------------------------------------- the hook
-
 def pretool(data: dict[str, Any], home: Path | None, lane: str | None, *, user: str | None = None,
             user_home: str | None = None) -> tuple[int, str, str]:
-    """(exit code, stdout, stderr) for one PreToolUse payload."""
     tool = str(data.get("tool_name") or "")
     notice = ""
-    if home and lane and not data.get("agent_id") and data.get("runtime") != "opencode":  # the main agent reads it
+    if home and lane and not data.get("agent_id") and data.get("runtime") != "opencode":
         try:
             msgs = take_urgent(home, lane)
         except Exception:
@@ -264,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         raw = sys.stdin.buffer.read().decode("utf-8", errors="replace")
         code, out, err = handle(raw)
-    except Exception:  # the hook must never break a turn
+    except Exception:
         log_error(Path(os.environ["TOWER_HOME"]) if os.environ.get("TOWER_HOME") else None,
                   os.environ.get("TOWER_LANE"), "hook")
         return 0
@@ -276,8 +244,6 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.flush()
     return code
 
-
-# ---------------------------------------------------------------- wiring
 
 HOOK_FILE = Path(__file__).resolve()
 _WINDOWS = os.name == "nt"
@@ -297,7 +263,6 @@ def hook_command() -> str:
 
 
 def claude_hooks() -> dict[str, Any]:
-    """The `hooks` entries every tower-opened Claude Code lane gets (merged into its `--settings`)."""
     cmd = hook_command()
     out: dict[str, Any] = {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd,
                                                                        "timeout": HOOK_TIMEOUT_S}]}]}
@@ -307,7 +272,6 @@ def claude_hooks() -> dict[str, Any]:
 
 
 def settings_file(home: Path, lane: str) -> Path:
-    """A `--settings` file with only these hooks, for a headless lane."""
     d = lane_dir(home, lane)
     d.mkdir(parents=True, exist_ok=True)
     path = d / "settings.json"

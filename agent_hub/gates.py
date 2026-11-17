@@ -1,23 +1,3 @@
-"""Safety gates run before a lane's tool call (the PreToolUse hook in `hooks.py`). Pure functions, no state.
-
-  kill    refuses a process kill whose pattern could hit the tower, other lanes or every process of the user
-          (`pkill -f "x" -n -u $(whoami)` on BSD reads `-n`, `-u` and the user name as extra patterns and kills
-          everything with the user name in its command line), bare names (`pkill node`), `kill -1`, `kill 0`.
-  git     refuses sweeping the shared work tree: `git stash`, `reset --hard`, `clean`, `checkout -- .`,
-          `restore .`, and a `git commit` without `-- <paths>` that would carry another lane's staged deletions.
-          Off inside a linked worktree (a lane with its own checkout may reset it).
-  env     refuses reading `.env` files (secrets); `.env.example` is fine.
-  binary  refuses OpenCode's `apply_patch` (a text diff) on an existing binary file: one such call once stored
-          70 MB in session history. Claude Code's Edit needs a Read first, so it is not guarded.
-
-Commands are read as POSIX shell (Claude Code runs Bash, also on Windows through Git Bash). Quotes, separators,
-comments and heredocs are understood: a heredoc body is data (`cat > x.sh <<EOF ... pkill ... EOF` writes a file,
-it kills nothing) unless it is fed to a shell (`bash <<EOF`), then it is checked as commands; so is `sh -c "..."`
-and `eval "..."`. `taskkill /IM name` is checked like `killall name`.
-
-`check(tool, args, cwd)` returns (gate, message) for a call that must be refused, else None.
-"""
-
 from __future__ import annotations
 
 import codecs
@@ -29,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------- shell lexing
 
 SEPS = ";&|\n()`"
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
@@ -47,7 +26,7 @@ PREFIX_VALUE_OPTS = {
 PREFIX = set(PREFIX_VALUE_OPTS)
 PREFIX_POSITIONALS = {"timeout": 1}
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-MAX_DEPTH = 3  # nested `bash -c` / heredoc-to-shell levels that are still checked
+MAX_DEPTH = 3
 
 
 @dataclass
@@ -57,7 +36,6 @@ class Cmd:
 
 
 def _word_at(s: str, i: int) -> tuple[str, int]:
-    """A shell word starting at i (quotes removed), and the index after it."""
     out = ""
     n = len(s)
     while i < n and s[i] not in " \t" and s[i] not in SEPS and s[i] not in "<>":
@@ -85,10 +63,8 @@ def _word_at(s: str, i: int) -> tuple[str, int]:
 
 
 def parse(cmd: str) -> list[Cmd]:
-    """Quote-aware split into simple commands. Separators: ; & | newline ( ) backtick. Heredoc bodies are attached
-    to the command that reads them, never lexed as commands."""
     cmds: list[Cmd] = [Cmd()]
-    pending: list[tuple[str, bool, Cmd]] = []  # (delimiter, strip leading tabs, owner) waiting for the next newline
+    pending: list[tuple[str, bool, Cmd]] = []
     cur, has = "", False
 
     def flush() -> None:
@@ -117,13 +93,13 @@ def parse(cmd: str) -> list[Cmd]:
             i = j
         elif c == "\\" and i + 1 < n:
             i += 1
-            if cmd[i] != "\n":  # backslash-newline continues the line
+            if cmd[i] != "\n":
                 cur += cmd[i]
                 has = True
-        elif c == "#" and not has:  # a comment runs to the end of the line
+        elif c == "#" and not has:
             while i + 1 < n and cmd[i + 1] != "\n":
                 i += 1
-        elif cmd.startswith("<<<", i):  # a here-string: its word is data, not a heredoc
+        elif cmd.startswith("<<<", i):
             cur += "<<<"
             has = True
             i += 3
@@ -153,13 +129,12 @@ def parse(cmd: str) -> list[Cmd]:
             has = True
         i += 1
     flush()
-    for delim, strip, owner in pending:  # `<<EOF` with no newline after it: the body is empty
+    for delim, strip, owner in pending:
         owner.heredocs.append("")
     return [c for c in cmds if c.words or c.heredocs]
 
 
 def _read_bodies(cmd: str, i: int, pending: list[tuple[str, bool, Cmd]]) -> int:
-    """Consume the heredoc bodies that start at i, in order; return the index after the last delimiter line."""
     lines = cmd[i:].split("\n")
     k = 0
     pos = i
@@ -199,7 +174,6 @@ def _skip_prefix(words: list[str], k: int) -> int:
 
 
 def _head(words: list[str]) -> tuple[str, list[str]]:
-    """The program name (prefixes such as sudo and VAR=x skipped, path dropped) and its arguments."""
     k = 0
     while k < len(words):
         if _ASSIGN.match(words[k]):
@@ -215,7 +189,6 @@ def _head(words: list[str]) -> tuple[str, list[str]]:
 
 
 def inner_scripts(c: Cmd) -> list[str]:
-    """Text that this command runs as shell: `sh -c "..."`, `eval ...`, a heredoc fed to a shell."""
     name, args = _head(c.words)
     out: list[str] = []
     if name in SHELLS:
@@ -230,7 +203,6 @@ def inner_scripts(c: Cmd) -> list[str]:
 
 
 def _walk(cmd: str, depth: int = 0):
-    """Every simple command in cmd, including those a shell runs from -c, eval or a heredoc."""
     for c in parse(cmd):
         if c.words:
             yield c
@@ -239,11 +211,8 @@ def _walk(cmd: str, depth: int = 0):
                 yield from _walk(script, depth + 1)
 
 
-# ---------------------------------------------------------------- kill gate
-
-PKILL_ARG_OPTS = set("FGgJMNPstUu")  # BSD pkill/pgrep options that take a value (`man pkill`)
-# Words a kill pattern must never contain: agent-hub's own processes, the agents it runs, and the user (the user
-# name and home are in almost every command line).
+PKILL_ARG_OPTS = set("FGgJMNPstUu")
+# the user name and home are in almost every command line, so a pattern holding them matches everything
 SHARED = ["agent_hub", "agent-hub", "dah", "tower", "opencode", "claude", "codex", "tmux", "cloudflared", "caffeinate",
           "whoami", "$user", "${user}", "$home", "${home}", "~/", "%username%", "%userprofile%"]
 BARE = {"node", "bun", "deno", "python", "python3", "py", "pythonw", "zsh", "bash", "sh", "login", "uv", "uvx",
@@ -275,7 +244,7 @@ def pkill_problems(args: list[str], user: str, home: str) -> list[str]:
         if not a.startswith("-") or a == "-":
             break
         if re.fullmatch(r"-[A-Za-z]+", a) and a[-1] in PKILL_ARG_OPTS:
-            i += 1  # its value is the next word
+            i += 1
         i += 1
     rest = args[i:]
     if not rest:
@@ -295,7 +264,7 @@ def killall_problems(args: list[str], user: str, home: str) -> list[str]:
     while i < len(args):
         a = args[i]
         if a in ("-u", "-t"):
-            i += 1  # a user or tty, not a process name
+            i += 1
         elif a == "-c":
             i += 1
             names.append(args[i] if i < len(args) else "")
@@ -355,7 +324,6 @@ KILL_MESSAGE = ("Kill gate refused this command. Nothing ran.\n{problems}\n"
                 "The tower, the board and every lane share this machine. Kill by a PID you started (`$!`, a pidfile), "
                 "or `pkill -n -f \"<specific script path>\"` with every option before one specific pattern.")
 
-# ---------------------------------------------------------------- git sweep gate
 
 _GIT_DENY = [
     (re.compile(r"^stash\b"), "git stash"),
@@ -367,7 +335,6 @@ _GIT_DENY = [
 
 
 def linked_worktree(path: str) -> bool:
-    """True inside a `git worktree add` checkout (its `.git` is a file): that tree belongs to one lane."""
     try:
         p = Path(path).resolve()
     except (OSError, RuntimeError):
@@ -386,7 +353,6 @@ def linked_worktree(path: str) -> bool:
 
 
 def _staged_removals(cwd: str, all_tracked: bool) -> list[str]:
-    """Paths the next commit would delete or rename away: staged D/R, plus unstaged deletions with `commit -a`."""
     found: list[str] = []
     runs = [["diff", "--cached", "--name-status", "-M"]] + ([["diff", "--name-status", "-M"]] if all_tracked else [])
     for args in runs:
@@ -403,7 +369,6 @@ def _staged_removals(cwd: str, all_tracked: bool) -> list[str]:
 
 
 def commit_removal_problems(words: list[str], cwd: str) -> list[str]:
-    """`git commit` with no `-- <paths>` commits the whole index, so another lane's staged deletions ride along."""
     if "--" in words:
         return []
     flags = [w for w in words if w.startswith("-") and not w.startswith("--")]
@@ -422,7 +387,7 @@ def git_sweep_problems(cmd: str, cwd: str = "") -> list[str]:
         if name != "git":
             continue
         where = cwd
-        j = 0  # git's global options (-C dir, -c k=v, --no-pager ...)
+        j = 0
         while j < len(rest) and rest[j].startswith("-"):
             if rest[j] == "-C" and j + 1 < len(rest):
                 where = os.path.join(cwd or ".", rest[j + 1])
@@ -440,7 +405,6 @@ GIT_MESSAGE = ("Git sweep gate refused this command. Nothing ran.\n{problems}\n"
                "Every lane works in this tree. For a clean tree use `git worktree add <dir outside the repo> HEAD`; "
                "commit only your own files with `git commit -m \"...\" -- <paths>`.")
 
-# ---------------------------------------------------------------- .env read gate
 
 _ENV_NAME = re.compile(r"(^|/)\.env(\.[^/]+)?$")
 
@@ -451,8 +415,6 @@ def env_problems(path: str) -> list[str]:
         return [f"reading {path} is denied (secrets)"]
     return []
 
-
-# ---------------------------------------------------------------- binary patch guard (OpenCode apply_patch)
 
 CHUNK_BYTES = 64 * 1024
 _HEADER = re.compile(r"^\*\*\* (?:Update File|Delete File|Add File|Move to): (.+)$")
@@ -468,7 +430,6 @@ def patch_paths(patch_text: str, directory: str) -> list[str]:
 
 
 def is_binary_file(path: str) -> bool:
-    """Streams the file in chunks: True on any NUL byte or invalid UTF-8 (a character split across chunks is fine)."""
     p = Path(path)
     try:
         if not p.is_file():
@@ -503,7 +464,6 @@ def binary_problems(args: dict[str, Any], directory: str) -> list[str]:
 BINARY_MESSAGE = ("Binary patch guard refused apply_patch. Nothing was changed.\n{problems}\n"
                   "apply_patch is a text diff tool. Handle binary files with binary-aware tools (cp, mv, rm, a script).")
 
-# ---------------------------------------------------------------- one entry for the hook
 
 BASH_TOOLS = ("Bash", "bash")
 READ_TOOLS = ("Read", "read")
@@ -511,8 +471,6 @@ READ_TOOLS = ("Read", "read")
 
 def check(tool: str, args: dict[str, Any], cwd: str, user: str | None = None,
           home: str | None = None) -> tuple[str, str] | None:
-    """(gate, message) when the call must be refused, else None. Tool names are Claude Code's (`Bash`, `Read`) or
-    OpenCode's (`bash`, `read`, `apply_patch`)."""
     if not isinstance(args, dict):
         return None
     if tool in BASH_TOOLS:

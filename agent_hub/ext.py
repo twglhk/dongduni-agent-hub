@@ -1,26 +1,3 @@
-"""Workspace extensions. agent-hub is a skeleton; a workspace extends it from its own `.tower/`, which survives
-`dah update` and lives in the workspace's git:
-
-  .tower/board/index.html     replaces the built-in board (`/?builtin` still opens the built-in one)
-  .tower/board/extra.css|js   loaded by the built-in board (and by /old/); extra.js gets `window.dah` (sections, tabs, API calls)
-  .tower/board/<file>         served at /x/<file> to signed-in people (scripts, styles, images, fonts, data)
-  .tower/ext/*.py             Python run by the tower:
-      routes = {("GET", "stats"): fn, ("POST", "jira/sync"): fn}   → /api/x/stats, /api/x/jira/sync
-          fn(ctx, body) -> dict | (status, dict); ctx: cfg, store, me, query, log. Signed-in people only;
-          POST needs the board's `x-tower: 1` header like every built-in POST.
-      on_tick(ctx)                    after every tower tick; ctx: cfg, store, log, now
-      on_event(ctx, kind, data)       kind: report | item | decided | memo | task (data: that row)
-                                      | lane (data: lane, status, was, runtime, terminal)
-      on_notify(ctx, notes)           each push the tower sends people (title, lane, alert, the item's fields)
-      runtimes = {"name": cls}        an agent runtime: a subclass of runtimes.Adapter, used as "runtime": "name"
-      terminals = {"name": cls}       a terminal app for lane windows: a subclass of runtimes.Host
-      caps = {"name": fn}             a usage cap, used as `"cap": "name"` on an engine in tower.json; fn(ctx) returns a
-                                      reason to hold that engine's queued tasks, or None. ctx: cfg, store, log, now, engine
-
-Built-in routes and engine decisions are the contract and cannot be overridden. A failing extension is logged and
-skipped; it never stops the board or the tower. Files are reloaded when they change.
-"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -54,8 +31,6 @@ def board_extras(home: Path) -> dict[str, bool]:
 
 
 class Extensions:
-    """The `.tower/ext/*.py` modules of one workspace, reloaded when any of them changes."""
-
     def __init__(self, home: Path, log: Callable[[str], None] = print):
         self.dir = home / TOWER_DIR / EXT_DIR
         self.log = log
@@ -87,7 +62,7 @@ class Extensions:
                         spec.loader.exec_module(mod)
                         self._mods.append(mod)
                         loaded.append(path.name)
-                    except Exception as e:  # a broken extension is reported, the rest still load
+                    except Exception as e:
                         self.log(f"extension {path}: not loaded: {type(e).__name__}: {e}")
                 if sig:
                     self.log(f"extensions in {self.dir}: {', '.join(loaded) or 'none loaded'}")
@@ -106,7 +81,6 @@ class Extensions:
         return out
 
     def table(self, name: str) -> dict[str, Any]:
-        """A name -> value table the modules declare (`runtimes`, `terminals`), merged in file order."""
         out: dict[str, Any] = {}
         for mod in self.modules():
             value = getattr(mod, name, None)
@@ -131,8 +105,6 @@ _REGISTRY: dict[Path, Extensions] = {}
 
 
 def registry(home: Path, log: Callable[[str], None] | None = None) -> Extensions:
-    """One Extensions per workspace in this process, for code that needs what extensions register (runtimes,
-    terminals) without the tower's own instance. Load errors are logged by the tower; here they stay quiet."""
     key = Path(home).resolve()
     if key not in _REGISTRY:
         _REGISTRY[key] = Extensions(key, log or (lambda _msg: None))

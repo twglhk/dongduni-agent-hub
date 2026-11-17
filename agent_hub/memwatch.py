@@ -1,14 +1,3 @@
-"""Memory guard for the agent sessions the tower starts.
-
-A long agent session can grow to gigabytes. Every POLL_SECONDS one `ps` snapshot is read; a lane whose session
-process is over `memory_limit_mb` is listed in `heavy`. The engine then asks that lane's task for a handoff and
-renews the session (an idle session with no task is simply closed). Nothing here kills a process: the engine
-closes the session the usual way, so work is handed over, not lost.
-
-Which process belongs to which lane is told by markers: strings the lane's command line carries (the session id,
-or `--port N` for an OpenCode server). `ps` and the clock are injected so tests need no real processes.
-"""
-
 from __future__ import annotations
 
 import subprocess
@@ -27,7 +16,6 @@ class Proc:
 
 
 def parse_ps(text: str) -> list[Proc]:
-    """`ps -axo pid=,rss=,command=` output (rss in KB)."""
     out: list[Proc] = []
     for line in text.splitlines():
         parts = line.split(None, 2)
@@ -37,7 +25,6 @@ def parse_ps(text: str) -> list[Proc]:
 
 
 def read_ps() -> list[Proc]:
-    """The process table; empty where `ps` does not exist (Windows) or fails: the guard then does nothing."""
     try:
         r = subprocess.run(["ps", "-axo", "pid=,rss=,command="], capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
@@ -49,7 +36,7 @@ class MemWatch:
     def __init__(self, limit_mb: int, markers: Callable[[], dict[str, list[str]]], log: Callable[[str], None] = print,
                  ps: Callable[[], list[Proc]] = read_ps, clock: Callable[[], float] = time.monotonic) -> None:
         self.limit_mb, self.markers, self.log, self.ps, self.clock = limit_mb, markers, log, ps, clock
-        self.heavy: dict[str, int] = {}  # lane -> process MB, read by the engine every tick
+        self.heavy: dict[str, int] = {}
         self.last: float | None = None
 
     def poll(self, force: bool = False) -> None:
