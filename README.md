@@ -225,6 +225,8 @@ Optional, all off by default (`tower.json`): `"branch_sync": true` merges your c
 
 Every decision records who made it, and the hub can route an item to one person (`dah escalate ID --to ana`).
 
+Each person has screen settings of their own (the sliders icon in the board's top bar): the tab that opens first, text size, accent colour, and the order, folding and hiding of the Hub and Lanes tab sections. They are stored in the tower database per member (`member_prefs`), apply at once and only to that person's board, and a person can only read and write their own. `?default` in the board address ignores them. The hub changes them on a chat request with `dah prefs show|set|reset MEMBER` (for example `dah prefs set ana first_tab=history font=l accent=green hub.order=yours,asks lanes.hidden=reports`; an empty value is the default); with person hubs on, only the hub that serves that member can. Nothing to switch on.
+
 The hub can reorder the waiting work: `dah task bump ID` puts a queued team task first (the next free session of its lane takes it), `dah memo bump ID` puts a waiting infra memo first. A bump goes ahead of `fair_turns` once; after the task starts, turns go on as before. The latest bump goes in front of an earlier one.
 
 ### Team options in `tower.json`

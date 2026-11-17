@@ -291,5 +291,51 @@
     "fullTitle": "All hubs are taken right now",
     "fullSub": "Every person-hub place ({c}) is in use. You are number {p} in line, and the board has been told.",
     "fullKeep": "You can still send requests: the shared hub takes them until a place opens for you."
+  },
+  "pf": {
+    "title": "Screen settings",
+    "open": "Open screen settings",
+    "live": "Changes apply at once and only to your screen.",
+    "first": "Tab that opens first",
+    "font": "Text size",
+    "sample": "Aa",
+    "fonts": {
+      "s": "Small",
+      "m": "Normal",
+      "l": "Large"
+    },
+    "accent": "Accent colour",
+    "accents": {
+      "blue": "Blue",
+      "green": "Green",
+      "orange": "Orange",
+      "purple": "Purple",
+      "pink": "Pink"
+    },
+    "secs": {
+      "hub": "Hub tab sections",
+      "lanes": "Lanes tab sections"
+    },
+    "show": {
+      "open": "Show",
+      "fold": "Fold",
+      "hide": "Hide"
+    },
+    "up": "Move {name} up",
+    "down": "Move {name} down",
+    "foldOn": "Unfold {name}",
+    "foldOff": "Fold {name}",
+    "reset": "Back to the default screen",
+    "resetDone": "Back to the default screen",
+    "chat": "You can also ask your hub in chat, for example “open History first”.",
+    "defOn": "You are seeing the default screen",
+    "defSub": "The address has ?default, so your settings are off for now. They are still saved.",
+    "defOff": "See my screen",
+    "noMember": "Only board members can change their screen",
+    "noMemberSub": "Ask the board owner to add you as a member.",
+    "tipLabel": "About changing this screen",
+    "tipNew": "new",
+    "tip": "You can make this screen your own. Ask your hub things like “open the History tab first” or “make the text bigger”.",
+    "allHidden": "All sections are hidden. Show them again in screen settings."
   }
 }

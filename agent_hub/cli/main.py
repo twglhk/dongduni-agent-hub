@@ -10,6 +10,7 @@ from .hub import (cmd_cancel, cmd_decide, cmd_doing, cmd_escalate, cmd_infra, cm
 from .lanes import cmd_item_add, cmd_item_merge, cmd_item_update, cmd_mine, cmd_report
 from .manage import cmd_engine, cmd_lane, cmd_member
 from .parser import build_parser
+from .prefs import cmd_prefs
 from .reading import (cmd_blame, cmd_deliverable, cmd_items, cmd_last, cmd_log, cmd_ratings, cmd_retros, cmd_show,
                       cmd_signal, cmd_stats, cmd_status, cmd_tasks)
 from .running import cmd_pause, cmd_restart, cmd_run, cmd_start, cmd_stop
@@ -21,7 +22,7 @@ HANDLERS = {
     "wrap": cmd_wrap, "decide": cmd_decide, "escalate": cmd_escalate, "cancel": cmd_cancel, "memo": cmd_memo, "infra": cmd_infra,
     "status": cmd_status, "stats": cmd_stats, "retros": cmd_retros, "signal": cmd_signal, "show": cmd_show, "items": cmd_items, "tasks": cmd_tasks, "log": cmd_log, "last": cmd_last,
     "run": cmd_run, "start": cmd_start, "restart": cmd_restart, "stop": cmd_stop, "pause": cmd_pause, "resume": cmd_pause,
-    "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member,
+    "discover": cmd_discover, "init": cmd_init, "guide": cmd_guide, "workspaces": cmd_workspaces, "install": cmd_install, "update": cmd_update, "skill": cmd_skill, "uninstall": cmd_uninstall, "lane": cmd_lane, "engine": cmd_engine, "member": cmd_member, "prefs": cmd_prefs,
     "item": lambda a: {"add": cmd_item_add, "update": cmd_item_update, "merge": cmd_item_merge}[a.sub](a),
 }
 

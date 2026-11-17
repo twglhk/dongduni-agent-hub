@@ -228,4 +228,15 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--token", action="store_true", help="issue a sign-in token (auth.mode=token)")
     q = esub.add_parser("remove")
     q.add_argument("name")
+    p = sub.add_parser("prefs", help="hub: a person's board settings, changed on their chat request")
+    fsub = p.add_subparsers(dest="sub", required=True)
+    q = fsub.add_parser("show")
+    q.add_argument("name", help="member")
+    q = fsub.add_parser("set")
+    q.add_argument("name", help="member")
+    q.add_argument("pairs", nargs="+", metavar="NAME=VALUE",
+                   help="first_tab=history, font=s|m|l, accent=green, hub.order=yours,asks, lanes.hidden=reports; "
+                        "empty value = default")
+    q = fsub.add_parser("reset")
+    q.add_argument("name", help="member")
     return ap

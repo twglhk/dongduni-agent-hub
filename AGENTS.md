@@ -29,6 +29,7 @@ Instructions for coding agents working in this repository.
 | `agent_hub/requester.py` | opt-in (`requester`): who asked for a task, who a card is for, infra news to the hub, the card visibility rule |
 | `agent_hub/fair.py` | opt-in (`fair_turns`): the order waiting tasks start in, by turns per requester |
 | `agent_hub/config.py` person hubs | opt-in (`person_hubs`): `hub-<member>` lanes are built in `config.load` from the member list (`Config.person_hubs`, `hub_of`, `is_hub`, `hubs()`); tasks record the hub that queued them (`tasks.hub`) and news goes there (`Store.hub_for_task`) |
+| `agent_hub/prefs.py` | each member's own board settings, kept in the `member_prefs` table through `Store` and served at `/api/me/prefs`; `dah prefs` (`cli/prefs.py`) is the hub's way in; the board side is `board-app/src/lib/prefs.ts`, `state/prefs.tsx`, `components/prefs/` |
 | `agent_hub/leftovers.py` | opt-in (`leftover_sweep`, Linux): stops lane processes left by closed sessions |
 | `agent_hub/sessinfo.py` | the model and effort a Claude Code lane session really runs with, read from its transcript (`run` in the board state) |
 | `agent_hub/memwatch.py` | renews idle sessions over a memory line |

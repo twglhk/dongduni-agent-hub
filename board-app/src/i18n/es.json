@@ -291,5 +291,51 @@
     "fullTitle": "Ahora mismo no quedan hubs libres",
     "fullSub": "Las {c} plazas de hub personal están ocupadas. Eres el número {p} en la cola y se avisó en el tablero.",
     "fullKeep": "Puedes seguir enviando peticiones: el hub común las atiende hasta que haya una plaza."
+  },
+  "pf": {
+    "title": "Ajustes de pantalla",
+    "open": "Abrir ajustes de pantalla",
+    "live": "Los cambios se aplican al instante y solo en tu pantalla.",
+    "first": "Pestaña que se abre primero",
+    "font": "Tamaño del texto",
+    "sample": "Aa",
+    "fonts": {
+      "s": "Pequeño",
+      "m": "Normal",
+      "l": "Grande"
+    },
+    "accent": "Color de acento",
+    "accents": {
+      "blue": "Azul",
+      "green": "Verde",
+      "orange": "Naranja",
+      "purple": "Morado",
+      "pink": "Rosa"
+    },
+    "secs": {
+      "hub": "Secciones de la pestaña Hub",
+      "lanes": "Secciones de la pestaña Carriles"
+    },
+    "show": {
+      "open": "Mostrar",
+      "fold": "Plegar",
+      "hide": "Ocultar"
+    },
+    "up": "Subir {name}",
+    "down": "Bajar {name}",
+    "foldOn": "Desplegar {name}",
+    "foldOff": "Plegar {name}",
+    "reset": "Volver a la pantalla por defecto",
+    "resetDone": "Pantalla por defecto restaurada",
+    "chat": "También puedes pedírselo al hub en el chat, por ejemplo «abre primero Historial».",
+    "defOn": "Estás viendo la pantalla por defecto",
+    "defSub": "La dirección lleva ?default, así que tus ajustes están desactivados por ahora. Siguen guardados.",
+    "defOff": "Ver mi pantalla",
+    "noMember": "Solo los miembros del tablero pueden cambiar su pantalla",
+    "noMemberSub": "Pide al propietario del tablero que te añada como miembro.",
+    "tipLabel": "Sobre cambiar esta pantalla",
+    "tipNew": "nuevo",
+    "tip": "Puedes personalizar esta pantalla. Pídele al hub cosas como «abre primero la pestaña Historial» o «haz el texto más grande».",
+    "allHidden": "Todas las secciones están ocultas. Vuelve a mostrarlas en los ajustes de pantalla."
   }
 }

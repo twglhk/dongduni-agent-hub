@@ -4,9 +4,10 @@ import { LANGS, type Lang } from '../../i18n/dict';
 import { useBoard } from '../../state/board';
 import { useToast } from '../../state/toast';
 import { Icon } from '../Icon';
+import { PrefsBody } from '../prefs/PrefsSheet';
 import { SheetHead, type SheetContent } from '../Sheet';
 
-export type Menu = 'lang' | 'ws';
+export type Menu = 'lang' | 'ws' | 'prefs';
 
 function Row({ on, disabled, onClick, children }: { on?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -59,7 +60,11 @@ function WsMenu({ close }: { close: () => void }) {
 }
 
 export function menuSheet(menu: Menu, L: ReturnType<typeof useL>['L'], close: () => void): SheetContent {
-  const title = menu === 'lang' ? L.lang.title : L.ws.title;
+  const title = menu === 'lang' ? L.lang.title : menu === 'ws' ? L.ws.title : L.pf.title;
   const head = <SheetHead onClose={close}><span className="flex-1 text-t4 font-bold">{title}</span></SheetHead>;
+  if (menu === 'prefs') return {
+    id: 'm-prefs', label: title, head, side: true, body: <PrefsBody />,
+    cta: <button type="button" onClick={close} className="flex h-14 w-full items-center justify-center rounded-box bg-grey-weak text-t5 font-semibold text-ink-2 active:scale-[.98]">{L.btn.close}</button>,
+  };
   return { id: 'm-' + menu, label: title, head, body: menu === 'lang' ? <LangMenu close={close} /> : <WsMenu close={close} /> };
 }

@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS reports(
   attachments TEXT NOT NULL DEFAULT '[]',
   created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS member_prefs(
+  member TEXT PRIMARY KEY,
+  data TEXT NOT NULL,               -- the member's own board settings as JSON (prefs.py)
+  updated REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS lanes(
   lane TEXT PRIMARY KEY,
   session TEXT,
@@ -1040,6 +1045,22 @@ class Store:
         with self.conn() as con:
             if con.execute("DELETE FROM members WHERE name=?", (name,)).rowcount != 1:
                 raise StoreError(f"no member {name}")
+            con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
+
+    def member_prefs(self, name: str) -> str | None:
+        with self.conn() as con:
+            row = con.execute("SELECT data FROM member_prefs WHERE member=?", (name,)).fetchone()
+        return str(row[0]) if row else None
+
+    def put_member_prefs(self, name: str, data: str) -> None:
+        with self.conn() as con:
+            con.execute("INSERT INTO member_prefs(member, data, updated) VALUES(?,?,?) "
+                        "ON CONFLICT(member) DO UPDATE SET data=excluded.data, updated=excluded.updated",
+                        (name, data, self.clock()))
+
+    def drop_member_prefs(self, name: str) -> None:
+        with self.conn() as con:
+            con.execute("DELETE FROM member_prefs WHERE member=?", (name,))
 
     def members(self) -> list[dict[str, Any]]:
         with self.conn() as con:

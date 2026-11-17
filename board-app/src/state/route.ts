@@ -8,6 +8,8 @@ export interface Route { view: View; item: number | null; lane: string | null }
 const X_VIEW = /^x-[A-Za-z0-9_-]+$/;
 let pushed = false;
 let lastView: View = 'hub';
+let firstTab: Tab = 'hub';
+export const setFirstTab = (t: Tab) => { firstTab = t; };
 
 function parse(): Route {
   const hs = location.hash.replace(/^#/, '');
@@ -15,7 +17,7 @@ function parse(): Route {
   if (mi) return { view: lastView, item: Number(mi[1]), lane: null };
   const ml = /^lane-([A-Za-z0-9_-]+)$/.exec(hs);
   if (ml) return { view: lastView, item: null, lane: ml[1] };
-  const view: View = (TABS as readonly string[]).includes(hs) ? hs as Tab : X_VIEW.test(hs) ? hs as View : /^engine-/.test(hs) ? 'engine' : 'hub';
+  const view: View = (TABS as readonly string[]).includes(hs) ? hs as Tab : X_VIEW.test(hs) ? hs as View : /^engine-/.test(hs) ? 'engine' : hs ? 'hub' : firstTab;
   pushed = false;
   lastView = view;
   return { view, item: null, lane: null };

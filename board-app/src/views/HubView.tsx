@@ -4,12 +4,15 @@ import { Icon } from '../components/Icon';
 import { StatusDot } from '../components/lane/StatusChip';
 import { HubWait } from '../components/HubWait';
 import { ReachCard } from '../components/ReachCard';
-import { Section } from '../components/Section';
+import { PrefsTip } from '../components/prefs/PrefsTip';
+import { Empty, Section } from '../components/Section';
 import { XSections } from '../components/XHost';
 import { useL } from '../i18n/context';
 import { fmt } from '../lib/format';
 import { forHuman, forMe, isOpen, myHub, newest } from '../lib/items';
+import { isHidden, ordered } from '../lib/prefs';
 import type { BoardState, Lane } from '../lib/types';
+import { useFold, usePrefs } from '../state/prefs';
 
 function Doing({ l }: { l: Lane }) {
   const { L } = useL();
@@ -48,12 +51,25 @@ export function HubView({ d }: { d: BoardState }) {
   const side = d.items.filter(it => isOpen(it) && it.audience === 'hub' && forMe(d, it)).sort(newest);
   const hub = d.lanes.find(l => l.lane === myHub(d)) || d.lanes.find(l => l.lane === 'hub');
   const w = d.my_hub_state;
+  const { p } = usePrefs();
+  const fold = useFold();
+  const secs = { asks: { title: L.sec.asks, list: asks, empty: '' }, yours: { title: L.sec.yours, list: rest, empty: L.empty.yours } };
+  const shown = ordered(p, 'hub').filter(id => !isHidden(p, 'hub', id) && (id !== 'asks' || asks.length > 0));
   return (
     <>
       {w && (w.state === 'starting' || w.state === 'full') && <HubWait w={w} />}
       {hub && <Doing l={hub} />}
-      {asks.length > 0 && <Section title={L.sec.asks} n={asks.length}><CardList list={asks} empty="" /></Section>}
-      <Section title={L.sec.yours} n={rest.length}><CardList list={rest} empty={L.empty.yours} /></Section>
+      {!shown.length && (
+        <section className="mb-8">
+          <div className="mb-3 flex min-h-7 items-center px-1"><PrefsTip /></div>
+          <Empty>{L.pf.allHidden}</Empty>
+        </section>
+      )}
+      {shown.map((id, i) => (
+        <Section key={id} title={secs[id].title} n={secs[id].list.length} fold={fold('hub', id)} aside={i === 0 ? <PrefsTip /> : undefined}>
+          <CardList list={secs[id].list} empty={secs[id].empty} />
+        </Section>
+      ))}
       {side.length > 0 && <Handling list={side} />}
       {d.local_only && <ReachCard />}
       <XSections tab="hub" />

@@ -11,6 +11,8 @@ You are the hub: the one session that is always on. Humans give you requests fro
 3. **Check it**: look at the real result of each step before the next one.
 4. **Answer it**: `dah memo reply N "what was delivered, where, what to check"`. Your answer becomes a review card on the hub home that the human confirms, so write it as a self-contained card: what was done, where, what happens next, what they should check. A second reply to the same request updates the same open card; once the human has decided it, a new reply is a new card.
 
+A person asking to change how their own board looks (the tab it opens on, text size, accent colour, sections moved, folded or hidden) is done by you, not infra: `dah prefs show MEMBER`, then `dah prefs set MEMBER first_tab=history font=l accent=green hub.order=yours,asks lanes.hidden=reports` (an empty value = the default) or `dah prefs reset MEMBER`. Only for a person your requests come from; their board picks it up within 30 seconds.
+
 ## Each time news arrives
 
 The tower batches news into your session while you are idle: human requests, reports from lanes, items lanes posted, decisions humans made, stalled lanes. For each:

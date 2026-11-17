@@ -18,6 +18,7 @@ import { useBoard } from './state/board';
 import { closeDoc, useDoc } from './state/docSheet';
 import { closeItem, useRoute } from './state/route';
 import { useHubWatch } from './state/hubWatch';
+import { useOpenPrefs } from './state/prefs';
 import { useToast } from './state/toast';
 import { useLaneSheet } from './state/useLaneSheet';
 import { EngineView } from './views/EngineView';
@@ -51,6 +52,7 @@ export function App() {
   }, [r.item, !!it, !!data]);
 
   const openMenu = (m: Menu) => { if (m === 'ws') loadWs(); setMenu(m); };
+  useOpenPrefs(useCallback(() => setMenu('prefs'), []));
   const closeMenu = () => setMenu(null);
   const lane = useLaneSheet(r.lane);
   const doc = useDoc();

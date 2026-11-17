@@ -17,6 +17,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
                                   Claude usage percent when tower.json sets usage_percent (claudeusage.py)
   GET  /f/<path>                  attachment under the project (dot paths and secrets are refused; Range supported)
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
+  GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
   *    /api/goals...              410 Gone (goals were removed in 0.8.0)
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
@@ -52,6 +53,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
+from . import prefs as prefs_mod
 from . import rating, sessinfo
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
@@ -687,6 +689,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                         "usage": cusage.view() if c.usage_percent == "claude" else None})
             if path == "/api/workspaces":
                 return self._json(200, {"workspaces": workspaces_view(self.site)})
+            if path == "/api/me/prefs":
+                try:
+                    return self._json(200, prefs_mod.view(st, str(me["name"])))
+                except prefs_mod.PrefsError as e:
+                    return self._json(403, {"error": str(e)})
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
@@ -757,6 +764,21 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 log(f"extension route {method} /api/x/{name} failed: {type(e).__name__}: {e}")
                 return self._json(500, {"error": f"extension failed: {type(e).__name__}: {e}"})
             return self._json(code, data)
+
+        def _prefs(self, who: str, body: dict[str, Any]) -> None:
+            st = self.site.s
+            try:
+                if body.get("reset") is True:
+                    prefs_mod.reset(st, who)
+                    log(f"{who} reset their board settings")
+                    return self._json(200, {"ok": True, **prefs_mod.view(st, who), "dropped": []})
+                _, dropped = prefs_mod.save(st, who, body.get("prefs"))
+            except prefs_mod.NotMember as e:
+                return self._json(403, {"error": str(e)})
+            except prefs_mod.PrefsError as e:
+                return self._json(400, {"error": str(e)})
+            log(f"{who} changed their board settings" + (f" (dropped {', '.join(dropped)})" if dropped else ""))
+            return self._json(200, {"ok": True, **prefs_mod.view(st, who), "dropped": dropped})
 
         def _file(self, rel: str) -> None:
             full = safe_file(self.site.cfg.workdir, rel)
@@ -846,6 +868,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                                    str(body.get("note") or "")[:4000])
                     log(f"{who} decided #{it['id']}: {it['verdict']} {it['choice'] or ''}")
                     return self._json(200, {"ok": True, "item": it})
+                if path == "/api/me/prefs":
+                    return self._prefs(who, body)
                 if path == "/api/memo":
                     text = str(body.get("text") or "").strip()[:4000]
                     to = str(body.get("to") or HUB)

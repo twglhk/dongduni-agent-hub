@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { LangProvider } from './i18n/LangProvider';
 import { BoardProvider } from './state/board';
+import { PrefsProvider } from './state/prefs';
 import { ToastProvider } from './state/toast';
 import './styles.css';
 
@@ -11,7 +12,9 @@ createRoot(document.getElementById('root')!).render(
     <BoardProvider>
       <LangProvider>
         <ToastProvider>
-          <App />
+          <PrefsProvider>
+            <App />
+          </PrefsProvider>
         </ToastProvider>
       </LangProvider>
     </BoardProvider>
