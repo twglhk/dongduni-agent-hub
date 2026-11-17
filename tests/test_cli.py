@@ -362,3 +362,43 @@ class ClaimPidTest(unittest.TestCase):
             os.environ.pop("DAH_SERVICE", None)
             cli.claim_pid(self.cfg)
         self.assertFalse(marker.exists())
+
+
+class ForceBackupTest(unittest.TestCase):
+    def test_force_saves_an_edited_file_as_bak_and_leaves_an_untouched_one_alone(self) -> None:
+        from agent_hub import config as config_mod
+        from agent_hub.install import install
+        from tests.helpers import make_home
+        cfg = make_home()
+        install(cfg)
+        proto = cfg.home / ".tower" / "PROTOCOL.md"
+        shipped = proto.read_text(encoding="utf-8")
+        proto.write_text(shipped + "\nmine\n", encoding="utf-8")
+        wrote = install(cfg, force=True)
+        self.assertEqual(proto.read_text(encoding="utf-8"), shipped)
+        self.assertEqual(proto.with_name("PROTOCOL.md.bak").read_text(encoding="utf-8"), shipped + "\nmine\n")
+        self.assertIn(".tower/PROTOCOL.md.bak (your previous copy)", wrote)
+        self.assertEqual([p.name for p in (cfg.home / ".tower" / "lanes").glob("*.bak")], [])
+        self.assertTrue(config_mod.load(cfg.home))
+
+    def test_force_help_says_so(self) -> None:
+        p = subprocess.run([sys.executable, "-m", "agent_hub", "install", "-h"], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONPATH": str(ROOT)})
+        self.assertIn(".bak", p.stdout)
+
+
+class ModelCheckTest(unittest.TestCase):
+    def probe(self, code: int, out: str) -> bool:
+        from unittest import mock
+        from agent_hub import install
+        done = mock.Mock(returncode=code, stdout=out, stderr="")
+        with mock.patch.object(install.shutil, "which", return_value="/bin/claude"), \
+                mock.patch.object(install.subprocess, "run", return_value=done):
+            return install.model_works("claude", "fable")
+
+    def test_only_a_clear_model_refusal_replaces_the_model(self) -> None:
+        self.assertTrue(self.probe(0, "ok"))
+        self.assertFalse(self.probe(1, "There's an issue with the selected model (fable). It may not exist or you may not have access to it."))
+        self.assertFalse(self.probe(1, "Error: model 'fable' not found"))
+        for msg in ("Could not resolve host: api.anthropic.com", "Please run /login", "API Error: 429 rate limit exceeded", ""):
+            self.assertTrue(self.probe(1, msg), msg)

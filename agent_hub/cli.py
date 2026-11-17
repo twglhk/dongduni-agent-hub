@@ -808,6 +808,7 @@ def stop_loop(c: Config) -> int | None:
 
 
 RESTART_WAIT_SECONDS = 15
+FORCE_HELP = "overwrite files that exist; a file you changed is first saved next to it as NAME.bak"
 
 
 def cmd_restart(_args: argparse.Namespace) -> None:
@@ -1383,9 +1384,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--terminal", choices=TERMINALS, default="none",
                    help="where lane sessions run: none (in the background, the default), tmux or orca (windows the "
                         "tower opens and closes, which people can watch)")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help=FORCE_HELP)
     p = sub.add_parser("install", help="(re)write protocol, lane files and command shims")
-    p.add_argument("--force", action="store_true")
+    p.add_argument("--force", action="store_true", help=FORCE_HELP)
     p = sub.add_parser("update", help="upgrade dah, bring this workspace's files up to date, restart the tower")
     p.add_argument("--no-upgrade", action="store_true", help="only update the workspace with the installed version")
     p.add_argument("--dry-run", action="store_true",

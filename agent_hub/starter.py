@@ -15,6 +15,7 @@ changed those is still untouched.
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 from typing import Callable
 
@@ -82,6 +83,19 @@ def _text(key: str, raw: str, dest: Path) -> str:
     return raw
 
 
+def backup(path: Path, new_text: str) -> Path | None:
+    if not path.is_file():
+        return None
+    try:
+        if path.read_text(encoding="utf-8") == new_text:
+            return None
+    except (OSError, UnicodeDecodeError):
+        pass
+    bak = path.with_name(path.name + ".bak")
+    shutil.copyfile(path, bak)
+    return bak
+
+
 def install(cfg: Config, force: bool, wrote: list[str]) -> None:
     """Write the starter files that are missing (all of them with force)."""
     for key, dest in targets(cfg):
@@ -90,6 +104,8 @@ def install(cfg: Config, force: bool, wrote: list[str]) -> None:
         raw = (STARTER / key.removeprefix("starter/")).read_text(encoding="utf-8")
         text = fill(raw, *SUBAGENTS[Path(key).stem]) if key.startswith("starter/agents/") else raw
         dest.parent.mkdir(parents=True, exist_ok=True)
+        if bak := backup(dest, text):
+            wrote.append(_rel(bak, cfg.home) + " (your previous copy)")
         dest.write_text(text, encoding="utf-8")
         wrote.append(_rel(dest, cfg.home))
 
