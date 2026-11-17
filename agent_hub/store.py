@@ -281,6 +281,8 @@ class Store:
             for col, decl in LEDGER_COLUMNS + LINE_COLUMNS:  # same for the ledger and line columns
                 if col not in have:
                     con.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
+            con.execute("CREATE TABLE IF NOT EXISTS schedule_runs(key TEXT PRIMARY KEY, period TEXT NOT NULL, "
+                        "fired REAL NOT NULL)")
             if "memo_id" not in _columns(con, "items"):
                 con.execute("ALTER TABLE items ADD COLUMN memo_id INTEGER")  # the human request a hub reply answers
 
@@ -431,6 +433,19 @@ class Store:
                 "created, memo_id) VALUES(NULL,?,?,?,?,'[]',0,'[]',?,'open',?,?)",
                 (HUB, "review", title, f"{reply}\n\n{quoted}", HUMAN,
                  self.clock(), memo["id"])))
+
+    # ---------- schedules ----------
+
+    def schedule_period(self, key: str) -> str | None:
+        with self.conn() as con:
+            row = con.execute("SELECT period FROM schedule_runs WHERE key=?", (key,)).fetchone()
+        return row["period"] if row else None
+
+    def mark_schedule(self, key: str, period: str) -> None:
+        with self.conn() as con:
+            con.execute("INSERT INTO schedule_runs(key, period, fired) VALUES(?,?,?) "
+                        "ON CONFLICT(key) DO UPDATE SET period=excluded.period, fired=excluded.fired",
+                        (key, period, self.clock()))
 
     # ---------- tasks ----------
 

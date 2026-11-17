@@ -127,6 +127,7 @@ class Config:
     branch_sync_seconds: int = 0
     branch_sync_push: bool = False
     leftover_sweep: bool = False
+    schedules: list[Any] = field(default_factory=list)  # schedules.Schedule: a task or request queued on a clock (opt-in)
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
 
     @property
@@ -388,7 +389,7 @@ def from_raw(home: Path, raw: Any) -> Config:
         context_limit_k=_limit_k(raw),
         model_limits_k=_model_limits_k(raw),
         instances=instances,
-        **_extras(raw, home, project),
+        **_extras(raw, home, project, {lid: ln.kind for lid, ln in lanes.items()}),
     )
 
 
@@ -419,7 +420,7 @@ def _model_limits_k(raw: dict[str, Any]) -> dict[str, int]:
     return out
 
 
-def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
+def _extras(raw: dict[str, Any], home: Path, project: Any, kinds: dict[str, str]) -> dict[str, Any]:
     from .claudeusage import PROVIDERS
     from .donegate import parse
     from .scratch import check_root
@@ -434,10 +435,15 @@ def _extras(raw: dict[str, Any], home: Path, project: Any) -> dict[str, Any]:
             check_root(p if p.is_absolute() else home / p, (home / project).resolve() if project else home)
         except ValueError as e:
             raise ConfigError(str(e))
+    from .schedules import parse as parse_schedules
+    try:
+        schedules = parse_schedules(raw.get("schedules"), kinds)
+    except ValueError as e:
+        raise ConfigError(str(e))
     usage = str(raw.get("usage_percent") or "")
     if usage and usage not in PROVIDERS:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
-    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage,
+    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules,
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
             "branch_sync": _bool(raw, "branch_sync"),

@@ -201,6 +201,30 @@ Team lanes share one checkout with each other and with you by default. Set `"wor
 
 Optional, all off by default (`tower.json`): `"branch_sync": true` merges your current branch into a worktree lane's branch before each task (fast-forward, else a merge commit; a conflict is undone, the task stays queued and the hub is told). `"branch_sync_seconds": 300` does the same every 300 s for idle lane branches, and `"branch_sync_push": true` additionally pushes them to `origin` (never forced). On a conflict the merge is aborted and the branch is left as it was; a worktree with uncommitted edits is skipped by the idle catch-up, and holds a task back before its start (the hub is told). Parallel instances (`lane#2`) share their lane's worktree: it is not synced while any of them works. A conflict is not merged again until main or the branch moves.
 
+### Scheduled runs
+
+Off by default. `"schedules"` in `tower.json` queues a task for a team lane, or a request to the hub, once per day or week. With no `schedules` key, or an empty list, nothing happens.
+
+```json
+"schedules": [
+  {"lane": "docs", "every": "week", "day": "mon", "at": "09:00", "title": "Weekly docs review",
+   "text": "model: sonnet\neffort: medium\n\nReview last week's changes and list the docs that are out of date."},
+  {"lane": "hub", "every": "day", "at": "08:30", "text": "Summarise what is open on the board."}
+]
+```
+
+| key | |
+| --- | --- |
+| `lane` | required: a team lane (gets a task, `text` is its brief, so `model:` and `effort:` lines work) or `hub` (gets a request, as if a person sent it; the sender is `schedule`) |
+| `every` | required: `"day"` or `"week"` |
+| `day` | with `"week"`: `mon` `tue` `wed` `thu` `fri` `sat` `sun` (default `mon`); not allowed with `"day"` |
+| `at` | 24-hour local time `"HH:MM"` (default `"09:00"`) |
+| `text` | required: the task brief or the request |
+| `title` | optional task title (default: the first line of `text`) |
+| `id` | optional name the last run is remembered under (default `lane-every-day-time`, e.g. `docs-week-mon-0900`); give two entries with the same lane and time different ids |
+
+A bad value is a config error that names the entry. The tower checks on every tick, with the machine's local time, and remembers the last period it fired in its database, so a restart never fires a period twice. A period that passed while the tower was down fires once at the next tick, not once per missed period. A schedule seen for the first time starts from the period it is in: adding a Monday 09:00 schedule on Wednesday waits for next Monday. Editing `text` does not fire again; changing `lane`, `every`, `day` or `at` of an entry without an `id` makes it a new schedule.
+
 ## Requirements and limits
 
 - Python 3.10+ for `dah`, and at least one agent CLI (OpenCode, Claude Code or Codex) installed and signed in. Lanes use your agent accounts: every lane session counts against your subscription or API usage.

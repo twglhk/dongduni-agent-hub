@@ -13,6 +13,8 @@
   usage            each open session's token and cost totals, read when a turn ends and every minute.
   stuck hub        news waits while the hub is busy. If it waits HUB_STUCK_SECONDS (a hook or plugin that keeps the
                    session working, a turn that never ends), humans get one board item about it.
+  schedules        tower.json `schedules`: a task for a team lane, or a request to the hub, once per day or week
+                   (schedules.py); a period that passed while the tower was down fires once, at the next tick.
   extensions       `.tower/ext/*.py` on_event(ctx, kind, data) for what changed since the last tick (lane statuses
                    included), then on_tick(ctx); after the built-in work, errors logged (see ext.py). Every push to
                    people also goes to on_notify(ctx, notes).
@@ -26,7 +28,7 @@ import types
 from pathlib import Path
 from typing import Any, Callable
 
-from . import engines as engines_mod, leftovers, procs, stagemodel
+from . import engines as engines_mod, leftovers, procs, schedules, stagemodel
 from .config import HUB, INFRA, Config, base_lane, instance_lane
 from .ext import Extensions
 from .runtimes import COMPACT_PENDING, COMPACT_TYPED
@@ -366,7 +368,7 @@ class Engine:
         for name, fn in (("usage", lambda: self._usage(statuses)), ("questions", lambda: self._questions(statuses)),
                          ("decisions", self.route_decisions), ("notify", self._notify_humans),
                          ("api errors", self._api_errors), ("done gate", self._done_gates),
-                         ("scratch", self._scratch)):
+                         ("scratch", self._scratch), ("schedules", self._schedules)):
             try:
                 fn()
             except Exception as e:
@@ -606,6 +608,29 @@ class Engine:
         if self.sweep is None:
             self.sweep = ScratchSweep(self.cfg, self.store, self.log, self.clock)
         self.sweep.poll()
+
+    def _schedules(self) -> None:
+        now = self.clock()
+        for sched in self.cfg.schedules:
+            period = schedules.latest_period(sched, now)
+            last = self.store.schedule_period(sched.id)
+            if last == period:
+                continue
+            try:
+                if last is not None:
+                    self._fire_schedule(sched, period)
+                self.store.mark_schedule(sched.id, period)
+            except Exception as e:
+                self.log(f"schedule {sched.id}: {e}")
+
+    def _fire_schedule(self, sched: schedules.Schedule, period: str) -> None:
+        if sched.lane == HUB:
+            self.store.push(HUB, "schedule", "memo", sched.text)
+            self.log(f"schedule {sched.id}: request to the hub for {period}")
+            return
+        tid = self.store.add_task(sched.lane, sched.title, sched.text, self.cfg.lanes[sched.lane].engine)
+        self.store.update_task(tid, **engines_mod.line_fields(sched.text))
+        self.log(f"schedule {sched.id}: task #{tid} for {sched.lane} ({period})")
 
     # ---------- team lanes ----------
 
