@@ -80,6 +80,12 @@ if sub == "create":
     print(json.dumps({"result": {"terminal": {"handle": wid}}}))
 elif sub == "show":
     w = wins.get(opt(args, "--terminal"))
+    mode = os.environ.get("FAKE_ORCA_ENDED")  # newer Orca: an ended tab still answers ok
+    if w and not alive(w) and mode:
+        term = {"exitCause": "exited", "connected": False, "writable": False} if mode == "cause" else \
+               {"connected": False, "writable": False}
+        print(json.dumps({"ok": True, "result": {"terminal": {"handle": opt(args, "--terminal"), **term}}}))
+        sys.exit(0)
     if not w or not alive(w):
         print(json.dumps({"error": "terminal_handle_stale"}))
         sys.exit(1)
@@ -191,6 +197,14 @@ class H(BaseHTTPRequestHandler):
             self.reply(200, True)
 HTTPServer(("127.0.0.1", port), H).serve_forever()
 '''
+
+
+def subprocess_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)  # POSIX only: this test class is skipped on Windows
+    except OSError:
+        return False
+    return True
 
 
 def free_port() -> int:
@@ -390,6 +404,22 @@ class TerminalTest(unittest.TestCase):
         self.assertEqual(self.rt.status("docs"), "idle")
         nested = {"result": {"worktree": {"handle": "wt-9"}, "terminal": {"handle": "term-7"}}}
         self.assertEqual(Orca._find(Orca._find_obj(nested, "terminal"), "handle"), "term-7")
+
+    def test_orca_tab_that_ended_but_still_answers_is_not_alive(self) -> None:
+        host = Orca(self.cfg)
+        launcher = script(self.tmp, "sleeper", "#!PY\nimport time\ntime.sleep(60)\n")
+        for mode in ("cause", "disconnected"):
+            with self.subTest(mode=mode):
+                handle = host.open("t", launcher, self.tmp)
+                self.assertTrue(host.alive(handle))
+                host.close(handle)
+                wait_for(lambda: not subprocess_alive(self.windows()[handle]["pid"]))
+                os.environ["FAKE_ORCA_ENDED"] = mode
+                try:
+                    self.assertFalse(host.alive(handle))  # ok:true, exitCause or connected:false; not "unknown"
+                finally:
+                    del os.environ["FAKE_ORCA_ENDED"]
+                self.assertFalse(host.alive(handle))  # and the old answer (stale handle error) still means gone
 
     def test_codex_in_an_orca_tab(self) -> None:
         sid = self.rt.open("docs", "write the docs")

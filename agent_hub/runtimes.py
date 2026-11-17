@@ -587,6 +587,8 @@ class Tmux(Host):
 class Orca(Host):
     """Orca (an agent development environment) terminal tabs, through its `orca` CLI."""
 
+    GONE = ("stale", "not found", "no terminal", "unknown terminal")  # answers that mean the tab is gone
+
     def _orca(self, *args: str) -> tuple[subprocess.CompletedProcess[str], Any]:
         p = _run([*procs.command(os.environ.get("TOWER_ORCA_BIN", "orca")), *args, "--json"], "orca")
         try:
@@ -642,9 +644,14 @@ class Orca(Host):
         p, data = self._orca("terminal", "show", "--terminal", handle)
         said = f"{p.stdout} {p.stderr}".lower()
         if p.returncode != 0:
-            if "stale" in said or "not found" in said or "no terminal" in said or "unknown terminal" in said:
+            if any(g in said for g in self.GONE):
                 return False
             raise RuntimeFailure(f"orca did not answer for {handle}: {said.strip()[:300]}")  # unknown, not closed
+        # Orca 1.4.257 keeps answering ok for an ended tab: `exitCause` set, `connected: false`, not writable.
+        term = self._find_obj(data, "terminal") or {}
+        if term.get("exitCause") or self._find(data, "exitCause") or (
+                term.get("connected") is False and term.get("writable") is False):
+            return False
         return not (self._find(data, "exited") is True or self._find(data, "state") == "exited"
                     or self._find(data, "status") == "exited")
 
