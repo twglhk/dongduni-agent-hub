@@ -1,0 +1,280 @@
+{
+  "tabs": {
+    "hub": "中枢",
+    "engine": "引擎",
+    "lanes": "通道",
+    "history": "记录",
+    "info": "信息"
+  },
+  "sec": {
+    "asks": "等你回答的问题",
+    "yours": "待你决定",
+    "handling": "中枢正在处理 {n} 项",
+    "lanes": "通道",
+    "tasks": "进行中的任务",
+    "reports": "最近的报告",
+    "usage": "今日用量"
+  },
+  "empty": {
+    "yours": "没有待决定的事",
+    "tasks": "没有进行中的任务",
+    "reports": "还没有报告",
+    "lanes": "没有通道",
+    "hist": "暂无内容",
+    "loading": "加载中",
+    "end": "就这些"
+  },
+  "status": {
+    "busy": "工作中",
+    "asking": "提问中",
+    "idle": "空闲",
+    "closed": "已关闭",
+    "unknown": "无响应"
+  },
+  "task": {
+    "queued": "排队中",
+    "running": "进行中",
+    "wrapping": "收尾中",
+    "closed": "已完成",
+    "cancelled": "已取消"
+  },
+  "report": {
+    "done": "完成",
+    "blocked": "受阻",
+    "note": "通知",
+    "handoff": "交接",
+    "wrapped": "已收尾"
+  },
+  "kind": {
+    "decision": "决定",
+    "review": "审核",
+    "ask": "问题"
+  },
+  "verdict": {
+    "ok": "已决定",
+    "okReview": "已批准",
+    "no": "已驳回",
+    "hold": "暂缓",
+    "answer": "自行回答",
+    "merged": "已合并"
+  },
+  "hist": {
+    "decided": "决定",
+    "reports": "报告",
+    "closed": "任务",
+    "memos": "基础设施请求",
+    "requests": "中枢请求"
+  },
+  "memo": {
+    "wait": "等待中",
+    "delivered": "已送达",
+    "replied": "已回复"
+  },
+  "chat": {
+    "title": "向中枢提请求"
+  },
+  "label": {
+    "why": "为什么交给你",
+    "question": "问题",
+    "options": "选项",
+    "pickMany": "可多选",
+    "note": "备注",
+    "answer": "回答",
+    "attachments": "附件",
+    "noTask": "暂无任务",
+    "cap": "{u}/{c} 使用中",
+    "paused": "已暂停",
+    "reply": "回复",
+    "hubSide": "中枢",
+    "ctx": "上下文"
+  },
+  "ph": {
+    "answer": "写下你的回答或备注",
+    "review": "留空即批准",
+    "token": "访问令牌"
+  },
+  "btn": {
+    "decide": "决定",
+    "answer": "自己回答",
+    "hold": "暂缓",
+    "done": "审核完成",
+    "send": "发送",
+    "more": "更多",
+    "less": "收起",
+    "close": "关闭",
+    "prev": "上一张",
+    "next": "下一张",
+    "login": "登录",
+    "logout": "退出",
+    "open": "打开"
+  },
+  "msg": {
+    "saved": "已更新",
+    "decided": "已决定",
+    "held": "已暂缓",
+    "answered": "回答已发送",
+    "reviewed": "审核完成",
+    "sent": "已发送",
+    "fail": "发送失败",
+    "net": "离线",
+    "badToken": "令牌不正确",
+    "notFound": "找不到",
+    "stopped": "tower 已停止"
+  },
+  "time": {
+    "now": "刚刚",
+    "m": "{n} 分钟前",
+    "h": "{n} 小时前"
+  },
+  "login": {
+    "title": "登录"
+  },
+  "ws": {
+    "title": "工作区",
+    "local": "仅限本机",
+    "running": "运行中",
+    "stopped": "已停止"
+  },
+  "lang": {
+    "title": "语言",
+    "note": "只改变本设备上看板的按钮语言。代理仍用工作区的语言写作。"
+  },
+  "reach": {
+    "title": "看板只能在这台电脑上打开",
+    "body": "手机还进不来。中枢可以让基础设施帮你设置同一 Wi-Fi 登录、Tailscale、Cloudflare 或服务器。",
+    "ask": "请中枢设置",
+    "memo": "请基础设施让我能在手机上打开看板。比较适合这台电脑的方式(`dah guide lan`、`tailscale`、`cloudflare`、`aws`),附上推荐发一个决定项,然后按我选的方式设置。"
+  },
+  "lane": {
+    "add": "添加通道",
+    "id": "通道 ID",
+    "idPh": "例如 docs",
+    "idHelp": "只能用字母、数字、- 和 _,会用在命令和文件名里。",
+    "idBad": "只能用字母、数字、- 和 _",
+    "idDup": "已有这个 ID 的通道",
+    "runtime": "运行时",
+    "label": "显示名称(可选)",
+    "labelPh": "例如 文档",
+    "role": "职责",
+    "rolePh": "负责什么、处理哪些文件、怎样算完成、不能碰什么",
+    "model": "模型(可选)",
+    "agent": "代理(可选)",
+    "optPh": "留空则用默认值",
+    "send": "请中枢添加",
+    "sent": "已发给中枢",
+    "hint": "中枢会让基础设施创建通道、填好职责文件,然后用待确认的卡片通知你。",
+    "memo": "请基础设施添加通道: {id}\n- 运行时: {runtime}\n- 显示名称: {label}\n- 模型: {model}\n- 代理: {agent}\n\n职责:\n{role}\n\n请用 `dah lane add {id} --runtime {runtime}{flags}` 添加,并把上面的职责(负责什么、处理哪些文件、完成标准、不能碰什么)写进 `.tower/lanes/{id}.md`。"
+  },
+  "cap": {
+    "at": "同时运行",
+    "less": "减少一个",
+    "more": "增加一个",
+    "hint": "可以同时工作的团队通道数。中枢和基础设施不计在内。"
+  },
+  "lv": {
+    "skills": "技能",
+    "noSkills": "职责文件里没有写技能",
+    "process": "流程",
+    "stage": "阶段",
+    "stageN": "第 {n} 阶段",
+    "noProc": "还没有流程",
+    "fixing": "修正中",
+    "fixBy": {
+      "send-back": "被退回",
+      "blame": "被点名的阶段"
+    },
+    "model": "模型",
+    "tokens": "令牌",
+    "week": "最近 7 天",
+    "recent": "最近的任务",
+    "engine": "引擎",
+    "missing": "找不到文件夹",
+    "none": "暂无"
+  },
+  "eg": {
+    "engines": "引擎",
+    "pipes": "流水线",
+    "skills": "技能",
+    "shared": "共享",
+    "tools": "工具",
+    "exps": "实验",
+    "changes": "变更",
+    "since": "自 {d} 起",
+    "same": "此后没有变化",
+    "noSnap": "还没有快照,塔会在一小时内生成",
+    "usage": "令牌,最近 7 天",
+    "noLib": "还没有模式库",
+    "rated": "已评 {n} 项",
+    "unrated": "未评级",
+    "process": "流程",
+    "noCard": "无卡片",
+    "files": "文件",
+    "s_new": "新建",
+    "s_best": "最佳",
+    "s_good": "良好",
+    "s_fix": "需改进",
+    "s_rework": "需要重构",
+    "c_lane_added": "新增通道 {name}",
+    "c_lane_removed": "删除通道 {name}",
+    "c_skill_changed": "修改技能 {name}",
+    "c_skill_added": "新增技能 {name}",
+    "c_skill_removed": "删除技能 {name}",
+    "c_row_added": "新增流程 {name}",
+    "c_row_removed": "删除流程 {name}",
+    "c_process": "{name}: {a} → {b}",
+    "c_card": "{name} 卡片: {a} → {b}",
+    "none": "无",
+    "empty": "没有引擎",
+    "noRows": "没有库条目",
+    "fixedN": "已修订 {n} 次",
+    "procCard": "流程卡片",
+    "stageCard": "第 {n} 阶段 · {name}",
+    "cards": "阶段卡片",
+    "model": "模型 · 强度",
+    "folder": "技能文件夹",
+    "noDoc": "没有可打开的文档",
+    "noProcCard": "找不到流程卡片"
+  },
+  "use": {
+    "day": "今天",
+    "io": "{i} / {o}",
+    "task": "任务 新增 {n} · 缓存 {c} · 输出 {o} · {t} 轮",
+    "today": "今天 输入 {i} · 输出 {o}",
+    "hint": "输入 / 输出 token。只统计 tower 打开的会话。运行时报告费用时才显示费用。"
+  },
+  "mc": {
+    "title": "本机",
+    "load": "负载",
+    "cpu": "CPU",
+    "mem": "内存",
+    "swap": "交换",
+    "unknown": "未知",
+    "perCore": "每核 {v} · {n} 核",
+    "free": "{t} GB 中空闲 {f} GB",
+    "freeOnly": "空闲 {f} GB",
+    "swapUsed": "已用 {s} GB",
+    "cpuBusy": "全部核心的 {v}%",
+    "waits": "任务等待的原因",
+    "wait": "等待: {r}",
+    "claude": "Claude",
+    "h5": "5 小时",
+    "week": "每周",
+    "g": "宽裕",
+    "a": "繁忙",
+    "r": "吃紧",
+    "hint": "按本机自己的核心数和内存评级。Claude 用量来自未公开的接口,可能显示为未知。"
+  },
+  "x": {
+    "err": "扩展出错"
+  },
+  "disk": {
+    "title": "磁盘",
+    "used": "共 {t} GB,已用 {u} GB · 剩余 {f} GB",
+    "root": "系统 (/)",
+    "hint": "使用超过 85% 显示黄色,超过 95% 显示红色。"
+  },
+  "doc": {
+    "loading": "加载中…",
+    "cantOpen": "无法打开文档: {e}"
+  }
+}

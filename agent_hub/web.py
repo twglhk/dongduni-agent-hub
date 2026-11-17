@@ -1,8 +1,9 @@
 """Review board web server (a thread inside `dah run`). Binds 127.0.0.1 by default; expose it through a proxy
 that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, ...) or use token sign-in.
 
-  GET  /                          board (board/index.html, or the workspace's .tower/board/index.html; /?builtin
-                                  always opens the built-in one)
+  GET  /                          board: the React app (board_next/, built from board-app/), or the workspace's
+                                  .tower/board/index.html; /?builtin always opens the built-in one; /assets/<file>
+  GET  /old/                      the single-file board (board/index.html) that came before the React app
   GET  /api/state                 lanes · open items · tasks · reports · memos · counts
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
@@ -10,6 +11,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   GET  /api/engines               every engine: id, label, lanes, library rows
   GET  /api/engines/<id>/map      one engine: lanes with skills, pipelines with ratings, skills, tools and experiments from
                                   engine.json, 7-day usage, what changed since last week's snapshot (ETag; 304 when unchanged)
+  GET  /api/engines/<id>/doc?path=P   {path, text}: a card or skill document the map names (nothing else is served)
   GET  /api/workspaces            every workspace registered on this machine, for the board's switcher
   GET  /api/machine               load, CPU, memory, swap graded g/a/r (machine.py) · why queued tasks wait ·
                                   Claude usage percent when tower.json sets usage_percent (claudeusage.py)
@@ -35,6 +37,7 @@ import getpass
 import hashlib
 import json
 import mimetypes
+import os
 import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,6 +56,7 @@ from .install import edit_config
 from .store import HUMAN, Store, StoreError
 
 BOARD = Path(__file__).resolve().parent / "board" / "index.html"
+BOARD_NEXT = Path(__file__).resolve().parent / "board_next"
 BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "credentials", "id_rsa", "id_ed25519"}
 BLOCKED_SUFFIXES = {".db", ".sqlite", ".pem", ".key", ".p12"}
 MAX_BODY = 64 * 1024
@@ -140,6 +144,22 @@ def engines_view(cfg: Config) -> list[dict[str, Any]]:
     return out
 
 
+def _home_rel(cfg: Config, base: Path, rel: str | None) -> str | None:
+    """A card path (relative to `base`) as a path below the workspace; None when the file is outside it."""
+    if not rel:
+        return None
+    try:
+        return Path(os.path.normpath(base / rel)).relative_to(os.path.normpath(cfg.home)).as_posix()
+    except ValueError:
+        return None
+
+
+def _skill_doc(cfg: Config, skills_dir: Path, name: str) -> str | None:
+    """`<skills>/<name>/SKILL.md` as a path below the workspace, when that file exists."""
+    f = skills_dir / name / "SKILL.md"
+    return _home_rel(cfg, skills_dir, f"{name}/SKILL.md") if f.is_file() else None
+
+
 def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
     """Everything the AI Engine tab shows for one engine."""
     e = cfg.engines[eid]
@@ -169,12 +189,14 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
             gs = g["stages"][i]["rating"] if g and i < len(g["stages"]) else None
             c = st["card"]
             stages.append({"n": st["n"], "name": st["name"], "by": st["by"],
-                           "card": {"status": c["status"], "version": c["version"], "color": c["color"]} if c and c["exists"] else None,
+                           "card": {"status": c["status"], "version": c["version"], "color": c["color"],
+                                    "path": _home_rel(cfg, skills_dir, c["path"])} if c and c["exists"] else None,
                            "rating": ({k: gs[k] for k in ("n", "pct", "state", "color", "pending")} if gs else None),
                            "weakest": bool(g and g["stages"][i].get("weakest"))})
         pr = g["process"] if g else None
         pipes.append({"row": r["n"], "type": r["type"], "lane": r["lane"], "skill": r["skill"], "version": p["version"] if p else None,
                       "process_status": r["process_status"], "pattern_status": r["pattern_status"], "model": r["model_text"],
+                      "card": _home_rel(cfg, skills_dir, p["path"]) if p else None,
                       "rating": {k: pr[k] for k in ("n", "pct", "state", "color", "fixes")} if pr else None, "stages": stages})
     skills = engines_mod.engine_skills(cfg, eid, {**by_lane, "": [{"name": n, "found": True} for n in e.skill_names]})
     days: dict[str, dict[str, Any]] = {}
@@ -188,10 +210,24 @@ def engine_map(cfg: Config, s: Store, eid: str, now: float) -> dict[str, Any]:
     hand = engines_mod.read_map(cfg.home / e.map) if e.map else engines_mod.read_map(cfg.home / e.dir / "engine.json") if e.dir else \
         engines_mod.read_map(cfg.home / "engine.json")
     return {"id": eid, "label": e.label or eid, "implicit": e.implicit, "lanes": lanes, "pipelines": pipes,
-            "skills": [{k: x[k] for k in ("name", "files", "lanes", "shared")} for x in skills],
+            "skills": [{**{k: x[k] for k in ("name", "files", "lanes", "shared")}, "doc": _skill_doc(cfg, skills_dir, x["name"])}
+                       for x in skills],
             "tools": hand["tools"], "experiments": hand["experiments"], "notes": hand["notes"],
             "usage": sorted(days.values(), key=lambda x: x["day"]),
             "changes": {"since": base["at"] if base else None, "items": engines_mod.diff(base, live) if base else []}}
+
+
+def engine_doc(cfg: Config, s: Store, eid: str, path: str) -> dict[str, Any] | None:
+    """A document the engine map names (process card, pattern card, skill document); None for any other path."""
+    m = engine_map(cfg, s, eid, time.time())
+    named = {p["card"] for p in m["pipelines"]} | {st["card"]["path"] for p in m["pipelines"] for st in p["stages"] if st["card"]}
+    named |= {x["doc"] for x in m["skills"]}
+    if not path or path not in named:
+        return None
+    try:
+        return {"path": path, "text": (cfg.home / path).read_text(encoding="utf-8")}
+    except (OSError, UnicodeDecodeError):
+        return None
 
 
 def lanes_view(cfg: Config, s: Store, used: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -434,11 +470,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.end_headers()
             self.wfile.write(data)
 
-        def _static(self, path: Path, ctype: str) -> None:
+        def _static(self, path: Path, ctype: str, cache: str = "no-cache") -> None:
             data = path.read_bytes()
             self.send_response(200)
             self.send_header("content-type", ctype)
-            self.send_header("cache-control", "no-cache")
+            self.send_header("cache-control", cache)
             self.send_header("content-length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -453,7 +489,13 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
             if path in ("/", "/index.html"):
                 page = None if "builtin" in parse_qs(self.query, keep_blank_values=True) else board_override(c.home)
-                return self._static(page or BOARD, "text/html; charset=utf-8")
+                return self._static(page, "text/html; charset=utf-8") if page else self._next("")
+            if path.startswith("/assets/"):
+                return self._next(path[1:])
+            if path == "/old":
+                return self._redirect("/old/")
+            if path in ("/old/", "/old/index.html"):
+                return self._static(BOARD, "text/html; charset=utf-8")
             if path == "/manifest.webmanifest":
                 return self._json(200, {"name": c.name, "short_name": c.name[:12], "start_url": "./",
                                         "display": "standalone", "background_color": "#17171c",
@@ -483,6 +525,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 if eid not in c.engines:
                     return self._json(404, {"error": f"no engine {eid}"})
                 return self._json_tagged(engine_map(c, st, eid, time.time()))
+            m = re.fullmatch(r"/api/engines/([^/]+)/doc", path)
+            if m:
+                eid = unquote(m.group(1))
+                got = engine_doc(c, st, eid, (parse_qs(self.query).get("path") or [""])[0]) if eid in c.engines else None
+                return self._json(200, got) if got else self._json(404, {"error": "no such document"})
             m = re.fullmatch(r"/api/lanes/([^/]+)", path)
             if m:
                 lid = unquote(m.group(1))
@@ -508,6 +555,23 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if path.startswith("/api/x/"):
                 return self._ext("GET", path[7:], me, {})
             self._json(404, {"error": "not found"})
+
+        def _redirect(self, to: str) -> None:
+            self.send_response(302)
+            self.send_header("location", self.site.prefix + to + (f"?{self.query}" if self.query else ""))
+            self.send_header("content-length", "0")
+            self.end_headers()
+
+        def _next(self, rel: str) -> None:
+            """The React app: its page, or one file below board_next/ (never anything else)."""
+            full = BOARD_NEXT / "index.html" if rel in ("", "index.html") else safe_file(BOARD_NEXT, rel)
+            if not full or not full.is_file() or (full.suffix.lower() not in STATIC_SUFFIXES and full.suffix != ".html"):
+                return self._json(404, {"error": "not found"})
+            ctype = mimetypes.guess_type(full.name)[0] or "application/octet-stream"
+            if ctype.startswith("text/") and "charset" not in ctype:
+                ctype += "; charset=utf-8"
+            # Vite puts a content hash in every file name under assets/, so a new build never reuses an old URL.
+            self._static(full, ctype, "public, max-age=31536000, immutable" if rel.startswith("assets/") else "no-cache")
 
         def _ext(self, method: str, name: str, me: dict[str, Any], body: dict[str, Any]) -> None:
             fn = self.site.ext.routes().get((method, name.strip("/")))

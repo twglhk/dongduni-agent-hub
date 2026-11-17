@@ -1,0 +1,280 @@
+{
+  "tabs": {
+    "hub": "Hub",
+    "engine": "Engine",
+    "lanes": "Lanes",
+    "history": "History",
+    "info": "Info"
+  },
+  "sec": {
+    "asks": "Waiting for your answer",
+    "yours": "For you",
+    "handling": "Hub is handling {n}",
+    "lanes": "Lanes",
+    "tasks": "Live tasks",
+    "reports": "Recent reports",
+    "usage": "Usage today"
+  },
+  "empty": {
+    "yours": "Nothing to decide",
+    "tasks": "No live tasks",
+    "reports": "No reports yet",
+    "lanes": "No lanes",
+    "hist": "Nothing here yet",
+    "loading": "Loading",
+    "end": "That’s all"
+  },
+  "status": {
+    "busy": "Working",
+    "asking": "Asking",
+    "idle": "Idle",
+    "closed": "Closed",
+    "unknown": "No response"
+  },
+  "task": {
+    "queued": "Queued",
+    "running": "Running",
+    "wrapping": "Wrapping up",
+    "closed": "Closed",
+    "cancelled": "Cancelled"
+  },
+  "report": {
+    "done": "Done",
+    "blocked": "Blocked",
+    "note": "Note",
+    "handoff": "Handoff",
+    "wrapped": "Wrapped"
+  },
+  "kind": {
+    "decision": "Decision",
+    "review": "Review",
+    "ask": "Question"
+  },
+  "verdict": {
+    "ok": "Decided",
+    "okReview": "Approved",
+    "no": "Rejected",
+    "hold": "On hold",
+    "answer": "Answered",
+    "merged": "Merged"
+  },
+  "hist": {
+    "decided": "Decided",
+    "reports": "Reports",
+    "closed": "Closed",
+    "memos": "Infra requests",
+    "requests": "Hub requests"
+  },
+  "memo": {
+    "wait": "Waiting",
+    "delivered": "Delivered",
+    "replied": "Replied"
+  },
+  "chat": {
+    "title": "Request to the hub"
+  },
+  "label": {
+    "why": "Why it came to you",
+    "question": "Question",
+    "options": "Options",
+    "pickMany": "Pick any",
+    "note": "Note",
+    "answer": "Answer",
+    "attachments": "Attachments",
+    "noTask": "No task",
+    "cap": "{u}/{c} busy",
+    "paused": "Paused",
+    "reply": "Reply",
+    "hubSide": "Hub",
+    "ctx": "ctx"
+  },
+  "ph": {
+    "answer": "Your answer or a note",
+    "review": "Leave empty to approve",
+    "token": "Access token"
+  },
+  "btn": {
+    "decide": "Decide",
+    "answer": "Answer myself",
+    "hold": "Hold",
+    "done": "Done reviewing",
+    "send": "Send",
+    "more": "More",
+    "less": "Less",
+    "close": "Close",
+    "prev": "Previous",
+    "next": "Next",
+    "login": "Sign in",
+    "logout": "Sign out",
+    "open": "Open"
+  },
+  "msg": {
+    "saved": "Saved",
+    "decided": "Decided",
+    "held": "Put on hold",
+    "answered": "Answer sent",
+    "reviewed": "Review done",
+    "sent": "Sent",
+    "fail": "Couldn’t send",
+    "net": "Offline",
+    "badToken": "Wrong token",
+    "notFound": "Not found",
+    "stopped": "Tower stopped"
+  },
+  "time": {
+    "now": "now",
+    "m": "{n}m",
+    "h": "{n}h"
+  },
+  "login": {
+    "title": "Sign in"
+  },
+  "ws": {
+    "title": "Workspaces",
+    "local": "Local only",
+    "running": "Running",
+    "stopped": "Stopped"
+  },
+  "lang": {
+    "title": "Language",
+    "note": "Changes the board’s buttons on this device. Agents keep writing in the workspace language."
+  },
+  "reach": {
+    "title": "Only this computer can open the board",
+    "body": "Your phone can’t reach it yet. The hub can have infra set up Wi-Fi sign-in, Tailscale, Cloudflare or a server for you.",
+    "ask": "Ask the hub to set it up",
+    "memo": "Have infra make the board reachable from my phone. Compare the paths that fit this machine (`dah guide lan`, `tailscale`, `cloudflare`, `aws`), post a decision item with your recommendation, and set up the one I pick."
+  },
+  "lane": {
+    "add": "Add a lane",
+    "id": "Lane ID",
+    "idPh": "e.g. docs",
+    "idHelp": "Letters, numbers, - and _. Used in commands and file names.",
+    "idBad": "Use letters, numbers, - and _ only",
+    "idDup": "A lane with this ID already exists",
+    "runtime": "Runtime",
+    "label": "Display name (optional)",
+    "labelPh": "e.g. Docs",
+    "role": "Role",
+    "rolePh": "What it owns, the files it works on, when it is done, what it must not touch",
+    "model": "Model (optional)",
+    "agent": "Agent (optional)",
+    "optPh": "Empty uses the default",
+    "send": "Ask the hub to add it",
+    "sent": "Sent to the hub",
+    "hint": "The hub has infra create the lane and fill in its role file, then sends you a card to confirm.",
+    "memo": "Have infra add a lane: {id}\n- Runtime: {runtime}\n- Display name: {label}\n- Model: {model}\n- Agent: {agent}\n\nRole:\n{role}\n\nRun `dah lane add {id} --runtime {runtime}{flags}`, then fill `.tower/lanes/{id}.md` with this role: what it owns, the files it works on, done criteria, what not to touch."
+  },
+  "cap": {
+    "at": "At once",
+    "less": "One fewer",
+    "more": "One more",
+    "hint": "Team lanes that may work at the same time. Hub and infra don’t count."
+  },
+  "lv": {
+    "skills": "Skills",
+    "noSkills": "No skills named in its role file",
+    "process": "Process",
+    "stage": "Stage",
+    "stageN": "stage {n}",
+    "noProc": "No process yet",
+    "fixing": "Fixing",
+    "fixBy": {
+      "send-back": "Send-back",
+      "blame": "Blamed stage"
+    },
+    "model": "Model",
+    "tokens": "Tokens",
+    "week": "Last 7 days",
+    "recent": "Recent tasks",
+    "engine": "Engine",
+    "missing": "folder not found",
+    "none": "Nothing yet"
+  },
+  "eg": {
+    "engines": "Engines",
+    "pipes": "Pipelines",
+    "skills": "Skills",
+    "shared": "Shared",
+    "tools": "Tools",
+    "exps": "Experiments",
+    "changes": "What changed",
+    "since": "Since {d}",
+    "same": "Nothing changed since then",
+    "noSnap": "No snapshot yet; the tower writes one within the hour",
+    "usage": "Tokens, last 7 days",
+    "noLib": "No pattern library yet",
+    "rated": "{n} rated",
+    "unrated": "not rated",
+    "process": "Process",
+    "noCard": "no card",
+    "files": "files",
+    "s_new": "new",
+    "s_best": "best",
+    "s_good": "good",
+    "s_fix": "needs fixing",
+    "s_rework": "needs rework",
+    "c_lane_added": "Lane {name} added",
+    "c_lane_removed": "Lane {name} removed",
+    "c_skill_changed": "Skill {name} edited",
+    "c_skill_added": "Skill {name} added",
+    "c_skill_removed": "Skill {name} removed",
+    "c_row_added": "Process {name} added",
+    "c_row_removed": "Process {name} removed",
+    "c_process": "{name}: {a} → {b}",
+    "c_card": "{name} card: {a} → {b}",
+    "none": "none",
+    "empty": "No engines",
+    "noRows": "No library rows",
+    "fixedN": "fixed {n}x",
+    "procCard": "Process card",
+    "stageCard": "Stage {n} · {name}",
+    "cards": "stage cards",
+    "model": "Model · effort",
+    "folder": "Skill folder",
+    "noDoc": "No document to open",
+    "noProcCard": "No process card found"
+  },
+  "use": {
+    "day": "Today",
+    "io": "{i} / {o}",
+    "task": "Task {n} new · {c} cache · {o} out · {t} turns",
+    "today": "Today {i} in · {o} out",
+    "hint": "Tokens in / out. Counts only sessions the tower opened. Cost shows when the runtime reports it."
+  },
+  "mc": {
+    "title": "This machine",
+    "load": "Load",
+    "cpu": "CPU",
+    "mem": "Memory",
+    "swap": "Swap",
+    "unknown": "unknown",
+    "perCore": "{v} per core · {n} cores",
+    "free": "{f} GB free of {t} GB",
+    "freeOnly": "{f} GB free",
+    "swapUsed": "{s} GB in use",
+    "cpuBusy": "{v}% of all cores",
+    "waits": "Why tasks wait",
+    "wait": "Waits: {r}",
+    "claude": "Claude",
+    "h5": "5h",
+    "week": "week",
+    "g": "OK",
+    "a": "Busy",
+    "r": "Strained",
+    "hint": "Graded against this machine’s own cores and RAM. The Claude percent comes from an undocumented endpoint and may show unknown."
+  },
+  "x": {
+    "err": "Extension error"
+  },
+  "disk": {
+    "title": "Disks",
+    "used": "{u} of {t} GB used · {f} GB free",
+    "root": "System (/)",
+    "hint": "Amber from 85 % used, red from 95 %."
+  },
+  "doc": {
+    "loading": "Loading…",
+    "cantOpen": "Couldn’t open the document: {e}"
+  }
+}

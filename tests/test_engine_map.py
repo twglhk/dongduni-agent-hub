@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 
@@ -142,6 +143,23 @@ class MapApiTest(unittest.TestCase):
         self.assertEqual(d["lanes"][0]["skills"], [{"name": "layout", "found": True}])
         self.assertEqual(d["tools"], [{"name": "ffmpeg", "note": "cuts"}])
         self.assertEqual(d["changes"], {"since": None, "items": []})
+
+    def test_doc_route_serves_only_the_documents_the_map_names(self) -> None:
+        (self.home / ".agents/skills/layout/SKILL.md").write_text("# Layout skill\n")
+        d = json.loads(self.get("/api/engines/anim/map")[1])
+        card = d["pipelines"][0]["card"]
+        stage_card = d["pipelines"][0]["stages"][0]["card"]["path"]
+        skill_doc = d["skills"][0]["doc"]
+        self.assertEqual((card, skill_doc), (".agents/skills/layout/references/process/storyboard.md", ".agents/skills/layout/SKILL.md"))
+        for path in (card, stage_card, skill_doc):
+            code, body, _ = self.get("/api/engines/anim/doc?path=" + urllib.parse.quote(path))
+            self.assertEqual(code, 200, path)
+            self.assertEqual(json.loads(body)["path"], path)
+            self.assertEqual(json.loads(body)["text"], (self.home / path).read_text(encoding="utf-8"))
+        for bad in ("", ".tower/tower.json", "engines/anim/pattern-library.md", "../etc/passwd",
+                    ".agents/skills/layout/references/process/../../../../.tower/tower.json", "nope.md"):
+            self.assertEqual(self.get("/api/engines/anim/doc?path=" + urllib.parse.quote(bad))[0], 404, bad)
+        self.assertEqual(self.get("/api/engines/ghost/doc?path=" + urllib.parse.quote(card))[0], 404)
 
     def test_rating_lands_on_the_stage(self) -> None:
         t = self.s.add_task("story", "Boards", "Line: #1 Storyboard · stage 1 · make")
