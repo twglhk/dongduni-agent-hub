@@ -504,5 +504,33 @@
     "sharedAcct": "共享",
     "team": "连接情况",
     "otherAcct": "其他人的个人账号"
+  },
+  "vf": {
+    "st": {
+      "verified": "已验证",
+      "reverify": "需要重新验证",
+      "confirmed": "已确认",
+      "draft": "草稿",
+      "empty": "空"
+    },
+    "title": "验证",
+    "run": "当前这一轮",
+    "verified": "{at} 已验证",
+    "verifiedSub": "卡片 #{card} · {by} 完整确认了一轮。之后子流程会连续运行，只确认最后的结果。",
+    "reverify": "验证之后卡片有改动",
+    "reverifySub": "{what}。在新的一轮通过验证之前，每个子流程都会再次确认。",
+    "confirmed": "尚未验证",
+    "confirmedSub": "每个子流程结束时都会收到确认卡片，选择“下一步”后才开始下一个。完整运行一轮后会询问是否验证。",
+    "draft": "卡片还没有确认",
+    "draftSub": "卡片确认后，第一轮会逐个子流程确认着运行。",
+    "step": "子流程 {n}/{total} · {sub}",
+    "cardOf": "卡片 #{n} · {who}",
+    "someone": "提出请求的人",
+    "ck": {
+      "pending": "等待确认",
+      "next": "已通过",
+      "redo": "重做中",
+      "hold": "已搁置"
+    }
   }
 }

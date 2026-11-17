@@ -17,9 +17,15 @@ export interface FullStep {
   rating?: Rating | null; stages?: Record<string, Partial<Rating>>;
 }
 
+export interface Verified { card: number; by: string | null; at: string; run: string; commit?: string }
+export interface RunCheck { item_id: number; state: 'pending' | 'next' | 'redo' | 'hold'; member: string | null; sub: string }
+export interface Run { key: string; sub: string; n: number | null; check: RunCheck | null; held: boolean }
+
 export interface FullProcess {
   id: string; title: string; deliverable: string; frame_exception: string; file: string; lanes: string[]; status: string;
-  steps: FullStep[];
+  steps: FullStep[]; verified?: Verified | null; reverify?: boolean; changes?: string[]; run?: Run | null;
 }
 
-export interface ProcLib { full: FullProcess[]; sub: SubProcess[]; lanes: Record<string, string[]>; problems: string[] }
+export interface ProcLib {
+  full: FullProcess[]; sub: SubProcess[]; lanes: Record<string, string[]>; problems: string[]; verification?: boolean;
+}

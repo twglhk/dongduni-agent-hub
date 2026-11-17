@@ -504,5 +504,33 @@
     "sharedAcct": "Shared",
     "team": "Who is connected",
     "otherAcct": "Someone else’s own account"
+  },
+  "vf": {
+    "st": {
+      "verified": "Verified",
+      "reverify": "Needs a new check",
+      "confirmed": "Confirmed",
+      "draft": "Draft",
+      "empty": "Empty"
+    },
+    "title": "Verification",
+    "run": "Run now",
+    "verified": "Verified on {at}",
+    "verifiedSub": "Card #{card} · {by} checked a whole run. Each step now runs through; only the final result is checked.",
+    "reverify": "A card changed after it was verified",
+    "reverifySub": "{what}. Each step is checked again until a new run is verified.",
+    "confirmed": "Not verified yet",
+    "confirmedSub": "Each step gets a check card before the next one starts. After one whole run you decide whether to verify it.",
+    "draft": "Its cards are not confirmed yet",
+    "draftSub": "Once the cards are confirmed, the first run is checked step by step.",
+    "step": "Step {n} of {total} · {sub}",
+    "cardOf": "Card #{n} · {who}",
+    "someone": "the requester",
+    "ck": {
+      "pending": "Waiting for a check",
+      "next": "Passed",
+      "redo": "Being redone",
+      "hold": "On hold"
+    }
   }
 }

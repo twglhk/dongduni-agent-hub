@@ -504,5 +504,33 @@
     "sharedAcct": "Compartida",
     "team": "Quién está conectado",
     "otherAcct": "Cuenta personal de otra persona"
+  },
+  "vf": {
+    "st": {
+      "verified": "Verificado",
+      "reverify": "Requiere nueva revisión",
+      "confirmed": "Confirmado",
+      "draft": "Borrador",
+      "empty": "Vacío"
+    },
+    "title": "Verificación",
+    "run": "Ejecución actual",
+    "verified": "Verificado el {at}",
+    "verifiedSub": "Tarjeta #{card} · {by} revisó una ejecución completa. Ahora los pasos corren seguidos; solo se revisa el resultado final.",
+    "reverify": "Una tarjeta cambió después de verificar",
+    "reverifySub": "{what}. Cada paso se revisa de nuevo hasta que una nueva ejecución quede verificada.",
+    "confirmed": "Aún sin verificar",
+    "confirmedSub": "Cada paso recibe una tarjeta de revisión antes de que empiece el siguiente. Tras una ejecución completa decides si se verifica.",
+    "draft": "Sus tarjetas aún no están confirmadas",
+    "draftSub": "Cuando se confirmen las tarjetas, la primera ejecución se revisa paso a paso.",
+    "step": "Paso {n} de {total} · {sub}",
+    "cardOf": "Tarjeta #{n} · {who}",
+    "someone": "quien lo pidió",
+    "ck": {
+      "pending": "Esperando revisión",
+      "next": "Aprobado",
+      "redo": "Rehaciendo",
+      "hold": "En pausa"
+    }
   }
 }
