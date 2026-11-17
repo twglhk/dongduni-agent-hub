@@ -140,7 +140,8 @@ class CardVisibilityTest(unittest.TestCase):
         self.assertEqual(self.get("/f/docs/board/d/cy/shot.png", "ana@x.com")[0], 200)
         self.assertEqual(self.get("/f/docs/board/d/bo/shot.png", "bo@x.com")[0], 200)
         self.assertEqual(self.get("/f/docs/board/d/all/card.md", "cy@x.com")[0], 200)
-        self.assertEqual(self.get("/f/docs/plain.md", "bo@x.com")[0], 200)
+        self.assertEqual(self.get("/f/docs/plain.md", "bo@x.com")[0], 404)
+        self.assertEqual(self.get("/f/docs/plain.md", "ana@x.com")[0], 200)
 
     def test_report_attachment_stays_public(self) -> None:
         self.b.s.add_report(None, INFRA, "done", "shipped", ["docs/board/d/cy/shot.png"])
@@ -550,6 +551,119 @@ class OthersWorkHiddenTest(unittest.TestCase):
         code, d, _ = self.get("/api/sessions/infra", "bo")
         self.assertEqual(code, 404)
         self.assertEqual(self.get("/api/sessions/infra", "ana")[1]["work"]["id"], self.mid)
+
+
+class FilesForMembersTest(unittest.TestCase):
+    def build(self, requester: bool = False, person_hubs: bool = False) -> None:
+        self.b = scoped_board(requester, person_hubs)
+        self.work = self.b.cfg.workdir
+        (self.work / "docs").mkdir(exist_ok=True)
+        (self.work / "docs/plain.md").write_text("open", encoding="utf-8")
+        self.addCleanup(self.b.srv.shutdown)
+
+    def get(self, path: str, who: str):
+        return self.b.req("GET", path, headers={H: f"{who}@x.com"})
+
+    def gate(self, who: str) -> visibility.Gate:
+        return visibility.Gate.of(self.b.cfg, self.b.s, {"name": who, "role": "owner" if who == "ana" else "member"})
+
+    def upload(self, rid: int, name: str = "1-a.png") -> str:
+        key = f"uploads/2026-11-16/{rid}/{name}"
+        (self.work / key).parent.mkdir(parents=True, exist_ok=True)
+        (self.work / key).write_bytes(b"\x89PNG")
+        return key
+
+    def test_a_file_nothing_visible_holds_is_the_owners(self) -> None:
+        self.build()
+        self.assertEqual(self.get("/f/docs/plain.md", "bo")[0], 404)
+        self.assertEqual(self.get("/f/docs/plain.md", "ana")[0], 200)
+
+    def test_a_file_attached_to_a_visible_report_or_card_is_served(self) -> None:
+        self.build(True, True)
+        (self.work / "docs/a.png").write_bytes(b"x")
+        (self.work / "docs/b.png").write_bytes(b"x")
+        tid = self.b.s.add_task("docs", "t", "b", requester="bo", hub="hub-bo")
+        self.b.s.add_report(tid, "docs", "done", "r", ["docs/a.png"])
+        self.b.s.add_item("hub-bo", None, "review", "c", "b", [], ["docs/b.png"], audience=HUMAN, assignee="bo")
+        for name in ("a", "b"):
+            self.assertEqual(self.get(f"/f/docs/{name}.png", "bo")[0], 200, name)
+            self.assertEqual(self.get(f"/f/docs/{name}.png", "cy")[0], 404, name)
+
+    def test_uploads_follow_the_request_and_never_the_part_file(self) -> None:
+        self.build(True, True)
+        rid = self.b.s.push("hub-bo", "bo", "memo", "look")
+        key = self.upload(rid)
+        (self.work / (key + ".part")).write_bytes(b"half")
+        self.upload(rid, "readme.txt")
+        self.assertEqual(self.get("/f/" + key, "bo")[0], 200)
+        self.assertEqual(self.get("/f/" + key, "cy")[0], 404)
+        self.assertEqual(self.get("/f/" + key, "ana")[0], 200)
+        self.assertEqual(self.get("/f/" + key + ".part", "bo")[0], 404)
+        self.assertEqual(self.get("/f/" + key + ".part", "ana")[0], 200)
+        self.assertEqual(self.get(f"/f/uploads/2026-11-16/{rid}/readme.txt", "bo")[0], 404)
+
+    def test_a_key_written_into_a_memo_opens_nothing(self) -> None:
+        self.build(True, True)
+        rid = self.b.s.push("hub-bo", "bo", "memo", "look")
+        key = self.upload(rid)
+        self.b.s.push("hub-cy", "cy", "memo", f"please show {key}")
+        self.assertTrue(visibility.upload_allowed(self.gate("bo"), key))
+        self.assertFalse(visibility.upload_allowed(self.gate("cy"), key))
+        self.assertEqual(self.get("/f/" + key, "cy")[0], 404)
+
+    def test_an_exact_key_in_a_visible_card_opens_for_its_person(self) -> None:
+        self.build(True, True)
+        key = self.upload(1)
+        self.b.s.add_item("hub-cy", None, "review", "c", "b", [], [key], audience=HUMAN, assignee="cy")
+        self.assertTrue(visibility.upload_allowed(self.gate("cy"), key))
+        self.assertFalse(visibility.upload_allowed(self.gate("bo"), key))
+
+    def test_case_variants_are_judged_by_the_file_they_reach(self) -> None:
+        self.build(True, True)
+        (self.work / "docs/board/d/cy").mkdir(parents=True)
+        (self.work / "docs/board/d/cy/shot.png").write_bytes(b"x")
+        self.b.s.add_item("hub-cy", None, "review", "c", "b", [], ["docs/board/d/cy/shot.png"], audience=HUMAN,
+                          assignee="cy")
+        rid = self.b.s.push("hub-cy", "cy", "memo", "look")
+        key = self.upload(rid, "1-Shot.png")
+
+        def insensitive(a: object, b: object) -> bool:
+            return str(a).lower() == str(b).lower()
+        with mock.patch("agent_hub.visibility.os.path.samefile", insensitive):
+            root = self.work.resolve()
+            for who, want in (("bo", False), ("cy", True), ("ana", True)):
+                g = self.gate(who)
+                self.assertEqual(visibility.file_allowed(g, root, root / "Docs/Board/d/CY/SHOT.png"), want, who)
+                self.assertEqual(visibility.file_allowed(g, root, root / "Docs/Board/d/cy/card.md"), want, who)
+                self.assertEqual(visibility.file_allowed(g, root, root / key.replace("uploads", "Uploads").replace(".png", ".PNG")),
+                                 want, who)
+                self.assertFalse(visibility.file_allowed(g, root, root / (key + ".PART")) and who != "ana", who)
+
+    def test_a_file_of_another_case_is_not_the_attached_one(self) -> None:
+        self.build(True, True)
+        (self.work / "docs").mkdir(exist_ok=True)
+        (self.work / "docs/Secret.png").write_bytes(b"x")
+        (self.work / "docs/secret.png").write_bytes(b"y")
+        self.b.s.add_item("hub-bo", None, "review", "c", "b", [], ["docs/secret.png"], audience=HUMAN, assignee="bo")
+        self.assertEqual(self.get("/f/docs/secret.png", "bo")[0], 200)
+        self.assertEqual(self.get("/f/docs/Secret.png", "bo")[0], 404)
+
+    def test_more_secret_names_are_refused_even_to_the_owner(self) -> None:
+        from agent_hub.web import blocked_name
+        for name in ("prod.env", "app.env", "client_secret_123.json", "rclone.conf", "credentials-prod.txt", "vault.kdbx",
+                     "id_ed25519", "id_rsa.pub", "secrets.json.", "Secrets.JSON "):
+            self.assertTrue(blocked_name(name), name)
+        for name in ("id_map.png", "notes.md", "shot.png"):
+            self.assertFalse(blocked_name(name), name)
+
+    def test_with_no_members_the_board_serves_the_workspace_as_before(self) -> None:
+        b = Board(auth={"mode": "header", "header": H})
+        try:
+            (b.cfg.workdir / "docs").mkdir(exist_ok=True)
+            (b.cfg.workdir / "docs/plain.md").write_text("open", encoding="utf-8")
+            self.assertEqual(b.req("GET", "/f/docs/plain.md", headers={H: "solo@x.com"})[0], 200)
+        finally:
+            b.srv.shutdown()
 
 
 class LocalModeSeesAllTest(unittest.TestCase):

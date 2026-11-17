@@ -37,10 +37,11 @@ BOARD = Path(__file__).resolve().parent / "board" / "index.html"
 BOARD_NEXT = Path(__file__).resolve().parent / "board_next"
 BLOCKED_NAMES = {".env", "opencode.json", "tower.json", "secrets.json", "secrets.yaml", "secrets.yml", "secret.json",
                  "credentials", "credentials.json", "token.json", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "kubeconfig",
-                 "known_hosts", "terraform.tfvars"}
+                 "known_hosts", "terraform.tfvars", "rclone.conf", "prod.env", "authorized_keys", "htpasswd"}
 BLOCKED_SUFFIXES = {".db", ".sqlite", ".sqlite3", ".db-wal", ".db-shm", ".pem", ".key", ".p12", ".pfx", ".pkcs12", ".ppk",
-                    ".jks", ".keystore", ".gpg", ".kdbx", ".tfstate", ".tfvars"}
-BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials.")
+                    ".jks", ".keystore", ".gpg", ".kdbx", ".tfstate", ".tfvars", ".env", ".p8", ".secret", ".kdb"}
+BLOCKED_PREFIXES = ("service-account", "serviceaccount", "secrets.", "credentials", "client_secret", "client-secret",
+                    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "rclone.conf")
 MAX_BODY = 1024 * 1024
 PREVIEW = 3
 PAGE = 20
@@ -63,8 +64,8 @@ def page_csp(cfg: Config) -> str:
 
 
 def blocked_name(name: str) -> bool:
-    low = name.lower()
-    return (low.startswith(".") or low in BLOCKED_NAMES or low.endswith(tuple(BLOCKED_SUFFIXES))
+    low = name.lower().rstrip(". ")
+    return (low.startswith(".") or (os.name == "nt" and ":" in low) or low in BLOCKED_NAMES or low.endswith(tuple(BLOCKED_SUFFIXES))
             or low.startswith(BLOCKED_PREFIXES) or ".tfstate" in low)
 
 
@@ -855,9 +856,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     return self._json(404, {"error": f"item #{it['id']} not found"})
                 return self._json(200, it)
             if path.startswith("/f/"):
-                if not vis.file_allowed(vis.Gate.of(c, st, me), unquote(path[3:])):
+                full = safe_file(c.workdir, path[3:])
+                if not full or not vis.file_allowed(vis.Gate.of(c, st, me), c.workdir, full):
                     return self._json(404, {"error": "not found"})
-                return self._file(path[3:])
+                return self._file(full)
             if path.startswith("/x/"):
                 full = safe_file(board_dir(c.home), path[3:])
                 if not full or full.suffix.lower() not in STATIC_SUFFIXES:
@@ -910,10 +912,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             log(f"{who} changed their board settings" + (f" (dropped {', '.join(dropped)})" if dropped else ""))
             return self._json(200, {"ok": True, **prefs_mod.view(st, who), "dropped": dropped})
 
-        def _file(self, rel: str) -> None:
-            full = safe_file(self.site.cfg.workdir, rel)
-            if not full:
-                return self._json(404, {"error": "not found"})
+        def _file(self, full: Path) -> None:
             ctype = mime(full.name)
             size = full.stat().st_size
             start, end = 0, size - 1
