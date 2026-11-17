@@ -17,6 +17,7 @@ export function useLaneSheet(id: string | null): SheetContent | null {
   const toast = useToast();
   const detail = usePoll<LaneDetail>(id ? 'api/lanes/' + encodeURIComponent(id) : null, LANE_MS);
   useEffect(() => { if (id && detail.missing) { toast(L.msg.notFound, true); closeItem(); } }, [id, detail.missing]);
+  useEffect(() => { if (id && detail.failed && !detail.data) toast(L.msg.loadFail, true); }, [id, detail.failed]);
   if (!id) return null;
   return laneSheet({ id, label: laneLabel(data, id), d: detail.data });
 }

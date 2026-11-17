@@ -116,6 +116,7 @@
     "reviewed": "Review done",
     "sent": "Sent",
     "fail": "Couldn’t send",
+    "loadFail": "Couldn’t load",
     "net": "Offline",
     "badToken": "Wrong token",
     "notFound": "Not found",

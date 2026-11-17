@@ -1,4 +1,5 @@
 import { useL } from '../i18n/context';
+import { useToast } from '../state/toast';
 import { post } from '../lib/api';
 import { useBoard } from '../state/board';
 import { Chip } from './Chips';
@@ -9,9 +10,10 @@ import type { Menu } from './menus/MenuSheet';
 export function TopBar({ openMenu }: { openMenu: (m: Menu) => void }) {
   const { L, lang } = useL();
   const { data, ok, ws, lock } = useBoard();
+  const toast = useToast();
   const name = data?.title || '', many = ws.length > 1;
   const logout = async () => {
-    try { await post('api/logout'); } catch { /* signed out either way */ }
+    try { await post('api/logout'); } catch (e) { toast((e as Error).message || L.msg.fail, true); return; }
     lock();
   };
   return (

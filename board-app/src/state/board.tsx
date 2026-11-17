@@ -14,6 +14,7 @@ interface Board {
   locked: boolean;
   ws: Workspace[];
   mach: MachineInfo | null;
+  machFailed: boolean;
   refresh: () => Promise<void>;
   loadWs: () => Promise<void>;
   unlock: () => void;
@@ -39,6 +40,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [ws, setWs] = useState<Workspace[]>([]);
   const [loads, setLoads] = useState(0);
   const [mach, setMach] = useState<MachineInfo | null>(null);
+  const [machFailed, setMachFailed] = useState(false);
   const [extra, setExtra] = useState<Record<number, Item>>({});
   const raw = useRef(''), busy = useRef(false), again = useRef(false), lockedRef = useRef(false);
 
@@ -64,8 +66,9 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (lockedRef.current) return;
     try {
       const j = await get<MachineInfo>('api/machine'), t = JSON.stringify(j);
+      setMachFailed(false);
       if (t !== rawMach.current) { rawMach.current = t; setMach(j); }
-    } catch { /* the footer and the Info tab just keep the last reading */ }
+    } catch (e) { if ((e as HttpError).status !== 401) setMachFailed(true); }
   }, []);
 
   const refresh = useCallback(() => { raw.current = ''; return load(); }, [load]);
@@ -96,7 +99,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <BoardContext.Provider value={{ data, loads, ok, locked, ws, mach, refresh, loadWs, unlock, lock, itemById, fetchItem }}>
+    <BoardContext.Provider value={{ data, loads, ok, locked, ws, mach, machFailed, refresh, loadWs, unlock, lock, itemById, fetchItem }}>
       {children}
     </BoardContext.Provider>
   );

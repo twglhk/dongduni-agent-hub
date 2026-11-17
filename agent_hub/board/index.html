@@ -800,7 +800,7 @@ function rel(s) {
   return fmtT(s);
 }
 function when(s) { return h('span', { class: 't', title: fmtT(s) }, rel(s)); }
-function fileUrl(p) { return BASE + 'f/' + encodeURI(String(p)); }
+function fileUrl(p) { return BASE + 'f/' + String(p).split('/').map(encodeURIComponent).join('/'); }
 function fname(p) { return String(p).split('/').pop(); }
 function fext(p) { const m = /\.([a-z0-9]+)$/i.exec(p); return m ? m[1] : ''; }
 function tick() { return LANG + Math.floor(Date.now() / 30000); }

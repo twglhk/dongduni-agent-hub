@@ -29,6 +29,7 @@ export function EngineView() {
   const cur = engs ? (engs.find(e => e.id === want) || engs[0])?.id || null : null;
   const map = usePoll<EngineMap>(cur ? `api/engines/${encodeURIComponent(cur)}/map` : null, MS);
   const E = L.eg;
+  if ((!engs && list.failed) || (cur && !map.data && map.failed)) return <Empty>{L.msg.loadFail}</Empty>;
   if (!engs || (cur && !map.data)) return <SkelCards n={2} rows={4} />;
   if (!cur) return <Empty>{E.empty}</Empty>;
   const d = map.data!;

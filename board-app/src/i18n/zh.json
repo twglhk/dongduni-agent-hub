@@ -116,6 +116,7 @@
     "reviewed": "审核完成",
     "sent": "已发送",
     "fail": "发送失败",
+    "loadFail": "加载失败",
     "net": "离线",
     "badToken": "令牌不正确",
     "notFound": "找不到",
