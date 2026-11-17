@@ -54,16 +54,17 @@ Update, in one commit: the URLs in `pyproject.toml` (`[project.urls]`), `REPO` i
 
 Newest first. Paste the section of the version being tagged into the GitHub release page; it is also what `dah update` users need to read.
 
-### Unreleased
+### 0.10.0
 
-A larger release: board server hardening, a process library, a React board, and a set of opt-in team features. Everything new is off by default except where the Upgrade section says otherwise. The version number is set when the release is tagged.
+A larger release: board server hardening, a process library with verification, a React board, and a set of opt-in team features. Everything new is off by default except where the Upgrade section says otherwise.
 
 **Upgrade** (read before updating a running install)
 
 - **`auth.mode` `local` on an exposed board is refused.** If `auth.mode` is `local` (the default) and `web.host` is not loopback, or `web.public_url` or `tunnel` is set, the tower no longer starts: the config load fails with an error that names the keys. Either switch to `header` or `token` (`dah guide`), or accept the risk with `"auth": {"mode": "local", "allow_exposed": true}`. Before this release such a setup started silently; a board with `public_url` only for notification links is the usual case.
-- **The board answers 421 to an unknown Host.** The board server checks the `Host` header against its own address (loopback names, `web.host`, the host of `web.public_url`). A request through a reverse proxy or tunnel under another name gets `421 unknown Host`. Set `web.public_url` to the address people open (and `web.allowed_hosts` for further names). Cross-site POSTs are refused too.
+- **The board answers 421 to an unknown Host.** The board server checks the `Host` header against its own address (loopback names and IP addresses on any port, `web.host`, the host of `web.public_url`, the names in `web.allowed_hosts`). A request through a reverse proxy or tunnel under another name gets `421 unknown Host`. Set `web.public_url` to the address people open (and `web.allowed_hosts` for further names). Cross-site POSTs are refused too.
 - **`dah update` converts pattern libraries into the process library.** An engine whose `library` is a pattern-library table gets a `processes/` folder: a full process (`processes/full/<id>.md`, one step per table row) and one sub-process per row (`processes/sub/<id>/process.md` with its `patterns/`). The old table is kept as `pattern-library.md.bak`; `Line: #3 ...` headers still work through the old `#` column; a second run changes nothing. `lanes/hub.md` and `PROTOCOL.md` are refreshed when untouched; an edited file gets a `.new` beside it. `dah guide engines` has the steps. Database: columns and tables are only added (`items.memo_id`, `member_prefs`, `overlaps`, upload tables ...), so a downgrade to 0.9.x still opens the database.
 - **Attachments are on by default.** The hub chat has a paperclip with the `local` provider: files go to `uploads/<date>/<request>/` in the workspace, at most 25 MB per file, 10 files per request and 2 GB in all. Set `"uploads": {"provider": "off"}` to remove the paperclip and the upload routes.
+- **Members see less.** With `requester` or `person_hubs` on, a member gets another person's tasks, reports and infra memos only as a placeholder ("someone else's work"), and `/f/` serves a member only files attached to a card, report or request they can see. The owner, and installs with both keys off, see what they saw before. More file names are blocked for everyone (`*.env`, `client_secret*`, `rclone.conf`, `credentials*`, SSH keys).
 - Typed `tower.json` readers: a number written as text that is not a number, or a string where a boolean is expected, is now a config error instead of being guessed. A broken `workspaces.json` is kept as `.bak` rather than overwritten.
 
 **Security fixes**
@@ -94,11 +95,14 @@ A larger release: board server hardening, a process library, a React board, and 
 - `context_limit_k` (off; a number or a table by model): a long session is asked to hand off.
 - `scratch_root`, `scratch_grace` (user cache dir, 600 s), `done_gate`, `usage_percent` (off): as in 0.9.3, now documented in the README table.
 - `auth.allow_exposed` (false): see Upgrade.
+- `web.allowed_hosts` (none): further host names the board answers to.
+- `process_verification` (false; needs `require_line`): a full process that is not verified yet is checked after every sub-process; see Process library.
 
 **Process library and engines**
 
 - Processes live in one library, `processes/`: sub-processes (a process card and its pattern cards) and full processes (sub-processes in order, with model and effort). A lane lists the full processes it uses under `## Processes used`. A brief says `Line: <full> / <sub> · stage 2 · make`. `dah engine add` writes this layout; rows that name the same process card share one sub-process.
-- Automatic conversion of pattern libraries by `dah update` (see Upgrade). `Line: new <type> · prepare` for a row the library lacks; repo-path cards; `.claude/skills` is the default skills folder.
+- Process verification (`process_verification`): a full process goes draft → confirmed → verified. Until it is verified, every task of one run shares a `--deliverable KEY`, a lane ends each sub-process with `dah check` (a card to the requester: next / fix and redo), and the next sub-process waits for that answer; a fix task is queued on "fix and redo". After the last one the hub records it with `dah process verify FULL --card N` in `processes/verified.json`; a changed card drops the process back to confirmed. `dah process status` shows where runs are.
+- Automatic conversion of pattern libraries by `dah update` (see Upgrade); a conversion that stopped half way resumes on the next run. `Line: new <type> · prepare` for a row the library lacks; repo-path cards; `.claude/skills` is the default skills folder.
 - The Engine tab is the library (`GET /api/processes`, `GET /api/processes/doc?path=P`); it no longer lists lanes. `/api/engines*` and `/old/` are unchanged.
 - Hub answers to a request a person wrote reach that person as a review card (a second reply revises the open card).
 
@@ -108,11 +112,11 @@ A larger release: board server hardening, a process library, a React board, and 
 - Hub chat shows requests and answers in full and has attachments with previews and progress; the "last reply" strip is gone and the request box floats over the page.
 - Lanes tab: queue strip (now and waiting work with the reason, per-person counts), session sheet (`GET /api/sessions/<key>`), sessions and branches per lane, machine disks, a settings sheet per member (`member_prefs`), my Claude account sheet, "Add a lane" asks the sender's hub.
 - History tab: a Work feed of what each lane and session did, filtered per viewer.
-- Board items can recommend one option (`--recommend`, shown first with a badge); chat full text search; server-side card filtering.
+- Board items can recommend one option (`--recommend`, shown first with a badge); server-side filtering of cards, work, files and sessions per viewer.
 
 **CLI**
 
-- New: `dah restart`, `dah prefs show|set|reset`, `dah paths`, `dah overlap CARD go|after|merge`, `dah memo cancel`, `dah memo bump`, `dah memo paths`, `dah memo reply --covers N`, `dah task bump`, `dah infra --model`, `dah infra --effort`, `dah infra --paths`, `dah infra --alone`, `dah task --request`, `dah task --for`, `dah item add --to`, `dah item add --recommend`, `dah item add --request`; `dah member list` shows each member's hub and `dah guide -h` lists every guide.
+- New: `dah check`, `dah process status|verify|check`, `dah restart`, `dah prefs show|set|reset`, `dah paths`, `dah overlap CARD go|after|merge`, `dah memo cancel`, `dah memo bump`, `dah memo paths`, `dah memo reply --covers N`, `dah task bump`, `dah infra --model`, `dah infra --effort`, `dah infra --paths`, `dah infra --alone`, `dah task --request`, `dah task --for`, `dah item add --to`, `dah item add --recommend`, `dah item add --request`; `dah member list` shows each member's hub and `dah guide -h` lists every guide.
 - `dah init` / `dah update`: `--force` keeps an edited file as `.bak`; `dah restart` waits only for a service manager.
 - Real model and effort per lane session; `dah task` and the shipped `ENGINE-audit` skill are checked against the parser by a test that now covers the README, guides and docs.
 
