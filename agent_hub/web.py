@@ -23,6 +23,14 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
   POST /api/items/<id>/decide     {verdict, choice | choices[], note}
   GET  /api/me/prefs              the signed-in member's own board settings (prefs.py); POST {prefs: {...}} saves, {reset: true} clears
   POST /api/memo                  {text, to: hub}   (to: infra answers 409: ask the hub)
+  POST /api/uploads/start         {text, files: [{name, type, size}]} → {id, files: [{n, mode: chunks, chunk} |
+                                  {n, mode: put, url, headers} | {n, mode: multipart, part_size, parts}]}: the request is
+                                  held until finish; the server fixes every path, type and size (uploads.py)
+  POST /api/uploads/chunk?id=&n=&offset=   raw bytes of a `chunks` file, at most 4 MB → {received}; 409 {received} = out of order
+  POST /api/uploads/parts         {id, n, parts: [1..]} → {urls: {part: url}} for one multipart S3 file
+  POST /api/uploads/finish        {id, results?: [{n, etags?}]} → {sent, failed, total}: the request goes to the hub
+  GET  /api/uploads/view?key=K    {url, type, thumb?} for an attachment path a request names (members: only their own)
+  GET  /api/uploads/file?key=K    an attachment streamed through the board (drive, s3; Range supported)
   *    /api/goals...              410 Gone (goals were removed in 0.8.0)
   POST /api/settings              {max_lanes: 1..10}   (written to tower.json; the tower picks it up on its next tick)
   POST /api/login {token} · POST /api/logout      (auth.mode = token)
@@ -59,7 +67,7 @@ from . import config as config_mod
 from . import engines as engines_mod
 from . import processes as processes_mod
 from . import prefs as prefs_mod
-from . import rating, sessinfo
+from . import rating, sessinfo, uploadroutes
 from . import visibility as vis
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
@@ -82,12 +90,17 @@ COOKIE = "tower_token"
 LOOPBACK = {"127.0.0.1", "::1", "::ffff:127.0.0.1"}
 MAX_LANES_LIMIT = 10
 XML_TYPES = ("image/svg+xml", "application/xhtml+xml", "application/xml", "text/xml")
-PAGE_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
-            "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; "
+PAGE_CSP_TEMPLATE = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+            "media-src 'self' blob:; font-src 'self' data:; connect-src 'self'{connect}; object-src 'none'; base-uri 'self'; "
             "form-action 'self'; frame-ancestors 'none'")
 mimetypes.add_type("text/plain; charset=utf-8", ".md")
 for _type, _ext in (("text/javascript", ".js"), ("text/javascript", ".mjs"), ("text/css", ".css")):
     mimetypes.add_type(_type, _ext)  # the Windows registry can say text/plain
+
+
+def page_csp(cfg: Config) -> str:
+    host = uploadroutes.connect_host(cfg)
+    return PAGE_CSP_TEMPLATE.format(connect=f" https://{host}" if host else "")
 
 
 def blocked_name(name: str) -> bool:
@@ -420,6 +433,7 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "title": cfg.name,
         "lang": cfg.lang,
+        "uploads": uploadroutes.info(cfg),
         "auth_mode": cfg.auth_mode,
         "me": me,
         "my_hub": my_hub,
@@ -469,6 +483,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
     from .claudeusage import ClaudeUsage
     from .machine import Machine, read_waits
     mach, cusage = Machine(), ClaudeUsage()  # one machine and one Claude login for every workspace served here
+    sweepers: dict[str, uploadroutes.Sweeper] = {}
 
     def fresh_own() -> Site:
         """This workspace's config as tower.json has it now (infra adds lanes, the board sets max_lanes)."""
@@ -578,7 +593,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             self.send_header("x-content-type-options", "nosniff")
             self.send_header("x-frame-options", "DENY")
             self.send_header("referrer-policy", "no-referrer")
-            self.send_header("content-security-policy", csp or ("frame-ancestors 'none'" if frame_only else PAGE_CSP))
+            self.send_header("content-security-policy", csp or ("frame-ancestors 'none'" if frame_only else page_csp(self.site.cfg)))
 
         def _resolve(self) -> bool:
             """Pick the workspace from the path. False when a response (redirect, 404) was already sent."""
@@ -741,6 +756,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if me is None:
                 return self._json(401, {"error": "sign in"})
             if path == "/api/state":
+                sweepers.setdefault(self.site.slug, uploadroutes.Sweeper()).run(c, st, log)
                 return self._json(200, state(self.site.cfg, st, me))
             if path == "/api/machine":
                 return self._json(200, {"machine": mach.view(), "waits": read_waits(c.state_dir),
@@ -759,6 +775,10 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
+            if path == "/api/uploads/view":
+                return uploadroutes.view(self, c, st, me, self.query)
+            if path == "/api/uploads/file":
+                return uploadroutes.stream(self, c, st, me, self.query)
             if path == "/api/engines":
                 return self._json(200, {"engines": engines_view(c)})
             m = re.fullmatch(r"/api/engines/([^/]+)/map", path)
@@ -902,6 +922,11 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             c, st, path = self.site.cfg, self.site.s, self.route
             if path == "/api/goals" or path.startswith("/api/goals/"):
                 return self._json(410, {"error": "goals were removed in 0.8.0; send requests to the hub instead"})
+            if path == "/api/uploads/chunk":
+                me = self._me()
+                if me is None:
+                    return self._json(401, {"error": "sign in"})
+                return uploadroutes.chunk(self, c, st, str(me["name"]))
             try:
                 n = int(self.headers.get("content-length") or 0)
             except ValueError:
@@ -953,6 +978,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
                     mid = st.push(to, who, "memo", text)
                     log(f"{who} memo #{mid} → {to}")
                     return self._json(200, {"ok": True, "id": mid})
+                if path.startswith("/api/uploads/"):
+                    return uploadroutes.steps(self, c, st, who, path[13:], body, log)
                 if path == "/api/settings":
                     if me.get("role") != "owner":
                         return self._json(403, {"error": "only an owner changes settings"})

@@ -216,6 +216,7 @@ class Config:
     fair_turns: bool = False
     requester: bool = False
     usage_percent: str = ""      # "claude" = show the Claude subscription percent on the board (claudeusage.py); "" = off
+    uploads: dict[str, Any] = field(default_factory=dict)  # chat attachments: storage.parse; {} = off (a loaded config has provider local by default)
 
     @property
     def all_lanes(self) -> dict[str, Lane]:
@@ -551,7 +552,12 @@ def _extras(raw: dict[str, Any], home: Path, project: Any, kinds: dict[str, str]
     usage = str(raw.get("usage_percent") or "")
     if usage and usage not in PROVIDERS:
         raise ConfigError(f"usage_percent must be one of {', '.join(PROVIDERS)}, or empty (off)")
-    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules,
+    from .storage import parse as parse_uploads
+    try:
+        uploads = parse_uploads(raw.get("uploads"))
+    except ValueError as e:
+        raise ConfigError(str(e))
+    return {"done_gate": gate, "scratch_root": root, "usage_percent": usage, "schedules": schedules, "uploads": uploads,
             "scratch_grace": _int(raw, "scratch_grace", 600, 0),
             "leftover_sweep": _bool(raw, "leftover_sweep"),
             "requester": _bool(raw, "requester"),
