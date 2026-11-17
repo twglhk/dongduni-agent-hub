@@ -5,6 +5,7 @@ that authenticates people (Cloudflare Access, Tailscale, an AWS ALB with OIDC, .
                                   .tower/board/index.html; /?builtin always opens the built-in one; /assets/<file>
   GET  /old/                      the single-file board (board/index.html) that came before the React app
   GET  /api/state                 lanes · open items · tasks · reports · memos · counts
+                                  (a member gets only the cards, memos and files visibility.py allows)
   GET  /api/history?kind=K&offset=N   decided | reports | closed | memos | requests, 20 per page
   GET  /api/items/<id>
   GET  /api/lanes/<id>            one lane: skills, process and stage, fixing, model, effort, tokens
@@ -52,6 +53,7 @@ from . import __version__
 from . import config as config_mod
 from . import engines as engines_mod
 from . import rating, sessinfo
+from . import visibility as vis
 from .config import CONFIG_NAME, HUB, INFRA, RUNTIMES, TOWER_DIR, Config, ConfigError, tower_pid
 from .engine import clip
 from .ext import STATIC_SUFFIXES, Extensions, board_dir, board_extras, board_override
@@ -324,6 +326,26 @@ def usage_view(cfg: Config, day: str, used: dict[str, dict[str, Any]]) -> dict[s
     return {"day": day, "runtimes": list(rows.values())}
 
 
+def counts_view(s: Store, me: dict[str, Any] | None) -> dict[str, int]:
+    out = {}
+    for k in (*Store.HISTORY, *Store.MEMO_HISTORY):
+        if k == "decided":
+            out[k] = vis.decided_count(s, me)
+        elif k in Store.MEMO_HISTORY:
+            out[k] = vis.memo_count(s, me, Store.MEMO_HISTORY[k])
+        else:
+            out[k] = s.history_count(k)
+    return out
+
+
+def history_rows(s: Store, me: dict[str, Any] | None, kind: str, offset: int) -> list[dict[str, Any]]:
+    if kind == "decided":
+        return vis.decided(s, me, offset, PAGE)
+    if kind in Store.MEMO_HISTORY:
+        return vis.memos(s, me, Store.MEMO_HISTORY[kind], PAGE, offset)
+    return s.history(kind, offset, PAGE)
+
+
 def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
     tasks = s.tasks(("queued", "running", "wrapping"), limit=200)
     day = s.day()
@@ -344,11 +366,11 @@ def state(cfg: Config, s: Store, me: dict[str, Any] | None) -> dict[str, Any]:
         "default_runtime": cfg.lanes[HUB].runtime,
         "usage": usage_view(cfg, day, used),
         "lanes": lanes_view(cfg, s, used),
-        "items": s.items(state="open", limit=500) + s.history("decided", 0, PREVIEW),
+        "items": vis.mine(me, s.items(state="open", limit=500)) + vis.decided(s, me, 0, PREVIEW),
         "tasks": tasks + s.history("closed", 0, PREVIEW),
         "reports": s.history("reports", 0, PREVIEW),
-        "memos": {INFRA: s.memos(INFRA, PREVIEW), HUB: s.memos(HUB, PREVIEW)},
-        "counts": {k: s.history_count(k) for k in (*Store.HISTORY, *Store.MEMO_HISTORY)},
+        "memos": {INFRA: vis.memos(s, me, INFRA, PREVIEW), HUB: vis.memos(s, me, HUB, PREVIEW)},
+        "counts": counts_view(s, me),
     }
 
 
@@ -620,7 +642,7 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             if path == "/api/history":
                 q = parse_qs(self.query)
                 try:
-                    rows = st.history((q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])), PAGE)
+                    rows = history_rows(st, me, (q.get("kind") or [""])[0], max(0, int((q.get("offset") or ["0"])[0])))
                 except (StoreError, ValueError) as e:
                     return self._json(410 if q.get("kind") == ["goals"] else 400, {"error": str(e)})
                 return self._json(200, {"rows": rows, "more": len(rows) == PAGE})
@@ -646,10 +668,15 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             m = re.fullmatch(r"/api/items/(\d+)", path)
             if m:
                 try:
-                    return self._json(200, st.item(int(m.group(1))))
+                    it = st.item(int(m.group(1)))
                 except StoreError as e:
                     return self._json(404, {"error": str(e)})
+                if not vis.can_see(me, it):
+                    return self._json(404, {"error": f"item #{it['id']} not found"})
+                return self._json(200, it)
             if path.startswith("/f/"):
+                if not vis.file_allowed(st, me, unquote(path[3:])):
+                    return self._json(404, {"error": "not found"})
                 return self._file(path[3:])
             if path.startswith("/x/"):
                 full = safe_file(board_dir(c.home), path[3:])
@@ -770,6 +797,8 @@ def make_handler(cfg: Config, s: Store, log: Callable[[str], None], ext: Extensi
             try:
                 m = re.fullmatch(r"/api/items/(\d+)/decide", path)
                 if m:
+                    if not vis.can_see(me, st.item(int(m.group(1)))):
+                        return self._json(404, {"error": f"item #{m.group(1)} not found"})
                     choices = body.get("choices")
                     it = st.decide(int(m.group(1)), str(body.get("verdict")), who,
                                    [str(x) for x in choices] if isinstance(choices, list) else body.get("choice") or None,
